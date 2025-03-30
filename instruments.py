@@ -7,7 +7,20 @@ import os
 import json
 import ctypes
 from ctypes import *
-from tucsen.TUCam import *
+try:
+    from tucsen.TUCam import *
+except Exception as e:  # catch all exceptions, not just ImportError
+    print(f"TUcam error: {e}. Can continue with simulated camera but will crash if camera is required.")
+import sys
+if sys.platform == "win32":
+    from ctypes import OleDLL
+if sys.platform == "linux":
+    print("Linux detected, using libtucam.so")
+    print("implementation not yet available")
+else:
+    print("Unsupported platform. Please use Windows or Linux.")
+
+
 from enum import Enum
 import time
 import numpy as np
@@ -20,11 +33,23 @@ from functools import wraps
 
 from calibration import Calibration, LdrScan
 
-def simulate(expected_value=None):
+def simulate(expected_value=None, function_handler=None):
+    """
+    Decorator that returns a simulated response when self.simulate is True.
+    
+    Args:
+        expected_value: Static value to return when simulating
+        function_handler: Optional callable that receives self and original args/kwargs
+                         and returns a dynamic simulated value
+    """
     def decorator(func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             if self.simulate:
+                # If a function handler is provided, use it to get dynamic response
+                if function_handler is not None:
+                    return function_handler(self, *args, **kwargs)
+                # Otherwise return the static expected value
                 return expected_value
             return func(self, *args, **kwargs)
         return wrapper

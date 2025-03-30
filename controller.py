@@ -63,6 +63,11 @@ class ArduinoUNO:
     @simulate(expected_value=serial.Serial)
     def connect(self):
         self.serial = self._connect_to_UNO()
+        # Initialize simulated motor positions if in simulation mode
+        if self.simulate:
+            self._sim_laser_motors = [100000, 100000, 0, 0]  # Initial simulated positions for laser motors
+            self._sim_monochromator_motors = [200000, 200000, 0, 0]  # Initial simulated positions for monochromator motors
+            self._sim_motor_running = False
 
     def _format_command_length(self, command):
         '''Formats the command by checking length and compiling the correct command from the message_map. Work around until firmware is updated.'''
@@ -79,8 +84,107 @@ class ArduinoUNO:
             new_command = '{}'.format(new_command)
         
         return new_command
+    
+    def _simulate_command_response(self, command):
+        """Generate appropriate simulated responses for different commands"""
+        if command.startswith('o'):
+            cmd = command[1:-1]  # Strip the 'o' and 'o' markers
+        elif command.startswith('m'):
+            cmd = command[1:-1]  # Strip the 'm' and 'm' markers
+        else:
+            cmd = command
             
-    @simulate(expected_value='Command sent')
+        parts = cmd.split(' ')
+        cmd_type = parts[0].lower()
+        
+        # Check for motor movement commands (AX, AY, etc)
+        if cmd_type in ['ax', 'ay', 'az', 'aa', 'bx', 'by', 'bz', 'ba']:
+            if len(parts) > 1:
+                try:
+                    steps = int(parts[1])
+                    motor_type = cmd_type[0].upper()  # A or B
+                    motor_index = {'X': 0, 'Y': 1, 'Z': 2, 'A': 3}[cmd_type[1].upper()]
+                    
+                    # Move the appropriate simulated motor
+                    if motor_type == 'A':
+                        self._sim_laser_motors[motor_index] += steps
+                    else:  # motor_type == 'B'
+                        self._sim_monochromator_motors[motor_index] += steps
+                        
+                    # In real operation, this would be R1 for running, but we simulate completion immediately
+                    return ['S0:Success', '#CF']
+                except (ValueError, IndexError):
+                    return ['F0:Invalid command', '#CF']
+        
+        # Handle specific command types
+        if cmd_type == 'apos' or cmd_type == 'get_laser_positions':
+            positions = ','.join([f"X{self._sim_laser_motors[0]}", 
+                                 f"Y{self._sim_laser_motors[1]}", 
+                                 f"Z{self._sim_laser_motors[2]}", 
+                                 f"A{self._sim_laser_motors[3]}"])
+            return [f'S0:<P>{positions}</P>', '#CF']
+            
+        elif cmd_type == 'bpos' or cmd_type == 'get_monochromator_positions':
+            positions = ','.join([f"X{self._sim_monochromator_motors[0]}", 
+                                 f"Y{self._sim_monochromator_motors[1]}", 
+                                 f"Z{self._sim_monochromator_motors[2]}", 
+                                 f"A{self._sim_monochromator_motors[3]}"])
+            return [f'S0:<P>{positions}</P>', '#CF']
+            
+        elif cmd_type == 'aisrun':
+            return ['S0:Not running', '#CF']  # Always return not running in simulation
+            
+        elif cmd_type == 'bisrun':
+            return ['S0:Not running', '#CF']  # Always return not running in simulation
+            
+        elif cmd_type == 'ld0':
+            # Simulate LDR0 (light sensor) reading - could be made more sophisticated
+            # Higher means more light detected
+            return [f'S0:3000', '#CF']
+            
+        elif cmd_type == 'gsh':
+            # Shutter command
+            status = "on" if "on" in cmd.lower() else "off"
+            return [f'S0:Shutter {status}', '#CF']
+            
+        elif cmd_type == 'setposa':
+            # Set absolute position for laser motors
+            if len(parts) > 1:
+                try:
+                    positions = parts[1].split(',')
+                    if len(positions) >= 4:
+                        self._sim_laser_motors = [int(p) for p in positions[:4]]
+                    else:
+                        # If fewer positions provided, only update those specified
+                        for i, p in enumerate(positions):
+                            if p.strip():
+                                self._sim_laser_motors[i] = int(p)
+                    return ['S0:Positions set', '#CF']
+                except ValueError:
+                    return ['F0:Invalid position values', '#CF']
+            return ['F0:Missing position values', '#CF']
+            
+        elif cmd_type == 'setposb':
+            # Set absolute position for monochromator motors
+            if len(parts) > 1:
+                try:
+                    positions = parts[1].split(',')
+                    if len(positions) >= 4:
+                        self._sim_monochromator_motors = [int(p) for p in positions[:4]]
+                    else:
+                        # If fewer positions provided, only update those specified
+                        for i, p in enumerate(positions):
+                            if p.strip():
+                                self._sim_monochromator_motors[i] = int(p)
+                    return ['S0:Positions set', '#CF']
+                except ValueError:
+                    return ['F0:Invalid position values', '#CF']
+            return ['F0:Missing position values', '#CF']
+            
+        # Default response for unrecognized commands
+        return ['F0:Unknown command', '#CF']
+            
+    @simulate(function_handler=lambda self, orig_com, **kwargs: self._simulate_command_response(command_formatter(self._format_command_length(orig_com))))
     def send_command(self, orig_com):
         new_com = self._format_command_length(orig_com)
         if new_com is None:

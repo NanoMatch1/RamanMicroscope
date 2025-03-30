@@ -13,8 +13,9 @@ from os import path
 
 #加载SDK动态库
 # 32bit
-#TUSDKdll = OleDLL("./lib/x86/TUCam.dll")
+# TUSDKdll = OleDLL(path.join(path.dirname(__file__), "lib/x86/TUCam.dll"))
 # 64bit
+
 dirname = path.dirname(__file__)
 libpath = path.join(dirname, "lib", "x64", "TUCam.dll")
 TUSDKdll = OleDLL(libpath)
