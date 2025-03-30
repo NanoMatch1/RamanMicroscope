@@ -7,7 +7,7 @@ import traceback
 from controller import ArduinoUNO
 from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, Laser, simulate
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
-from tuscen.tucsen_camera_real import TucamCamera
+from tucsen.tucsen_camera_real import TucamCamera
 import re
 
 def cli(instrument):
@@ -207,7 +207,7 @@ class Interface:
 
 
 if __name__ == '__main__':
-    instrument = Interface(simulate=False, com_port='COM10', debug_skip=[
+    instrument = Interface(simulate=True, com_port='COM10', debug_skip=[
         #'camera',
         'laser', 
         'TRIAX'
