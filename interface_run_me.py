@@ -5,7 +5,15 @@ import traceback
 from controller import ArduinoUNO
 from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, Laser, simulate
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
-from tucsen.tucsen_camera_wrapper import TucamCamera
+try:
+    from tucsen.tucsen_camera_wrapper import TucamCamera
+except Exception as e:
+    print(f"Failed to import TucamCamera: {e}")
+    # Handle the case where the camera is not available
+    # You might want to set self.camera to None or a simulated version
+    from simulation import SimulatedCamera
+    print("Using simulated camera instead.")
+    TucamCamera = SimulatedCamera
 import re
 
 def cli(instrument):
@@ -45,11 +53,22 @@ class Interface:
         self.transientDir = os.path.join(self.scriptDir, 'transient')
         self.saveDir = os.path.join(self.dataDir, 'data')
 
-        self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=simulate)
-
-        self.camera = TucamCamera(self, simulate=simulate)
+        if simulate:
+            # Import simulation module only when needed
+            from simulation import SimulatedArduino, SimulatedCamera, SimulatedTriax
+            
+            # Create simulated hardware instances
+            self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+            self.camera = SimulatedCamera(self)
+            self.spectrometer = SimulatedTriax(self)
+        else:
+            # Create real hardware instances
+            self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=False)
+            self.camera = TucamCamera(self, simulate=False)
+            self.spectrometer = Triax(self, simulate=False)
+            
+        # These classes use the hardware components
         self.microscope = Microscope(self, simulate=simulate) # Microscope is a mediator
-        self.spectrometer = Triax(self, simulate=simulate)
         self.stage = StageControl(self, simulate=simulate)
         self.monochromator = Monochromator(self, simulate=simulate)
         self.laser = Laser(self, simulate=simulate)
@@ -82,32 +101,73 @@ class Interface:
             '#CF': 'end of response',
         }
 
-        # These are all serial connections. In the future, we may establish all connections through the controller board, in which case only one connection command is required.
-        if 'TRIAX' in debug_skip:
-            self.spectrometer.simulate = True
-        if 'UNO' in debug_skip:
-            self.controller.simulate = True
-        if 'laser' in debug_skip:
-            self.laser.simulate = True
-        if 'camera' in debug_skip:
-            self.camera.simulate = True
+        # Handle partial simulation via debug_skip
+        if not simulate and debug_skip:
+            from simulation import SimulatedArduino, SimulatedCamera, SimulatedTriax
+            
+            # Replace individual components with simulated versions as specified in debug_skip
+            if 'TRIAX' in debug_skip:
+                self.spectrometer = SimulatedTriax(self)
+                
+            if 'UNO' in debug_skip:
+                self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+                
+            if 'laser' in debug_skip:
+                # Laser simulation is handled by its own class with simulate flag
+                self.laser.simulate = True
+                
+            if 'camera' in debug_skip:
+                self.camera = SimulatedCamera(self)
 
+        # Initialize hardware components in the correct order
         self.spectrometer.initialise()
-        self.controller.initialise() # TODO: Create a method to search and find controller COM port
+        self.controller.initialise()
         self.laser.initialise()
         if not 'camera' in debug_skip:
-            self.camera.initialise() 
-        self.microscope.initialise() # this one must be last
+            self.camera.initialise()
+        self.microscope.initialise()  # This one must be last as it relies on others
         
         self._integrity_checker()
 
     def connect_to_triax(self):
-        self.spectrometer.simulate = False
-        self.spectrometer.initialise()
+        """Switch from simulated to real TRIAX spectrometer"""
+        if self.simulate or 'TRIAX' in self.debug_skip:
+            print("Attempting to connect to real TRIAX spectrometer...")
+            from instruments import Triax
+            try:
+                self.spectrometer = Triax(self, simulate=False)
+                self.spectrometer.initialise()
+                print("Successfully connected to real TRIAX spectrometer")
+            except Exception as e:
+                print(f"Failed to connect to real TRIAX: {e}")
+                # Fallback to simulation
+                from simulation import SimulatedTriax
+                self.spectrometer = SimulatedTriax(self)
+                self.spectrometer.initialise()
+                print("Reverted to simulated TRIAX")
+        else:
+            # Already using real hardware
+            print("Already connected to real TRIAX")
 
     def connect_to_camera(self):
-        self.camera.simulate = False
-        self.camera.initialise()
+        """Switch from simulated to real camera"""
+        if self.simulate or 'camera' in self.debug_skip:
+            print("Attempting to connect to real camera...")
+            from tucsen.tucsen_camera_wrapper import TucamCamera
+            try:
+                self.camera = TucamCamera(self, simulate=False)
+                self.camera.initialise()
+                print("Successfully connected to real camera")
+            except Exception as e:
+                print(f"Failed to connect to real camera: {e}")
+                # Fallback to simulation
+                from simulation import SimulatedCamera
+                self.camera = SimulatedCamera(self)
+                self.camera.initialise()
+                print("Reverted to simulated camera")
+        else:
+            # Already using real hardware
+            print("Already connected to real camera")
 
     def generate_help(self):
         help_dict = {}
