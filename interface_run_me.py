@@ -1,13 +1,11 @@
 # TRIAX: ~ 700 nm at 131343 steps
 import os
-import serial
-import time
 import traceback
 
 from controller import ArduinoUNO
 from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, Laser, simulate
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
-from tucsen.tucsen_camera_real import TucamCamera
+from tucsen.tucsen_camera_wrapper import TucamCamera
 import re
 
 def cli(instrument):

@@ -7,7 +7,7 @@ import os
 import json
 import ctypes
 from ctypes import *
-from tuscen.TUCam import *
+from tucsen.TUCam import *
 from enum import Enum
 import time
 import numpy as np
@@ -458,6 +458,7 @@ class Microscope(Instrument):
 
         self.camera.set_image_and_gain(imagemode, gain)
         
+    @simulate(expected_value='Microscope initialised')
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
         self.calibrations = self._generate_calibrations()
@@ -1433,7 +1434,7 @@ class TucsenCamera(Camera):
         # self.ShowAverageGray()
 
     def get_camera_info(self):
-        from tuscen.TUCam import get_camera_gain_attributes
+        from tucsen.TUCam import get_camera_gain_attributes
 
         gain = get_camera_gain_attributes(self.handle)
         print(gain)

@@ -56,9 +56,11 @@ class ArduinoUNO:
             # 'get_monochromator_positions': self._process_grating_positions,
         }
 
+
     def initialise(self):
         self.connect()
 
+    @simulate(expected_value=serial.Serial)
     def connect(self):
         self.serial = self._connect_to_UNO()
 
@@ -78,7 +80,7 @@ class ArduinoUNO:
         
         return new_command
             
-
+    @simulate(expected_value='Command sent')
     def send_command(self, orig_com):
         new_com = self._format_command_length(orig_com)
         if new_com is None:

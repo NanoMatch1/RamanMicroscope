@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 from ctypes import pointer, cast, POINTER
+from functools import wraps
 
 import traceback
 
@@ -46,6 +47,15 @@ from .TUCam import (
     
 )
 
+def simulate(expected_value=None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            if self.simulate:
+                return expected_value
+            return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 class TucamData:
 
@@ -256,6 +266,7 @@ class TucamCamera:
         self.initialise()
         print("Camera refresh complete.")
 
+    @simulate(expected_value='Simulated camera')
     def initialise(self):
         print("Initialising TUCam API...")
         # Prepare TUCAM structures
