@@ -13,6 +13,7 @@ import os
 import threading
 import ctypes
 from random import randint
+from typing import List, Tuple, Dict, Any, Optional, Union
 
 class SimulatedArduino:
     """Simulated Arduino controller for stepper motors"""
@@ -384,6 +385,190 @@ class SimulatedTriax:
         return 'o'  # Default success response
 
 
+class SimulatedInstrument:
+    """Base class for all simulated instruments"""
+    
+    def __init__(self, interface=None):
+        self.interface = interface
+        self.simulate = True
+        self.command_functions = {}
+        
+    def initialise(self):
+        """Initialize the simulated instrument"""
+        print(f"Initialized simulated {self.__class__.__name__}")
+        return f"Simulated {self.__class__.__name__} initialized"
+
+
+class SimulatedMonochromator(SimulatedInstrument):
+    """Simulated monochromator class"""
+    
+    def __init__(self, interface=None, simulate=True):
+        super().__init__(interface)
+        self.simulate = simulate
+        self.wavelength = 700.0  # nm
+        self.grating_position = 1  # Current grating position
+        
+        self.command_functions = {
+            'set_wavelength': self.set_wavelength,
+            'get_wavelength': self.get_wavelength
+        }
+    
+    def set_wavelength(self, wavelength):
+        """Set the monochromator to a specific wavelength"""
+        try:
+            self.wavelength = float(wavelength)
+            print(f"Monochromator set to {self.wavelength} nm (simulated)")
+            return f"Wavelength set to {self.wavelength} nm"
+        except Exception as e:
+            print(f"Error setting wavelength: {e}")
+            return "Error setting wavelength"
+    
+    def get_wavelength(self):
+        """Get the current wavelength of the monochromator"""
+        print(f"Current monochromator wavelength: {self.wavelength} nm (simulated)")
+        return self.wavelength
+
+
+class SimulatedLaser(SimulatedInstrument):
+    """Simulated laser class"""
+    
+    def __init__(self, interface=None, simulate=True):
+        super().__init__(interface)
+        self.simulate = simulate
+        self.power = 50.0  # Power in percent
+        self.wavelength = 785.0  # nm
+        self.is_on = False
+        
+        self.command_functions = {
+            'set_power': self.set_power,
+            'get_power': self.get_power,
+            'turn_on': self.turn_on,
+            'turn_off': self.turn_off
+        }
+    
+    def initialise(self):
+        """Initialize the laser"""
+        print("Simulated laser initialized")
+        self.is_on = False
+        self.power = 50.0
+        return "Simulated laser initialized"
+    
+    def set_power(self, power):
+        """Set the laser power"""
+        try:
+            self.power = float(power)
+            if self.power < 0:
+                self.power = 0
+            elif self.power > 100:
+                self.power = 100
+                
+            print(f"Laser power set to {self.power}% (simulated)")
+            return f"Power set to {self.power}%"
+        except Exception as e:
+            print(f"Error setting power: {e}")
+            return "Error setting power"
+    
+    def get_power(self):
+        """Get the current laser power"""
+        print(f"Current laser power: {self.power}% (simulated)")
+        return self.power
+    
+    def turn_on(self):
+        """Turn the laser on"""
+        self.is_on = True
+        print("Laser turned on (simulated)")
+        return "Laser turned on"
+    
+    def turn_off(self):
+        """Turn the laser off"""
+        self.is_on = False
+        print("Laser turned off (simulated)")
+        return "Laser turned off"
+
+
+class SimulatedStageControl(SimulatedInstrument):
+    """Simulated stage control for microscope"""
+    
+    def __init__(self, interface=None, simulate=True):
+        super().__init__(interface)
+        self.simulate = simulate
+        self.position = {"x": 0.0, "y": 0.0, "z": 0.0}  # mm
+        self.speed = 1.0  # mm/s
+        
+        self.command_functions = {
+            'move': self.move_stage,
+            'home': self.home_stage,
+            'get_position': self.get_position
+        }
+    
+    def move_stage(self, axis=None, distance=None):
+        """Move the stage by a specified distance"""
+        if axis is None or distance is None:
+            print("Missing axis or distance parameters")
+            return "Error: Missing parameters"
+            
+        try:
+            axis = axis.lower()
+            distance = float(distance)
+            
+            if axis not in self.position:
+                print(f"Unknown axis: {axis}")
+                return f"Error: Unknown axis {axis}"
+                
+            # Simulate movement time
+            time.sleep(abs(distance) / self.speed)
+            
+            self.position[axis] += distance
+            print(f"Moved {axis}-axis by {distance} mm to {self.position[axis]} mm (simulated)")
+            return f"Moved to {self.position[axis]} mm"
+        except Exception as e:
+            print(f"Movement error: {e}")
+            return f"Error: {e}"
+    
+    def home_stage(self, axis=None):
+        """Home the stage (move to origin)"""
+        if axis is None:
+            # Home all axes
+            time.sleep(sum(abs(pos) for pos in self.position.values()) / self.speed)
+            self.position = {"x": 0.0, "y": 0.0, "z": 0.0}
+            print("All axes homed (simulated)")
+            return "All axes homed"
+        else:
+            # Home specific axis
+            try:
+                axis = axis.lower()
+                if axis not in self.position:
+                    print(f"Unknown axis: {axis}")
+                    return f"Error: Unknown axis {axis}"
+                
+                time.sleep(abs(self.position[axis]) / self.speed)
+                self.position[axis] = 0.0
+                print(f"{axis}-axis homed (simulated)")
+                return f"{axis}-axis homed"
+            except Exception as e:
+                print(f"Homing error: {e}")
+                return f"Error: {e}"
+    
+    def get_position(self, axis=None):
+        """Get the current position of the stage"""
+        if axis is None:
+            # Return all positions
+            print(f"Current position: X={self.position['x']}, Y={self.position['y']}, Z={self.position['z']} mm (simulated)")
+            return self.position
+        else:
+            # Return specific axis position
+            try:
+                axis = axis.lower()
+                if axis not in self.position:
+                    print(f"Unknown axis: {axis}")
+                    return None
+                    
+                print(f"Current {axis}-axis position: {self.position[axis]} mm (simulated)")
+                return self.position[axis]
+            except Exception:
+                return None
+
+
 # Simulated hardware factories
 
 def get_simulated_hardware(interface, hardware_type, **kwargs):
@@ -391,7 +576,10 @@ def get_simulated_hardware(interface, hardware_type, **kwargs):
     hardware_classes = {
         'arduino': SimulatedArduino,
         'camera': SimulatedCamera,
-        'triax': SimulatedTriax
+        'triax': SimulatedTriax,
+        'laser': SimulatedLaser,
+        'monochromator': SimulatedMonochromator,
+        'stage': SimulatedStageControl
     }
     
     if hardware_type.lower() not in hardware_classes:
@@ -410,11 +598,17 @@ def inject_simulated_hardware(microscope_instance):
     sim_controller = SimulatedArduino(microscope_instance.interface)
     sim_camera = SimulatedCamera(microscope_instance.interface)
     sim_triax = SimulatedTriax(microscope_instance.interface)
+    sim_laser = SimulatedLaser(microscope_instance.interface)
+    sim_monochromator = SimulatedMonochromator(microscope_instance.interface)
+    sim_stage = SimulatedStageControl(microscope_instance.interface)
     
     # Replace the hardware components
     microscope_instance.controller = sim_controller
     microscope_instance.camera = sim_camera
     microscope_instance.spectrometer = sim_triax
+    microscope_instance.laser = sim_laser
+    microscope_instance.monochromator = sim_monochromator
+    microscope_instance.stage = sim_stage
     
     # Update the motion control's controller reference
     microscope_instance.motion_control.controller = sim_controller

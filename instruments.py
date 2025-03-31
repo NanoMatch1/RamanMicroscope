@@ -325,11 +325,15 @@ class Microscope(Instrument):
 
 
 
-    def __init__(self, interface, simulate=False):
+    def __init__(self, interface, calibration_service=None, controller=None, camera=None, 
+                 spectrometer=None, simulate=False):
         super().__init__()
         self.interface = interface
         self.scriptDir = interface.scriptDir
-        self.controller = interface.controller
+        self.controller = controller or interface.controller
+        self.camera = camera or interface.camera
+        self.spectrometer = spectrometer or interface.spectrometer
+        self.calibration_service = calibration_service
         self.simulate = simulate
 
         self.ldr_scan_dict = {
@@ -486,18 +490,18 @@ class Microscope(Instrument):
     @simulate(expected_value='Microscope initialised')
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
-        self.calibrations = self._generate_calibrations()
-        self.calibrations.ammend_calibrations()
-        self.calibrations.fix_subtractive_calibrations() # TODO: Remove this line once the calibration files are fixed
+        # Use the injected calibration service
+        self.calibrations = self.calibration_service
+        # Update calibrations with auto-calibration data if available
+        self.calibrations.update_calibrations()
 
-        # camera
-        self.camera = self.interface.camera
-
+        # Initialize components
         self.get_laser_motor_positions()
         self.get_monochromator_motor_positions()
         self.get_spectrometer_position()
         self.report_status(initialise=True)
-        pass
+        
+        return 'Microscope initialised'
 
     @ui_callable
     def report_status(self, initialise=False):
@@ -956,7 +960,15 @@ class Microscope(Instrument):
         response = self.controller.send_command('setposB {}'.format(positions))
     
     def _generate_calibrations(self):
-        return Calibration(self)
+        """
+        This method is maintained for backward compatibility but now returns
+        the calibration service injected during initialization.
+        """
+        if self.calibration_service is None:
+            # Fallback to the old method if no calibration service was injected
+            from calibration import Calibration
+            return Calibration(self)
+        return self.calibration_service
     
     def check_hard_limits(self, value, limits):
         '''Checks the hard limits dictionary of the microscope for the allowed range of values.'''
@@ -1728,9 +1740,10 @@ class Triax(Instrument):
         return response
 
 class StageControl(Instrument):
-    def __init__(self, interface, simulate=False):
+    def __init__(self, interface, controller=None, simulate=False):
         super().__init__()
         self.interface = interface
+        self.controller = controller or interface.stage_controller
         self.simulate = simulate
         self.command_functions = {
             'move': self.move_stage,
@@ -1738,6 +1751,11 @@ class StageControl(Instrument):
         }
 
         self._integrity_checker()
+        
+    def initialise(self):
+        """Initialize the stage controller"""
+        print("Stage controller initialized")
+        return "Stage controller initialized"
 
     def __str__(self):
         return "Stage Control"
@@ -1759,9 +1777,11 @@ class StageControl(Instrument):
 
 
 class Monochromator(Instrument):
-    def __init__(self, interface, simulate=False):
+    def __init__(self, interface, controller=None, calibration_service=None, simulate=False):
         super().__init__()
         self.interface = interface
+        self.controller = controller or interface.monochromator_controller
+        self.calibration_service = calibration_service or interface.calibration_service
         self.simulate = simulate
         self.command_functions = {
             'set_wavelength': self.set_wavelength,
@@ -1769,6 +1789,11 @@ class Monochromator(Instrument):
         }
 
         self._integrity_checker()
+        
+    def initialise(self):
+        """Initialize the monochromator"""
+        print("Monochromator initialized")
+        return "Monochromator initialized"
 
     def __str__(self):
         return "Monochromator"
@@ -1788,16 +1813,43 @@ class Monochromator(Instrument):
         print("Getting the monochromator wavelength.")
 
 class Laser(Instrument):
-    def __init__(self, interface, simulate=False):
+    def __init__(self, interface, controller=None, calibration_service=None, simulate=False):
         super().__init__()
         self.interface = interface
+        self.controller = controller or interface.laser_controller
+        self.calibration_service = calibration_service or interface.calibration_service
         self.simulate = simulate
         self.command_functions = {
             'set_power': self.set_power,
-            'get_power': self.get_power
+            'get_power': self.get_power,
+            'turn_on': self.turn_on,
+            'turn_off': self.turn_off
         }
 
         self._integrity_checker()
+        
+    def initialise(self):
+        """Initialize the laser"""
+        if hasattr(self.controller, 'initialise'):
+            self.controller.initialise()
+        print("Laser initialized")
+        return "Laser initialized"
+        
+    @ui_callable
+    def turn_on(self):
+        """Turn the laser on"""
+        if hasattr(self.controller, 'turn_on'):
+            return self.controller.turn_on()
+        print("Turning laser on")
+        return "Laser turned on"
+        
+    @ui_callable
+    def turn_off(self):
+        """Turn the laser off"""
+        if hasattr(self.controller, 'turn_off'):
+            return self.controller.turn_off()
+        print("Turning laser off")
+        return "Laser turned off"
 
     def __str__(self):
         return "Laser"

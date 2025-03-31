@@ -52,32 +52,73 @@ class Interface:
         self.dataDir = os.path.join(self.scriptDir, 'data')
         self.transientDir = os.path.join(self.scriptDir, 'transient')
         self.saveDir = os.path.join(self.dataDir, 'data')
+        
+        # Create directories first
+        self._build_directories()
+        
+        # Initialize the calibration service
+        from calibration_service import CalibrationService
+        self.calibration_service = CalibrationService(self.scriptDir)
 
         if simulate:
             # Import simulation module only when needed
-            from simulation import SimulatedArduino, SimulatedCamera, SimulatedTriax
+            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
+                                  SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
             
             # Create simulated hardware instances
             self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
             self.camera = SimulatedCamera(self)
             self.spectrometer = SimulatedTriax(self)
+            self.laser_controller = SimulatedLaser(self)
+            self.monochromator_controller = SimulatedMonochromator(self)
+            self.stage_controller = SimulatedStageControl(self)
         else:
             # Create real hardware instances
             self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=False)
             self.camera = TucamCamera(self, simulate=False)
             self.spectrometer = Triax(self, simulate=False)
+            # For now, we'll use the simulated versions for the new controllers
+            # in production these would be real hardware controllers
+            from simulation import SimulatedLaser, SimulatedMonochromator, SimulatedStageControl
+            self.laser_controller = SimulatedLaser(self, simulate=False)
+            self.monochromator_controller = SimulatedMonochromator(self, simulate=False)
+            self.stage_controller = SimulatedStageControl(self, simulate=False)
             
-        # These classes use the hardware components
-        self.microscope = Microscope(self, simulate=simulate) # Microscope is a mediator
-        self.stage = StageControl(self, simulate=simulate)
-        self.monochromator = Monochromator(self, simulate=simulate)
-        self.laser = Laser(self, simulate=simulate)
+        # Create instrument wrapper classes with dependency injection
+        # Microscope is a mediator that coordinates the other instruments
+        self.microscope = Microscope(
+            interface=self, 
+            calibration_service=self.calibration_service,
+            controller=self.controller,
+            camera=self.camera,
+            spectrometer=self.spectrometer,
+            simulate=simulate
+        )
+        
+        # These instrument classes provide a domain-specific interface to the hardware
+        self.stage = StageControl(
+            interface=self,
+            controller=self.stage_controller,
+            simulate=simulate
+        )
+        
+        self.monochromator = Monochromator(
+            interface=self,
+            controller=self.monochromator_controller,
+            calibration_service=self.calibration_service,
+            simulate=simulate
+        )
+        
+        self.laser = Laser(
+            interface=self,
+            controller=self.laser_controller,
+            calibration_service=self.calibration_service,
+            simulate=simulate
+        )
 
         self.command_map = self._generate_command_map()
 
-        self._build_directories()
-
-
+        # Scientific attributes
         self.grating_steps = None
         self.grating_wavelength = None
         self.laser_steps = None
@@ -103,7 +144,8 @@ class Interface:
 
         # Handle partial simulation via debug_skip
         if not simulate and debug_skip:
-            from simulation import SimulatedArduino, SimulatedCamera, SimulatedTriax
+            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
+                                  SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
             
             # Replace individual components with simulated versions as specified in debug_skip
             if 'TRIAX' in debug_skip:
@@ -113,7 +155,8 @@ class Interface:
                 self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
                 
             if 'laser' in debug_skip:
-                # Laser simulation is handled by its own class with simulate flag
+                self.laser_controller = SimulatedLaser(self)
+                self.laser.controller = self.laser_controller
                 self.laser.simulate = True
                 
             if 'camera' in debug_skip:
@@ -122,10 +165,18 @@ class Interface:
         # Initialize hardware components in the correct order
         self.spectrometer.initialise()
         self.controller.initialise()
-        self.laser.initialise()
+        self.laser_controller.initialise()
+        self.monochromator_controller.initialise()
+        self.stage_controller.initialise()
+        
         if not 'camera' in debug_skip:
             self.camera.initialise()
+            
+        # Initialize the high-level instrument classes
         self.microscope.initialise()  # This one must be last as it relies on others
+        self.stage.initialise()
+        self.monochromator.initialise()
+        self.laser.initialise()
         
         self._integrity_checker()
 
