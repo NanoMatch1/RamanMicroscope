@@ -137,6 +137,8 @@ class MotionControl:
     '''
     Handles the motion control of the microscope. Needs access to the controller to move the motors.
     Updated to work with the Arduino MEGA controller that supports multiple motor modules.
+    This class is responsible for the mechanics of motor movement, while the action groups
+    and functional understanding is defined at the Microscope level.
     '''
     def __init__(self, controller):
         self.controller = controller
@@ -166,28 +168,30 @@ class MotionControl:
         except (IndexError, AttributeError):
             return 'F0'  # Return failure code if message parsing fails
 
-    def wait_for_motors(self, delay=0.1):
+    def wait_for_motors(self, delay=0.1, module_ids=None):
         '''
-        Waits for the motors to finish moving by polling the modules 
-        until they are no longer running.
+        Waits for the motors to finish moving by polling the modules until they are no longer running.
+        
+        Args:
+            delay: Time to wait between checks (seconds)
+            module_ids: Optional list of module numbers to check (e.g., ['1', '2'])
+                       If None, checks all modules
         '''
         count = 0
-        # Create a dictionary of running status for all defined modules
-        running_modules = {module: True for module in self.module_mapping.values()}
+        
+        # If no specific modules provided, check all modules
+        if not module_ids:
+            module_ids = list(self.module_mapping.values())
+        
+        # Create a dictionary of running status for the specified modules
+        running_modules = {module: True for module in module_ids}
         
         # Poll until all modules stop running
         while any(running_modules.values()):
-            for old_module, module_num in self.module_mapping.items():
+            for module_num in running_modules:
                 if running_modules[module_num]:
                     # Check if the module is still running
-                    if old_module == 'A':
-                        response = self.controller.send_command('aisrun')
-                    elif old_module == 'B':
-                        response = self.controller.send_command('bisrun')
-                    else:
-                        # For future expansion: generic module running check
-                        response = self.controller.send_command(f"check_module_running {module_num}")
-                    
+                    response = self.controller.send_command(f"check_module_running {module_num}")
                     status = self.extract_coms_flag(response)
                     
                     if status == 'S0':
@@ -195,12 +199,12 @@ class MotionControl:
                     else:
                         # If any module is still running, we need to wait
                         time.sleep(delay)
-                        # We'll continue with the next check immediately
-                        break
-            
-            # Debug output
-            if count > 0 and count % 10 == 0:  # Log every 10 iterations
-                print(f"Still waiting for modules: {[k for k,v in running_modules.items() if v]}")
+                        break  # Continue with the next check immediately
+                
+            # Debug output (every 10 iterations)
+            if count > 0 and count % 10 == 0:
+                still_running = [k for k, v in running_modules.items() if v]
+                print(f"Still waiting for modules: {still_running}")
                 
             count += 1
 
@@ -243,6 +247,60 @@ class MotionControl:
         self.move_motors(correct_forward, motors)
         return
 
+    def move_motors_by_action(self, motor_steps_dict, action_name="motor_action", backlash=True):
+        '''
+        Move motors by the specified steps using a dictionary-based approach.
+        
+        Args:
+            motor_steps_dict: Dictionary mapping motor names to step values (e.g., {'l1': 1000, 'l2': -500})
+            action_name: A name for this action (for logging purposes)
+            backlash: Whether to perform backlash correction
+        '''
+        # Log the action
+        print(f"Moving motors for action '{action_name}': {motor_steps_dict}")
+        
+        # Filter out motors with zero steps to avoid unnecessary commands
+        active_motors = {motor: steps for motor, steps in motor_steps_dict.items() if steps != 0}
+        
+        if not active_motors:
+            print(f"No motion needed for action '{action_name}'")
+            return []
+        
+        all_responses = []
+        
+        # Process each motor individually
+        for motor_name, steps in active_motors.items():
+            response = self.controller.send_command(f"{motor_name} {steps}")
+            all_responses.extend(response if isinstance(response, list) else [response])
+        
+        # Wait for all motors to complete their movements
+        self.wait_for_motors()
+        
+        # Handle backlash correction if needed
+        if backlash:
+            # Define backlash correction amount for each motor
+            backlash_amount = -20  # Backlash correction amount (negative to move backward)
+            
+            # Move back for backlash correction
+            backlash_responses = []
+            for motor_name in active_motors:
+                response = self.controller.send_command(f"{motor_name} {backlash_amount}")
+                backlash_responses.extend(response if isinstance(response, list) else [response])
+            
+            self.wait_for_motors()
+            
+            # Move forward to complete backlash correction
+            for motor_name in active_motors:
+                response = self.controller.send_command(f"{motor_name} {abs(backlash_amount)}")
+                backlash_responses.extend(response if isinstance(response, list) else [response])
+            
+            self.wait_for_motors()
+            
+            # Add backlash correction responses to all responses
+            all_responses.extend(backlash_responses)
+        
+        return all_responses
+    
     def move_motors(self, steps: tuple, motors: str, backlash=True):
         '''
         Move the motors by the specified relative steps.
@@ -417,6 +475,22 @@ class Microscope(Instrument):
             'monochromator_wavelength': [500, 1300],
         }
 
+        # Define motor action groups - which motors are involved in specific functional actions
+        self.motor_action_groups = {
+            'laser_wavelength': {
+                'motors': ['l1', 'l2', 'l3'],
+                'description': 'Laser wavelength adjustment motors'
+            },
+            'monochromator_wavelength': {
+                'motors': ['g1', 'g2', 'g3', 'g4'],
+                'description': 'Monochromator wavelength adjustment motors'
+            },
+            'polarization': {
+                'motors': ['p1', 'p2'],
+                'description': 'Polarization control motors'
+            },
+        }
+
         # acquisition parameters
         self.acquisition_parameters = AcquitisionParameters()
 
@@ -437,13 +511,11 @@ class Microscope(Instrument):
             'camera': self.connect_to_camera,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
             'report': self.report_status,
-            'writemotora': self.set_absolute_positions_A,
-            'writemotorb': self.set_absolute_positions_B,
             'rldr': self.read_ldr0,
             'calibrate': self.run_calibration,
             # motor commands
-            'apos': self.get_laser_motor_positions,
-            'bpos': self.get_monochromator_motor_positions,
+            'lpos': self.get_laser_motor_positions,
+            'gpos': self.get_monochromator_motor_positions,
             'slsteps': self.go_to_laser_steps,
             'smsteps': self.go_to_monochromator_steps,
             'recmot': self.record_motors,
@@ -934,10 +1006,11 @@ class Microscope(Instrument):
         g1_target = round(self.calibration_service.wl_to_g1(true_wavelength_grating))
         g2_target = round(self.calibration_service.wl_to_g2(true_wavelength_grating))
 
-        #  #378617
-
-        self.set_absolute_positions_A(f'{l1_target},{l2_target},0,0')
-        self.set_absolute_positions_B(f'{g1_target},{g2_target},0,0')
+        # Use action-based methods for setting positions
+        # These methods will handle communication with the controller using
+        # the proper action group commands
+        self.set_laser_wavelength_positions(f'{l1_target},{l2_target}')
+        self.set_monochromator_wavelength_positions(f'{g1_target},{g2_target}')
 
         laser_pos = self.get_laser_motor_positions()
         grating_pos = self.get_monochromator_motor_positions()
@@ -1004,15 +1077,19 @@ class Microscope(Instrument):
     #         print('Calibration shift failed')
     #         print('New Positions:\n Laser: {}\n Grating: {}'.format(new_laser_wavelength, new_grating_wavelength))
 
-    @ui_callable
-    def set_absolute_positions_A(self, positions):
-        print("Setting absolute positions A: {}".format(positions))
-        response = self.controller.send_command('setposA {}'.format(positions))
+
+    def set_laser_wavelength_positions(self, positions):
+        """Set positions for motors involved in laser wavelength adjustment"""
+        print("Setting laser wavelength positions: {}".format(positions))
+        response = self.controller.send_command('set_laser_wavelength {}'.format(positions))
+        return response
     
-    @ui_callable
-    def set_absolute_positions_B(self, positions):
-        print("Setting absolute positions B: {}".format(positions))
-        response = self.controller.send_command('setposB {}'.format(positions))
+
+    def set_monochromator_wavelength_positions(self, positions):
+        """Set positions for motors involved in monochromator wavelength adjustment"""
+        print("Setting monochromator wavelength positions: {}".format(positions))
+        response = self.controller.send_command('set_monochromator_wavelength {}'.format(positions))
+        return response
     
     def _generate_calibrations(self):
         """
@@ -1067,10 +1144,27 @@ class Microscope(Instrument):
         return move_steps, target_steps
     
     def move_laser_motors(self, move_steps, backlash=True):
-        '''Moves the laser motors the specified number of steps.'''
-        self.motion_control.move_motors(move_steps, 'A')
-        if backlash is True:
-            self.motion_control.backlash_correction(move_steps, 'A')
+        '''
+        Moves the laser motors the specified number of steps.
+        Uses motors specified in self.motor_action_groups['laser_wavelength']['motors']
+        which are l1, l2, l3.
+        '''
+        # Create a dictionary mapping motor names to step values
+        action_motors = self.motor_action_groups['laser_wavelength']['motors']
+        
+        # Ensure move_steps is the right length (pad with zeros if needed)
+        while len(move_steps) < len(action_motors):
+            move_steps = list(move_steps) + [0]
+            
+        # Create motor_steps_dict from the action group and move_steps
+        motor_steps_dict = {motor: step for motor, step in zip(action_motors, move_steps)}
+        
+        # Use the dictionary-based approach for motor movement
+        self.motion_control.move_motors_by_action(
+            motor_steps_dict, 
+            action_name='laser_wavelength', 
+            backlash=backlash
+        )
 
     
     @ui_callable
@@ -1141,9 +1235,27 @@ class Microscope(Instrument):
         return move_steps, target_steps
 
     def move_monochromator_motors(self, move_steps, backlash=True):
-        self.motion_control.move_motors(move_steps, 'B')
-        if backlash is True:
-            self.motion_control.backlash_correction(move_steps, 'B')
+        '''
+        Moves the monochromator motors the specified number of steps.
+        Uses motors specified in self.motor_action_groups['monochromator_wavelength']['motors']
+        which are g1, g2, g3, g4.
+        '''
+        # Create a dictionary mapping motor names to step values
+        action_motors = self.motor_action_groups['monochromator_wavelength']['motors']
+        
+        # Ensure move_steps is the right length (pad with zeros if needed)
+        while len(move_steps) < len(action_motors):
+            move_steps = list(move_steps) + [0]
+            
+        # Create motor_steps_dict from the action group and move_steps
+        motor_steps_dict = {motor: step for motor, step in zip(action_motors, move_steps)}
+        
+        # Use the dictionary-based approach for motor movement
+        self.motion_control.move_motors_by_action(
+            motor_steps_dict, 
+            action_name='monochromator_wavelength', 
+            backlash=backlash
+        )
 
     def calculate_monochromator_wavelength(self, current_pos=None):
         if current_pos is None:

@@ -8,6 +8,10 @@ def command_formatter(command):
 
     hardware_command = ['gsh', 'ld0']
 
+    # If command is a list, we can't process it here
+    if isinstance(command, list):
+        return command
+        
     if command.split(' ')[0] in hardware_command:
         return 'm{}m'.format(command)
     else:
@@ -26,9 +30,8 @@ class ArduinoController:
         self.baud = baud
         self.report = report
 
-        # Motor mapping configuration - PLACEHOLDER_MOTOR_MAP
-        # This maps the old motor designations (A/B, and individual motor functions) to the new module-motor system
-        # Format: {old_designation: [module_number, motor_letter]}
+        # Motor mapping configuration for individual motors
+        # Format: {motor_name: [module_number, motor_letter]}
         self.motor_map = {
             # Laser motors (previously module A)
             'l1': ['1', 'X'],  # Module 1, motor X
@@ -46,6 +49,24 @@ class ArduinoController:
             # 'stage_x': ['3', 'X'],  # Example: Module 3, motor X for stage X axis
             # 'stage_y': ['3', 'Y'],  # Example: Module 3, motor Y for stage Y axis
             # 'stage_z': ['3', 'Z'],  # Example: Module 3, motor Z for stage Z axis
+        }
+        
+        # Functional action groups - which motors are involved in each action
+        # Format: {action_name: {'motors': [motor_names], 'description': 'action description'}}
+        self.action_groups = {
+            'laser_wavelength': {
+                'motors': ['l1', 'l2', 'l3'],
+                'description': 'Set laser wavelength'
+            },
+            'monochromator_wavelength': {
+                'motors': ['g1', 'g2', 'g3', 'g4'],
+                'description': 'Set both monochromator wavelengths'
+            },
+            # Additional action groups can be added here
+            # 'polarization_in': {
+            #     'motors': ['l3', 'g3'],  # These motors might be on different modules
+            #     'description': 'Set input polarization'
+            # },
         }
 
         # Command mapping
@@ -66,11 +87,19 @@ class ArduinoController:
             'g3': self._map_motor_command,
             'g4': self._map_motor_command,
             
-            # Set position commands - handle differently now
+            # Action-based position commands
+            'set_laser_wavelength': self._set_laser_wavelength_command,
+            'set_monochromator_wavelength': self._set_monochromator_wavelength_command,
+            
+            # Legacy set position commands - for backward compatibility
             'setposa': self._set_laser_positions_command,
             'setposb': self._set_monochromator_positions_command,
             
-            # Running status commands - need to check all relevant motors
+            # Running status commands - check all motors in an action group
+            'laser_wavelength_is_running': self._check_laser_wavelength_motors_running,
+            'monochromator_wavelength_is_running': self._check_monochromator_wavelength_motors_running,
+            
+            # Legacy running status commands - for backward compatibility
             'aisrun': self._check_laser_motors_running,
             'bisrun': self._check_monochromator_motors_running,
             
@@ -78,7 +107,7 @@ class ArduinoController:
             'ld0': 'ld0',
             'gsh': 'gsh',
             
-            # New mode commands
+            # Mode commands
             'ramanmode': 'ramanmode',
             'imagemode': 'imagemode',
         }
@@ -180,6 +209,84 @@ class ArduinoController:
         """Check if any of the monochromator motors are running"""
         # Check if motors in module 2 are running
         return "check_module_running 2"
+        
+    def _set_laser_wavelength_command(self, command_parts):
+        """Action-based command handler for setting laser wavelength motors"""
+        if len(command_parts) < 2:
+            return None
+            
+        positions = command_parts[1].split(',')
+        if len(positions) < 2:
+            return None
+            
+        # Get the motors involved in laser wavelength action
+        action_motors = self.action_groups['laser_wavelength']['motors']
+        if len(action_motors) != len(positions):
+            # Fill with zeros if needed
+            positions.extend(['0'] * (len(action_motors) - len(positions)))
+            
+        # Create commands for each motor in the action group
+        commands = []
+        for i, motor_name in enumerate(action_motors):
+            if positions[i].strip():  # Only process non-empty positions
+                module, motor = self.motor_map[motor_name]
+                commands.append(f"set_absolute_position {module}{motor} {positions[i]}")
+                
+        return commands
+    
+    def _set_monochromator_wavelength_command(self, command_parts):
+        """Action-based command handler for setting monochromator wavelength motors"""
+        if len(command_parts) < 2:
+            return None
+            
+        positions = command_parts[1].split(',')
+        if len(positions) < 2:
+            return None
+            
+        # Get the motors involved in monochromator wavelength action
+        action_motors = self.action_groups['monochromator_wavelength']['motors']
+        if len(action_motors) != len(positions):
+            # Fill with zeros if needed
+            positions.extend(['0'] * (len(action_motors) - len(positions)))
+            
+        # Create commands for each motor in the action group
+        commands = []
+        for i, motor_name in enumerate(action_motors):
+            if positions[i].strip():  # Only process non-empty positions
+                module, motor = self.motor_map[motor_name]
+                commands.append(f"set_absolute_position {module}{motor} {positions[i]}")
+                
+        return commands
+        
+    def _check_laser_wavelength_motors_running(self, command_parts):
+        """Check if any motors in the laser wavelength action group are running"""
+        # Get all modules involved in this action group
+        modules = set()
+        for motor_name in self.action_groups['laser_wavelength']['motors']:
+            module = self.motor_map[motor_name][0]
+            modules.add(module)
+            
+        # Create commands to check each module
+        commands = []
+        for module in modules:
+            commands.append(f"check_module_running {module}")
+            
+        return commands
+        
+    def _check_monochromator_wavelength_motors_running(self, command_parts):
+        """Check if any motors in the monochromator wavelength action group are running"""
+        # Get all modules involved in this action group
+        modules = set()
+        for motor_name in self.action_groups['monochromator_wavelength']['motors']:
+            module = self.motor_map[motor_name][0]
+            modules.add(module)
+            
+        # Create commands to check each module
+        commands = []
+        for module in modules:
+            commands.append(f"check_module_running {module}")
+            
+        return commands
 
     def initialise(self):
         self.connect()
@@ -221,6 +328,17 @@ class ArduinoController:
     
     def _simulate_command_response(self, command):
         """Generate appropriate simulated responses for different commands"""
+        # Handle list of commands
+        if isinstance(command, list):
+            all_responses = []
+            for cmd in command:
+                all_responses.extend(self._simulate_command_response(cmd))
+            return all_responses
+            
+        # Handle string commands
+        if not isinstance(command, str):
+            return ['F0:Invalid command format', '#CF']
+            
         if command.startswith('o'):
             cmd = command[1:-1]  # Strip the 'o' and 'o' markers
         elif command.startswith('m'):
@@ -304,7 +422,7 @@ class ArduinoController:
         # Default response for unrecognized commands
         return ['F0:Unknown command', '#CF']
             
-    @simulate(function_handler=lambda self, orig_com, **kwargs: self._simulate_command_response(command_formatter(self._format_command(orig_com))))
+    @simulate(function_handler=lambda self, orig_com, **kwargs: self._simulate_command_response(self._format_command(orig_com)))
     def send_command(self, orig_com):
         """
         Send a command to the Arduino MEGA.
@@ -318,9 +436,15 @@ class ArduinoController:
         if isinstance(formatted_command, list):
             all_responses = []
             for cmd in formatted_command:
+                if cmd is None:
+                    continue
+                    
+                # Handle command formatter appropriately (it now returns the list as-is)
                 wrapped_cmd = command_formatter(cmd)
+                
                 if self.report:
                     print(f'>MEGA:{wrapped_cmd}')
+                    
                 self._send_command_to_arduino(wrapped_cmd)
                 response = self._read_from_serial_until()
                 all_responses.extend(response)
