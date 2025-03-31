@@ -4,6 +4,7 @@ import traceback
 
 from controller import ArduinoUNO
 from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, Laser, simulate
+from calibration import Calibration
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
     from tucsen.tucsen_camera_wrapper import TucamCamera
@@ -55,10 +56,7 @@ class Interface:
         
         # Create directories first
         self._build_directories()
-        
-        # Initialize the calibration service
-        from calibration_service import CalibrationService
-        self.calibration_service = CalibrationService(self.scriptDir)
+
 
         if simulate:
             # Import simulation module only when needed
