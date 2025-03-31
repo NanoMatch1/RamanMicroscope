@@ -134,7 +134,10 @@ class AcquitisionParameters:
 
 
 class MotionControl:
-    '''Handles the motion control of the microscope. Needs access to the controller to move the motors.'''
+    '''
+    Handles the motion control of the microscope. Needs access to the controller to move the motors.
+    Updated to work with the Arduino MEGA controller that supports multiple motor modules.
+    '''
     def __init__(self, controller):
         self.controller = controller
         self._monochromator_steps = None
@@ -144,55 +147,83 @@ class MotionControl:
         self._laser_wavelength = None
         self._monochromator_wavelength = None
         self._spectrometer_wavelength = None
+        
+        # Define motor module mapping - PLACEHOLDER_MODULE_MAPPING
+        # This maps the old motor module designations to the new module numbers
+        self.module_mapping = {
+            'A': '1',  # Laser motors are now in module 1
+            'B': '2',  # Monochromator motors are now in module 2
+            # Additional modules can be added here
+            # 'C': '3',  # Example: Stage motors could be in module 3
+        }
 
     def extract_coms_flag(self, message):
-        return message[0].split(':')[1].strip(' ')
+        """Extract status flags from controller response messages"""
+        try:
+            if ':' in message[0]:
+                return message[0].split(':')[0].strip()
+            return message[0].strip()
+        except (IndexError, AttributeError):
+            return 'F0'  # Return failure code if message parsing fails
 
     def wait_for_motors(self, delay=0.1):
-        '''Waits for the motors to finish moving by polling the motors until they are no longer running.'''
+        '''
+        Waits for the motors to finish moving by polling the modules 
+        until they are no longer running.
+        '''
         count = 0
-        running_A = True
-        running_B = True
-        while running_A is True or running_B is True:
-
-            if running_A is True:
-                response = self.controller.send_command('Aisrun')
-                res1 = self.extract_coms_flag(response)
-
-                if res1 == 'S0':
-                    running_A = False
-                else:
-                    time.sleep(delay)
-                    continue
-
-            if running_B is True:
-                response = self.controller.send_command('Bisrun')
-                res2 = self.extract_coms_flag(response)
-                if res2 == 'S0':
-                    running_B = False
-                else:
-                    time.sleep(delay)
-                    continue
-                
-            if count > 0:
-                print("Loop broke")
+        # Create a dictionary of running status for all defined modules
+        running_modules = {module: True for module in self.module_mapping.values()}
+        
+        # Poll until all modules stop running
+        while any(running_modules.values()):
+            for old_module, module_num in self.module_mapping.items():
+                if running_modules[module_num]:
+                    # Check if the module is still running
+                    if old_module == 'A':
+                        response = self.controller.send_command('aisrun')
+                    elif old_module == 'B':
+                        response = self.controller.send_command('bisrun')
+                    else:
+                        # For future expansion: generic module running check
+                        response = self.controller.send_command(f"check_module_running {module_num}")
+                    
+                    status = self.extract_coms_flag(response)
+                    
+                    if status == 'S0':
+                        running_modules[module_num] = False
+                    else:
+                        # If any module is still running, we need to wait
+                        time.sleep(delay)
+                        # We'll continue with the next check immediately
+                        break
+            
+            # Debug output
+            if count > 0 and count % 10 == 0:  # Log every 10 iterations
+                print(f"Still waiting for modules: {[k for k,v in running_modules.items() if v]}")
                 
             count += 1
 
+        print("All motors finished moving")
         return 'S0'
-    
 
-
-    def confirm_motor_positions(self, targets, motors):
+    def confirm_motor_positions(self, targets, modules):
+        """
+        Confirms that motors have reached their target positions.
+        
+        Args:
+            targets: List of target positions [X, Y, Z, A]
+            modules: Module identifier ('A' for laser, 'B' for monochromator)
+        """
         motor_dict = {
             'A': self.get_laser_motor_positions,
             'B': self.get_monochromator_motor_positions,
-            # Add more motors here as needed
+            # Additional modules can be added here
         }
 
-        get_positions = motor_dict.get(motors)
+        get_positions = motor_dict.get(modules)
         if get_positions is None:
-            raise ValueError(f"Unexpected motor identifier: {motors}")
+            raise ValueError(f"Unexpected motor identifier: {modules}")
 
         positions = get_positions()
         if positions[0] == targets[0] and positions[1] == targets[1] and positions[2] == targets[2] and positions[3] == targets[3]:
@@ -213,13 +244,35 @@ class MotionControl:
         return
 
     def move_motors(self, steps: tuple, motors: str, backlash=True):
-        '''Move the motors to the specified positions. #TODO: modify firmware to accept all motor positions in one command.'''
-        motion_command = '{}X{}Y{}Z{}A{}'.format(motors, steps[0], steps[1], steps[2], steps[3])
-
-        response = self.controller.send_command('{}'.format(motion_command))
+        '''
+        Move the motors by the specified relative steps.
+        
+        Args:
+            steps: Tuple of step values (X, Y, Z, A)
+            motors: Module identifier ('A' for laser, 'B' for monochromator)
+            backlash: Whether to perform backlash correction
+        '''
+        # Map old module designations (A/B) to new module numbers (1/2)
+        module_num = self.module_mapping.get(motors)
+        if not module_num:
+            raise ValueError(f"Unknown motor module: {motors}")
+        
+        # Send movement commands for each non-zero step value
+        responses = []
+        motor_letters = ['X', 'Y', 'Z', 'A']
+        
+        for i, step_value in enumerate(steps):
+            if step_value != 0:  # Only move motors with non-zero steps
+                motor = motor_letters[i]
+                # Format according to Arduino MEGA expectation: <module><motor><steps>
+                command = f"{module_num}{motor}{step_value}"
+                response = self.controller.send_command(command)
+                responses.append(response)
+        
+        # Wait for all motors to complete their movements
         self.wait_for_motors()
-
-        return response
+        
+        return responses
 
     @ui_callable
     def get_laser_motor_positions(self, *args):
@@ -490,10 +543,12 @@ class Microscope(Instrument):
     @simulate(expected_value='Microscope initialised')
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
-        # Use the injected calibration service
-        self.calibrations = self.calibration_service
+        # Ensure the calibration service is available
+        if self.calibration_service is None:
+            self._generate_calibrations()
+            
         # Update calibrations with auto-calibration data if available
-        self.calibrations.update_calibrations()
+        self.calibration_service.update_calibrations()
 
         # Initialize components
         self.get_laser_motor_positions()
@@ -863,7 +918,7 @@ class Microscope(Instrument):
             
         if steps is None:
             steps = self.get_spectrometer_position()
-        true_wavelength_laser = self.calibrations.triax_steps_to_wl(float(steps))
+        true_wavelength_laser = self.calibration_service.triax_steps_to_wl(float(steps))
         print('True wavelength: {}. Shifting motor positions to true wavelength'.format(true_wavelength_laser))
         
         if shift is True:
@@ -874,10 +929,10 @@ class Microscope(Instrument):
             true_wavelength_grating = true_wavelength_laser
 
 
-        l1_target = round(self.calibrations.wl_to_l1(true_wavelength_laser))
-        l2_target = round(self.calibrations.wl_to_l2(true_wavelength_laser))
-        g1_target = round(self.calibrations.wl_to_g1(true_wavelength_grating))
-        g2_target = round(self.calibrations.wl_to_g2(true_wavelength_grating))
+        l1_target = round(self.calibration_service.wl_to_l1(true_wavelength_laser))
+        l2_target = round(self.calibration_service.wl_to_l2(true_wavelength_laser))
+        g1_target = round(self.calibration_service.wl_to_g1(true_wavelength_grating))
+        g2_target = round(self.calibration_service.wl_to_g2(true_wavelength_grating))
 
         #  #378617
 
@@ -902,10 +957,10 @@ class Microscope(Instrument):
             print('Actual: {}, {}'.format(grating_pos[0], grating_pos[1]))
 
     def wavenumber_to_wavelength(self, wavenumber):
-        return 10_000_000/wavenumber
+        return self.calibration_service.wavenumber_to_wavelength(wavenumber)
     
     def wavelength_to_wavenumber(self, wavelength):
-        return 10_000_000/wavelength
+        return self.calibration_service.wavelength_to_wavenumber(wavelength)
     
     # @ui_callable
     # def simple_calibration_shift(self, raman_shift=None):
@@ -963,11 +1018,14 @@ class Microscope(Instrument):
         """
         This method is maintained for backward compatibility but now returns
         the calibration service injected during initialization.
+        
+        IMPORTANT: All code should be using self.calibration_service directly
+        instead of calling this method.
         """
         if self.calibration_service is None:
             # Fallback to the old method if no calibration service was injected
             from calibration import Calibration
-            return Calibration(self)
+            self.calibration_service = Calibration(self)
         return self.calibration_service
     
     def check_hard_limits(self, value, limits):
@@ -996,8 +1054,8 @@ class Microscope(Instrument):
         current_pos = self.get_laser_motor_positions()
         target_steps = [i for i in self.laser_steps]
 
-        target_steps[0] = round(self.calibrations.wl_to_l1(target_wavelength))
-        target_steps[1] = round(self.calibrations.wl_to_l2(target_wavelength))
+        target_steps[0] = round(self.calibration_service.wl_to_l1(target_wavelength))
+        target_steps[1] = round(self.calibration_service.wl_to_l2(target_wavelength))
 
         # implement new logic for other motors here
         print('Current laser position: {}'.format(current_pos))
@@ -1069,8 +1127,8 @@ class Microscope(Instrument):
         current_pos = self.get_monochromator_motor_positions()
         target_steps = [i for i in self.monochromator_steps]
 
-        target_steps[0] = round(self.calibrations.wl_to_g1(target_wavelength))
-        target_steps[1] = round(self.calibrations.wl_to_g2(target_wavelength))
+        target_steps[0] = round(self.calibration_service.wl_to_g1(target_wavelength))
+        target_steps[1] = round(self.calibration_service.wl_to_g2(target_wavelength))
 
         print('Current monochromator position: {}'.format(current_pos))
         print('Target monochromator position: {}'.format(target_steps))
@@ -1093,8 +1151,8 @@ class Microscope(Instrument):
 
         self.monochromator_steps = current_pos
         g1_pos, g2_pos = current_pos[0], current_pos[1]
-        g1_wavelength = round(self.calibrations.g1_to_wl(g1_pos), 4)
-        g2_wavelength = round(self.calibrations.g2_to_wl(g2_pos), 4)
+        g1_wavelength = round(self.calibration_service.g1_to_wl(g1_pos), 4)
+        g2_wavelength = round(self.calibration_service.g2_to_wl(g2_pos), 4)
 
         self.monochromator_wavelength[0] = g1_wavelength
         self.monochromator_wavelength[1] = g2_wavelength
@@ -1155,7 +1213,7 @@ class Microscope(Instrument):
         if steps is None:
             steps = self.interface.spectrometer.get_spectrometer_position()
 
-        self.spectrometer_wavelength = self.calibrations.triax_steps_to_wl(self.spectrometer_position) # TODO: rename triax_steps_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
+        self.spectrometer_wavelength = self.calibration_service.triax_steps_to_wl(self.spectrometer_position) # TODO: rename triax_steps_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
         return self.spectrometer_wavelength
     
     def report_all_current_positions(self):
@@ -1185,8 +1243,8 @@ class Microscope(Instrument):
         self.laser_steps = current_pos
         l1_pos = current_pos[0]
         l2_pos = current_pos[1]
-        l1_wavelength = round(self.calibrations.l1_to_wl(l1_pos), 4)
-        l2_wavelength = round(self.calibrations.l2_to_wl(l2_pos), 4)
+        l1_wavelength = round(self.calibration_service.l1_to_wl(l1_pos), 4)
+        l2_wavelength = round(self.calibration_service.l2_to_wl(l2_pos), 4)
 
         self.laser_wavelength[0] = l1_wavelength
         self.laser_wavelength[1] = l2_wavelength
@@ -1627,7 +1685,9 @@ class Triax(Instrument):
         
         triax_steps = self.get_triax_steps()
         
-        target_steps = round(self.interface.microscope.calibrations.wl_to_triax_steps(wavelength))
+        # Get the calibration service from the interface's microscope
+        calibration_service = self.interface.microscope.calibration_service
+        target_steps = round(calibration_service.wl_to_triax_steps(wavelength))
         # 
         new_steps = target_steps - triax_steps
         # return if no movement is required

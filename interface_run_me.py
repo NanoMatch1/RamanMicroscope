@@ -2,7 +2,7 @@
 import os
 import traceback
 
-from controller import ArduinoUNO
+from controller import ArduinoController
 from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, Laser, simulate
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
@@ -62,11 +62,11 @@ class Interface:
 
         if simulate:
             # Import simulation module only when needed
-            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
+            from simulation import (SimulatedCamera, SimulatedTriax,
                                   SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
             
-            # Create simulated hardware instances
-            self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+            # Create simulated hardware instances - using the new ArduinoController with simulate=True
+            self.controller = ArduinoController(self, com_port=com_port, baud=baud, simulate=True)
             self.camera = SimulatedCamera(self)
             self.spectrometer = SimulatedTriax(self)
             self.laser_controller = SimulatedLaser(self)
@@ -74,7 +74,7 @@ class Interface:
             self.stage_controller = SimulatedStageControl(self)
         else:
             # Create real hardware instances
-            self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=False)
+            self.controller = ArduinoController(self, com_port=com_port, baud=baud, simulate=False)
             self.camera = TucamCamera(self, simulate=False)
             self.spectrometer = Triax(self, simulate=False)
             # For now, we'll use the simulated versions for the new controllers
@@ -144,7 +144,7 @@ class Interface:
 
         # Handle partial simulation via debug_skip
         if not simulate and debug_skip:
-            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
+            from simulation import (SimulatedCamera, SimulatedTriax,
                                   SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
             
             # Replace individual components with simulated versions as specified in debug_skip
@@ -152,7 +152,7 @@ class Interface:
                 self.spectrometer = SimulatedTriax(self)
                 
             if 'UNO' in debug_skip:
-                self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+                self.controller = ArduinoController(self, com_port=com_port, baud=baud, simulate=True)
                 
             if 'laser' in debug_skip:
                 self.laser_controller = SimulatedLaser(self)

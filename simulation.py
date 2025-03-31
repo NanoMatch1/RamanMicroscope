@@ -15,103 +15,8 @@ import ctypes
 from random import randint
 from typing import List, Tuple, Dict, Any, Optional, Union
 
-class SimulatedArduino:
-    """Simulated Arduino controller for stepper motors"""
-    
-    def __init__(self, interface=None, com_port=None, baud=None, report=True):
-        self.laser_motors = [100000, 100000, 0, 0]  # Initial values for laser motors [X, Y, Z, A]
-        self.monochromator_motors = [200000, 200000, 0, 0]  # Initial values for monochromator motors [X, Y, Z, A]
-        self.motor_running = False
-        self.shutter_status = "off"
-        self.report = report
-    
-    def connect(self):
-        """Simulate connection to Arduino"""
-        print("Connected to simulated Arduino")
-        return serial.Serial  # Return mock object
-    
-    def send_command(self, command):
-        """Process commands sent to Arduino and return simulated responses"""
-        if self.report:
-            print(f'>UNO:{command}')
-            
-        cmd_parts = command.split(' ')
-        cmd = cmd_parts[0].lower()
-        
-        # Handle different command types
-        if cmd in ['apos', 'get_laser_positions']:
-            positions = ','.join([f"X{self.laser_motors[0]}", 
-                                 f"Y{self.laser_motors[1]}", 
-                                 f"Z{self.laser_motors[2]}", 
-                                 f"A{self.laser_motors[3]}"])
-            return [f'S0:<P>{positions}</P>', '#CF']
-        
-        elif cmd in ['bpos', 'get_monochromator_positions']:
-            positions = ','.join([f"X{self.monochromator_motors[0]}", 
-                                 f"Y{self.monochromator_motors[1]}", 
-                                 f"Z{self.monochromator_motors[2]}", 
-                                 f"A{self.monochromator_motors[3]}"])
-            return [f'S0:<P>{positions}</P>', '#CF']
-        
-        elif cmd == 'aisrun' or cmd == 'bisrun':
-            return ['S0:Not running', '#CF']
-            
-        elif cmd == 'ld0':  # Light sensor
-            return [f'S0:{randint(1000, 5000)}', '#CF']
-            
-        elif cmd == 'gsh':  # Shutter
-            if len(cmd_parts) > 1:
-                self.shutter_status = "on" if "on" in cmd_parts[1].lower() else "off"
-            return [f'S0:Shutter {self.shutter_status}', '#CF']
-            
-        elif cmd in ['setposa', 'setposb']:
-            # Set absolute position of motors
-            if len(cmd_parts) > 1:
-                try:
-                    positions = cmd_parts[1].split(',')
-                    motors = self.laser_motors if cmd == 'setposa' else self.monochromator_motors
-                    
-                    for i, pos in enumerate(positions[:4]):
-                        if pos.strip():
-                            motors[i] = int(pos)
-                    
-                    return ['S0:Position set', '#CF']
-                except ValueError:
-                    return ['F0:Invalid position values', '#CF']
-            return ['F0:Missing position values', '#CF']
-            
-        # Motor movement commands (l1, l2, g1, g2, etc.)
-        elif cmd in ['l1', 'l2', 'l3', 'l4', 'g1', 'g2', 'g3', 'g4']:
-            if len(cmd_parts) > 1:
-                try:
-                    steps = int(cmd_parts[1])
-                    motor_type = 'A' if cmd.startswith('l') else 'B'  # laser or monochromator
-                    motor_index = int(cmd[1]) - 1  # Convert to 0-based index
-                    
-                    if motor_type == 'A':
-                        self.laser_motors[motor_index] += steps
-                    else:
-                        self.monochromator_motors[motor_index] += steps
-                        
-                    return ['S0:Success', '#CF']
-                except (ValueError, IndexError):
-                    return ['F0:Invalid command', '#CF']
-
-        # Default for unrecognized commands
-        return ['F0:Unknown command', '#CF']
-    
-    def get_laser_motor_positions(self):
-        """Return simulated laser motor positions"""
-        return self.laser_motors
-    
-    def get_monochromator_motor_positions(self):
-        """Return simulated monochromator motor positions"""
-        return self.monochromator_motors
-    
-    def initialise(self):
-        """Initialize the simulated Arduino"""
-        self.connect()
-        print("Simulated Arduino initialized")
+# Note: We've replaced SimulatedArduino with ArduinoController using simulate=True
+# The ArduinoController in controller.py now handles both real and simulated hardware
 
 
 class SimulatedCamera:
@@ -573,8 +478,10 @@ class SimulatedStageControl(SimulatedInstrument):
 
 def get_simulated_hardware(interface, hardware_type, **kwargs):
     """Factory function to get appropriate simulated hardware"""
+    from controller import ArduinoController
+    
     hardware_classes = {
-        'arduino': SimulatedArduino,
+        'arduino': ArduinoController,  # Using ArduinoController with simulate=True
         'camera': SimulatedCamera,
         'triax': SimulatedTriax,
         'laser': SimulatedLaser,
@@ -585,6 +492,10 @@ def get_simulated_hardware(interface, hardware_type, **kwargs):
     if hardware_type.lower() not in hardware_classes:
         raise ValueError(f"Unknown hardware type: {hardware_type}")
     
+    # Add simulate=True for the ArduinoController
+    if hardware_type.lower() == 'arduino':
+        kwargs['simulate'] = True
+    
     return hardware_classes[hardware_type.lower()](interface, **kwargs)
 
 
@@ -594,8 +505,10 @@ def inject_simulated_hardware(microscope_instance):
     Replace real hardware components with simulated versions in an existing
     microscope instance.
     """
+    from controller import ArduinoController
+    
     # Create simulated hardware instances
-    sim_controller = SimulatedArduino(microscope_instance.interface)
+    sim_controller = ArduinoController(microscope_instance.interface, simulate=True)
     sim_camera = SimulatedCamera(microscope_instance.interface)
     sim_triax = SimulatedTriax(microscope_instance.interface)
     sim_laser = SimulatedLaser(microscope_instance.interface)
@@ -606,9 +519,9 @@ def inject_simulated_hardware(microscope_instance):
     microscope_instance.controller = sim_controller
     microscope_instance.camera = sim_camera
     microscope_instance.spectrometer = sim_triax
-    microscope_instance.laser = sim_laser
-    microscope_instance.monochromator = sim_monochromator
-    microscope_instance.stage = sim_stage
+    microscope_instance.laser_controller = sim_laser
+    microscope_instance.monochromator_controller = sim_monochromator
+    microscope_instance.stage_controller = sim_stage
     
     # Update the motion control's controller reference
     microscope_instance.motion_control.controller = sim_controller
