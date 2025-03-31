@@ -148,24 +148,25 @@ class MotionControl:
     def extract_coms_flag(self, message):
         return message[0].split(':')[1].strip(' ')
 
-    def wait_for_motors(self, motors, delay=0.1):
+    def wait_for_motors(self, motors=None, delay=0.1):
         """
         Wait until all motors in the provided list are no longer running.
         
         Parameters:
-        motors (list): List of motor identifiers, e.g., ["1A", "2B", "4Y"].
+        motors (list, optional): List of motor identifiers, e.g., ["1X", "2Y", "1Z"].
+                               If None, uses a default set of motors.
         delay (float): Delay between polls in seconds.
         
         Returns:
         str: A status flag (e.g., 'S0') when all motors have stopped.
         """
+        if motors is None:
+            motors = ["1X", "1Y", "1Z", "2X", "2Y", "2Z"]
+            
         while True:
-            # Construct the new check moving command using the new format.
             command = 'c' + ' '.join(motors) + 'c'
             response = self.controller.send_command(command)
-            # Parse the response into a dictionary, e.g. {"1A": False, "2B": True}
             status = self.extract_motor_status(response)
-            # If all motors report not running, break out.
             if all(not running for running in status.values()):
                 break
             time.sleep(delay)
@@ -176,20 +177,40 @@ class MotionControl:
         Parses the response string from a 'check moving' command into a dictionary.
         
         Expected response format:
-        "1A:false 2B:true 4Y:false"
+        "1X:false 2Y:true 1Z:false"
         
         Returns:
-        dict: e.g., {"1A": False, "2B": True, "4Y": False}
+        dict: e.g., {"1X": False, "2Y": True, "1Z": False}
+        
+        Raises:
+        ValueError: If response is in unexpected format
         """
         status = {}
+        errors = []
+        
+        if isinstance(response, list) and len(response) > 0:
+            response = response[0]
+        elif not response:
+            raise ValueError(f"Empty response received from motor status check")
+            
         tokens = response.strip().split()
         for token in tokens:
             try:
                 motor, val = token.split(':')
+                if val.lower() not in ["true", "false"]:
+                    errors.append(f"Invalid motor status value: {val} for motor {motor}")
+                    continue
                 status[motor] = (val.lower() == "true")
             except ValueError:
-                # In case the token is not in the expected format.
-                continue
+                errors.append(f"Invalid motor status format: {token}")
+        
+        if errors and not status:
+            # If we have errors and no valid statuses, raise an exception
+            raise ValueError(f"Failed to parse motor status: {', '.join(errors)}")
+        elif errors:
+            # If we have some errors but still have valid statuses, print warnings
+            print(f"Warning: Some motor status parsing errors: {', '.join(errors)}")
+            
         return status
 
     
@@ -244,21 +265,54 @@ class MotionControl:
         return pos_dict
 
         
-    def backlash_correction(self, steps, motors):
-        correct_back = [-20 if i != 0 else 0 for i in steps]
-        self.move_motors(correct_back, motors)
-
-        correct_forward = [20 if i != 0 else 0 for i in steps]
-        self.move_motors(correct_forward, motors)
+    def backlash_correction(self, motor_steps: dict):
+        """
+        Apply backlash correction to previously moved motors.
+        
+        Parameters:
+        motor_steps (dict): Dictionary of motor IDs and steps that were moved
+        """
+        # Only apply correction to motors that actually moved
+        if not motor_steps:
+            return
+            
+        # Create backlash correction steps (-20 back, then +20 forward)
+        back_steps = {motor_id: -20 for motor_id in motor_steps.keys()}
+        forward_steps = {motor_id: 20 for motor_id in motor_steps.keys()}
+        
+        # Execute the backlash correction with a delay between commands
+        self.move_motors(back_steps, backlash=False)
+        time.sleep(0.1)  # Small delay to ensure controller processes the first command
+        self.move_motors(forward_steps, backlash=False)
+        
         return
 
-    def move_motors(self, steps: tuple, motors: str, backlash=True):
-        '''Move the motors to the specified positions. #TODO: modify firmware to accept all motor positions in one command.'''
-        motion_command = '{}X{}Y{}Z{}A{}'.format(motors, steps[0], steps[1], steps[2], steps[3])
-
-        response = self.controller.send_command('{}'.format(motion_command))
-        self.wait_for_motors()
-
+    def move_motors(self, motor_steps: dict, backlash=True):
+        """
+        Move motors by specified steps.
+        
+        Parameters:
+        motor_steps (dict): Dictionary mapping motor IDs to step counts, e.g. {'1X': 100, '1Y': -50}
+        backlash (bool): Whether to apply backlash correction
+        
+        Returns:
+        str: Response from the controller
+        """
+        if not motor_steps:
+            return "No movement needed"
+            
+        # Filter out zero-step movements
+        motor_steps = {motor: steps for motor, steps in motor_steps.items() if steps != 0}
+        if not motor_steps:
+            return "No movement needed"
+            
+        # Build command in the format o1X100 1Y-50o
+        motor_commands = [f"{motor_id}{steps}" for motor_id, steps in motor_steps.items()]
+        motion_command = 'o' + ' '.join(motor_commands) + 'o'
+        
+        response = self.controller.send_command(motion_command)
+        self.wait_for_motors(list(motor_steps.keys()))
+        
         return response
 
     @ui_callable
