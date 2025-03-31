@@ -1091,8 +1091,8 @@ class Microscope(Instrument):
     @ui_callable
     def get_monochromator_motor_positions(self):
         '''Get the current positions of the grating motors.'''
-        return self.motion_control.get_monochromator_motor_positions()
-    
+        return self.motion_control.get_motor_positions(self.action_groups['monochromator_wavelength'])
+        
     @ui_callable
     def go_to_wavelength_all(self, wavelength, shift=True):
         """

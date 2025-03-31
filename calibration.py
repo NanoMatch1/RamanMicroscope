@@ -124,10 +124,22 @@ class Calibration:
                 print("Loading {} as poly1d".format(name))
                 self.__setattr__(name, np.poly1d(calib))
 
-        self.g1_to_wl = self.g1_to_wl_subtractive
-        self.wl_to_g1 = self.wl_to_g1_subtractive
-
         print("Calibrations successfully built.")
+
+    def wl_to_steps(self, motor_dict):
+        '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''
+        steps_dict = {}
+
+        for key, value in motor_dict.items():
+            calibration_name = 'wl_to_{}'.format(key)
+            if hasattr(self, calibration_name):
+                calibration = getattr(self, calibration_name)
+                steps_dict[key] = calibration(value)
+            else:
+                print(f'{key} not found in calibrations')
+                steps_dict[key] = None
+                
+        return steps_dict
 
     def ammend_calibrations(self, report=True):
         '''If an autocalibration has been performed, this function will update the current calibrations with the new data. Loads individual files'''
@@ -169,10 +181,6 @@ class Calibration:
         print('Calibrations updated with autocalibration data')
         print('-'*20)
 
-    def fix_subtractive_calibrations(self):
-        '''Workaround until new subtractive calibrations are performed'''
-        self.wl_to_g2 = self.wl_to_g2_subtractive
-        self.g2_to_wl = self.g2_to_wl_subtractive
 
 class ldrScans:
 
