@@ -83,6 +83,24 @@ class Interface:
             self.laser_controller = SimulatedLaser(self, simulate=False)
             self.monochromator_controller = SimulatedMonochromator(self, simulate=False)
             self.stage_controller = SimulatedStageControl(self, simulate=False)
+
+
+        if len(debug_skip) > 0:
+            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
+                                    SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
+                
+                # Replace individual components with simulated versions as specified in debug_skip
+            if 'TRIAX' in debug_skip:
+                self.spectrometer = SimulatedTriax(self)
+                
+            if 'UNO' in debug_skip:
+                self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+                
+            if 'laser' in debug_skip:
+                self.laser_controller = SimulatedLaser(self)
+                
+            if 'camera' in debug_skip:
+                self.camera = SimulatedCamera(self)
             
         # Create instrument wrapper classes with dependency injection
         # Microscope is a mediator that coordinates the other instruments
@@ -141,26 +159,6 @@ class Interface:
             'F0': 'invalid command',
             '#CF': 'end of response',
         }
-
-        # Handle partial simulation via debug_skip
-        if not simulate and debug_skip:
-            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
-                                  SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
-            
-            # Replace individual components with simulated versions as specified in debug_skip
-            if 'TRIAX' in debug_skip:
-                self.spectrometer = SimulatedTriax(self)
-                
-            if 'UNO' in debug_skip:
-                self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
-                
-            if 'laser' in debug_skip:
-                self.laser_controller = SimulatedLaser(self)
-                self.laser.controller = self.laser_controller
-                self.laser.simulate = True
-                
-            if 'camera' in debug_skip:
-                self.camera = SimulatedCamera(self)
 
         # Initialize hardware components in the correct order
         self.spectrometer.initialise()
@@ -316,8 +314,8 @@ class Interface:
 
 
 if __name__ == '__main__':
-    instrument = Interface(simulate=True, com_port='COM10', debug_skip=[
-        #'camera',
+    instrument = Interface(simulate=False, com_port='COM10', debug_skip=[
+        'camera',
         'laser', 
         'TRIAX'
         ])

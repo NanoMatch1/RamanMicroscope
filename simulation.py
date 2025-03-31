@@ -19,8 +19,6 @@ class SimulatedArduino:
     """Simulated Arduino controller for stepper motors"""
     
     def __init__(self, interface=None, com_port=None, baud=None, report=True):
-        self.laser_motors = [100000, 100000, 0, 0]  # Initial values for laser motors [X, Y, Z, A]
-        self.monochromator_motors = [200000, 200000, 0, 0]  # Initial values for monochromator motors [X, Y, Z, A]
         self.motor_running = False
         self.shutter_status = "off"
         self.report = report
@@ -117,7 +115,7 @@ class SimulatedArduino:
 class SimulatedCamera:
     """Simulated camera for testing without hardware"""
     
-    def __init__(self, interface=None, report=False):
+    def __init__(self, interface=None, report=False, simulate=True):
         self.temperature = -5.0
         self.exposure = 500  # ms
         self.roi = (0, 0, 2048, 148)

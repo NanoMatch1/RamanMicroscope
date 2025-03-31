@@ -148,38 +148,50 @@ class MotionControl:
     def extract_coms_flag(self, message):
         return message[0].split(':')[1].strip(' ')
 
-    def wait_for_motors(self, delay=0.1):
-        '''Waits for the motors to finish moving by polling the motors until they are no longer running.'''
-        count = 0
-        running_A = True
-        running_B = True
-        while running_A is True or running_B is True:
-
-            if running_A is True:
-                response = self.controller.send_command('Aisrun')
-                res1 = self.extract_coms_flag(response)
-
-                if res1 == 'S0':
-                    running_A = False
-                else:
-                    time.sleep(delay)
-                    continue
-
-            if running_B is True:
-                response = self.controller.send_command('Bisrun')
-                res2 = self.extract_coms_flag(response)
-                if res2 == 'S0':
-                    running_B = False
-                else:
-                    time.sleep(delay)
-                    continue
-                
-            if count > 0:
-                print("Loop broke")
-                
-            count += 1
-
+    def wait_for_motors(self, motors, delay=0.1):
+        """
+        Wait until all motors in the provided list are no longer running.
+        
+        Parameters:
+        motors (list): List of motor identifiers, e.g., ["1A", "2B", "4Y"].
+        delay (float): Delay between polls in seconds.
+        
+        Returns:
+        str: A status flag (e.g., 'S0') when all motors have stopped.
+        """
+        while True:
+            # Construct the new check moving command using the new format.
+            command = 'c' + ' '.join(motors) + 'c'
+            response = self.controller.send_command(command)
+            # Parse the response into a dictionary, e.g. {"1A": False, "2B": True}
+            status = self.extract_motor_status(response)
+            # If all motors report not running, break out.
+            if all(not running for running in status.values()):
+                break
+            time.sleep(delay)
         return 'S0'
+
+    def extract_motor_status(self, response):
+        """
+        Parses the response string from a 'check moving' command into a dictionary.
+        
+        Expected response format:
+        "1A:false 2B:true 4Y:false"
+        
+        Returns:
+        dict: e.g., {"1A": False, "2B": True, "4Y": False}
+        """
+        status = {}
+        tokens = response.strip().split()
+        for token in tokens:
+            try:
+                motor, val = token.split(':')
+                status[motor] = (val.lower() == "true")
+            except ValueError:
+                # In case the token is not in the expected format.
+                continue
+        return status
+
     
 
 
@@ -203,6 +215,34 @@ class MotionControl:
             print("Expected: ", targets)
             print("Actual: ", positions)
             return False
+        
+    def get_motor_positions(self, motor_dict):
+        '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions.'''
+        motors = [motor_dict[i] for i in motor_dict.keys()]
+        print("Getting motor positions {}".format(motors))
+        response = self.controller.send_command('g{}g'.format(' '.join(motors)))
+        pos_dict = self._parse_motor_positions(response)
+        labelled_dict = self._return_labelled_positions(pos_dict, motor_dict)
+        
+        return labelled_dict
+
+    def _return_labelled_positions(self, pos_dict, motor_dict):
+        '''Returns a dictionary of motor positions with the motor names as keys.'''
+        labelled_positions = {}
+        for motor in motor_dict.keys():
+            labelled_positions[motor] = pos_dict[motor_dict[motor]]
+        return labelled_positions
+
+    def _parse_motor_positions(self, response):
+        '''Parses the motor positions from the response string.'''
+        comstring = response[0].strip(' ')
+        positions = comstring.split(' ')
+        pos_dict = {}
+        for position in positions:
+            motor, val = position.split(':')
+            pos_dict[motor] = int(val)
+        return pos_dict
+
         
     def backlash_correction(self, steps, motors):
         correct_back = [-20 if i != 0 else 0 for i in steps]
@@ -364,6 +404,27 @@ class Microscope(Instrument):
             'monochromator_wavelength': [500, 1300],
         }
 
+        self.action_groups = {
+            'laser_wavelength': {
+                'l1': '1X',
+                'l2': '1Y',
+                'l3': '1Z',
+            },
+
+            'monochromator_wavelength': {
+                'g1': '2X',
+                'g2': '2Y',
+                'g3': '2Z',
+                'g4': '2A',
+            },
+
+            'polarzation': {
+                'in': '3X', 
+                'out': '3Y'
+            }
+            # Add more action groups as needed
+        }
+
         # acquisition parameters
         self.acquisition_parameters = AcquitisionParameters()
 
@@ -389,8 +450,8 @@ class Microscope(Instrument):
             'rldr': self.read_ldr0,
             'calibrate': self.run_calibration,
             # motor commands
-            'apos': self.get_laser_motor_positions,
-            'bpos': self.get_monochromator_motor_positions,
+            'laserpos': self.get_laser_motor_positions,
+            'monopos': self.get_monochromator_motor_positions,
             'slsteps': self.go_to_laser_steps,
             'smsteps': self.go_to_monochromator_steps,
             'recmot': self.record_motors,
@@ -830,7 +891,7 @@ class Microscope(Instrument):
     @ui_callable
     def get_laser_motor_positions(self):
         '''Get the current positions of the laser motors.'''
-        return self.motion_control.get_laser_motor_positions()
+        return self.motion_control.get_motor_positions(self.action_groups['laser_wavelength'])
     
     @ui_callable
     def get_monochromator_motor_positions(self):
