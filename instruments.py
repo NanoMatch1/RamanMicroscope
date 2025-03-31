@@ -136,28 +136,15 @@ class AcquitisionParameters:
 class MotionControl:
     '''
     Handles the motion control of the microscope. Needs access to the controller to move the motors.
-    Updated to work with the Arduino MEGA controller that supports multiple motor modules.
     This class is responsible for the mechanics of motor movement, while the action groups
     and functional understanding is defined at the Microscope level.
     '''
-    def __init__(self, controller):
+    def __init__(self, controller, microscope=None):
         self.controller = controller
-        self._monochromator_steps = None
-        self._laser_steps = None
-        self._spectrometer_position = None
-
-        self._laser_wavelength = None
-        self._monochromator_wavelength = None
-        self._spectrometer_wavelength = None
+        self.microscope = microscope  # The parent microscope instance
         
-        # Define motor module mapping - PLACEHOLDER_MODULE_MAPPING
-        # This maps the old motor module designations to the new module numbers
-        self.module_mapping = {
-            'A': '1',  # Laser motors are now in module 1
-            'B': '2',  # Monochromator motors are now in module 2
-            # Additional modules can be added here
-            # 'C': '3',  # Example: Stage motors could be in module 3
-        }
+        # These will be initialized from microscope.motor_action_groups
+        self._motor_positions = {}  # Cached motor positions
 
     def extract_coms_flag(self, message):
         """Extract status flags from controller response messages"""
@@ -253,11 +240,16 @@ class MotionControl:
         
         Args:
             motor_steps_dict: Dictionary mapping motor names to step values (e.g., {'l1': 1000, 'l2': -500})
-            action_name: A name for this action (for logging purposes)
+            action_name: A name for this action (for logging purposes) 
             backlash: Whether to perform backlash correction
         '''
         # Log the action
         print(f"Moving motors for action '{action_name}': {motor_steps_dict}")
+        
+        # Verify all motors are valid
+        for motor_name in motor_steps_dict:
+            if motor_name not in self.controller.motor_map:
+                raise ValueError(f"Unknown motor: {motor_name}")
         
         # Filter out motors with zero steps to avoid unnecessary commands
         active_motors = {motor: steps for motor, steps in motor_steps_dict.items() if steps != 0}
@@ -274,12 +266,19 @@ class MotionControl:
             all_responses.extend(response if isinstance(response, list) else [response])
         
         # Wait for all motors to complete their movements
-        self.wait_for_motors()
+        # Get the modules for all active motors
+        modules = set()
+        for motor_name in active_motors:
+            module, _ = self.controller.motor_map[motor_name]
+            modules.add(module)
+        
+        # Wait for all affected modules
+        self.wait_for_motors(module_ids=list(modules))
         
         # Handle backlash correction if needed
         if backlash:
-            # Define backlash correction amount for each motor
-            backlash_amount = -20  # Backlash correction amount (negative to move backward)
+            # Define backlash correction amount
+            backlash_amount = -20  # Negative to move backward
             
             # Move back for backlash correction
             backlash_responses = []
@@ -287,19 +286,33 @@ class MotionControl:
                 response = self.controller.send_command(f"{motor_name} {backlash_amount}")
                 backlash_responses.extend(response if isinstance(response, list) else [response])
             
-            self.wait_for_motors()
+            self.wait_for_motors(module_ids=list(modules))
             
             # Move forward to complete backlash correction
             for motor_name in active_motors:
                 response = self.controller.send_command(f"{motor_name} {abs(backlash_amount)}")
                 backlash_responses.extend(response if isinstance(response, list) else [response])
             
-            self.wait_for_motors()
+            self.wait_for_motors(module_ids=list(modules))
             
             # Add backlash correction responses to all responses
             all_responses.extend(backlash_responses)
         
+        # Update cached positions for the moved motors
+        self.update_motor_positions(list(active_motors.keys()))
+        
         return all_responses
+        
+    def update_motor_positions(self, motor_names):
+        '''
+        Update the cached positions for the specified motors
+        
+        Args:
+            motor_names: List of motor names to update
+        '''
+        positions = self.controller.get_motor_positions(motor_names)
+        self._motor_positions.update(positions)
+        return positions
     
     def move_motors(self, steps: tuple, motors: str, backlash=True):
         '''
@@ -332,21 +345,27 @@ class MotionControl:
         
         return responses
 
-    @ui_callable
-    def get_laser_motor_positions(self, *args):
-        '''Get the current positions of the laser motors.'''
-        self.laser_steps = self.controller.get_laser_motor_positions()
-        print('Current laser pos: {}'.format(self.laser_steps))
-
-        return self.laser_steps
-    
-    @ui_callable
-    def get_monochromator_motor_positions(self, *args):
-        '''Get the current positions of the grating motors.'''
-        self.monochromator_steps = self.controller.get_monochromator_motor_positions()
-        print('Current monochromator pos: {}'.format(self.monochromator_steps))
-
-        return self.monochromator_steps
+    def get_action_group_positions(self, action_group):
+        '''
+        Get positions for all motors in a specified action group
+        
+        Args:
+            action_group: Name of the action group from the microscope's motor_action_groups
+            
+        Returns:
+            Dictionary mapping motor names to their current positions
+        '''
+        if not hasattr(self.controller, 'get_motor_positions'):
+            raise RuntimeError("Controller does not support get_motor_positions")
+            
+        # This is really just a pass-through, but it's part of the 
+        # abstraction layer that MotionControl provides
+        motor_dict = self.controller.get_motor_positions(self.microscope.motor_action_groups[action_group]['motors'])
+        
+        # Print the current positions
+        print(f"Current {action_group} positions: {motor_dict}")
+        
+        return motor_dict
 
     @property
     def laser_wavelength(self):
@@ -494,8 +513,8 @@ class Microscope(Instrument):
         # acquisition parameters
         self.acquisition_parameters = AcquitisionParameters()
 
-        # Motion control
-        self.motion_control = MotionControl(self.controller)
+        # Motion control - pass self (microscope) to motion control
+        self.motion_control = MotionControl(self.controller, self)
 
         self.command_functions = {
             # general commands
@@ -957,12 +976,38 @@ class Microscope(Instrument):
     @ui_callable
     def get_laser_motor_positions(self):
         '''Get the current positions of the laser motors.'''
-        return self.motion_control.get_laser_motor_positions()
+        # Use our new action-based approach
+        positions_dict = self.get_laser_wavelength_positions()
+        
+        # For backward compatibility, return as a list
+        motors = self.motor_action_groups['laser_wavelength']['motors']
+        ordered_positions = []
+        for motor in motors:
+            ordered_positions.append(positions_dict.get(motor, 0))
+            
+        # Ensure we have 4 values (backwards compatibility)
+        while len(ordered_positions) < 4:
+            ordered_positions.append(0)
+            
+        return ordered_positions[:4]
     
     @ui_callable
     def get_monochromator_motor_positions(self):
-        '''Get the current positions of the grating motors.'''
-        return self.motion_control.get_monochromator_motor_positions()
+        '''Get the current positions of the monochromator motors.'''
+        # Use our new action-based approach
+        positions_dict = self.get_monochromator_wavelength_positions()
+        
+        # For backward compatibility, return as a list
+        motors = self.motor_action_groups['monochromator_wavelength']['motors']
+        ordered_positions = []
+        for motor in motors:
+            ordered_positions.append(positions_dict.get(motor, 0))
+            
+        # Ensure we have 4 values (backwards compatibility)
+        while len(ordered_positions) < 4:
+            ordered_positions.append(0)
+            
+        return ordered_positions[:4]
     
     @ui_callable
     def go_to_wavelength_all(self, wavelength, shift=True):
@@ -1078,18 +1123,114 @@ class Microscope(Instrument):
     #         print('New Positions:\n Laser: {}\n Grating: {}'.format(new_laser_wavelength, new_grating_wavelength))
 
 
+    def get_laser_wavelength_positions(self):
+        """
+        Get positions for all motors involved in laser wavelength adjustment
+        Returns dictionary of positions
+        """
+        # Get motors from action group
+        motors = self.motor_action_groups['laser_wavelength']['motors']
+        
+        # Get positions from controller
+        positions = self.controller.get_motor_positions(motors)
+        
+        # Update the laser_steps property with the new positions
+        # We need to maintain this for backwards compatibility with some methods
+        if hasattr(self, 'laser_steps') and hasattr(self, '_laser_steps'):
+            # Extract positions in order and pad with zeros if needed
+            ordered_positions = []
+            for motor in motors:
+                ordered_positions.append(positions.get(motor, 0))
+                
+            # Ensure we have 4 values (backwards compatibility)
+            while len(ordered_positions) < 4:
+                ordered_positions.append(0)
+                
+            self._laser_steps = ordered_positions[:4]
+            
+        print(f"Laser wavelength positions: {positions}")
+        return positions
+    
     def set_laser_wavelength_positions(self, positions):
         """Set positions for motors involved in laser wavelength adjustment"""
         print("Setting laser wavelength positions: {}".format(positions))
-        response = self.controller.send_command('set_laser_wavelength {}'.format(positions))
-        return response
+        
+        # Parse comma-separated string to positions
+        if isinstance(positions, str):
+            pos_values = positions.split(',')
+            motors = self.motor_action_groups['laser_wavelength']['motors']
+            
+            # Create dictionary of {motor: position} pairs
+            motor_positions = {}
+            for i, motor in enumerate(motors):
+                if i < len(pos_values) and pos_values[i].strip():
+                    motor_positions[motor] = int(pos_values[i])
+            
+            # Send set position commands for each motor
+            responses = []
+            for motor, pos in motor_positions.items():
+                response = self.controller.send_command(f"set_absolute_position {motor} {pos}")
+                responses.extend(response if isinstance(response, list) else [response])
+                
+            return responses
+            
+        else:
+            raise ValueError("Positions must be a comma-separated string")
     
 
+    def get_monochromator_wavelength_positions(self):
+        """
+        Get positions for all motors involved in monochromator wavelength adjustment
+        Returns dictionary of positions
+        """
+        # Get motors from action group
+        motors = self.motor_action_groups['monochromator_wavelength']['motors']
+        
+        # Get positions from controller
+        positions = self.controller.get_motor_positions(motors)
+        
+        # Update the monochromator_steps property with the new positions
+        # We need to maintain this for backwards compatibility with some methods
+        if hasattr(self, 'monochromator_steps') and hasattr(self, '_monochromator_steps'):
+            # Extract positions in order and pad with zeros if needed
+            ordered_positions = []
+            for motor in motors:
+                ordered_positions.append(positions.get(motor, 0))
+                
+            # Ensure we have 4 values (backwards compatibility)
+            while len(ordered_positions) < 4:
+                ordered_positions.append(0)
+                
+            self._monochromator_steps = ordered_positions[:4]
+            
+        print(f"Monochromator wavelength positions: {positions}")
+        return positions
+    
     def set_monochromator_wavelength_positions(self, positions):
         """Set positions for motors involved in monochromator wavelength adjustment"""
         print("Setting monochromator wavelength positions: {}".format(positions))
-        response = self.controller.send_command('set_monochromator_wavelength {}'.format(positions))
-        return response
+        
+        # Parse comma-separated string to positions
+        if isinstance(positions, str):
+            pos_values = positions.split(',')
+            motors = self.motor_action_groups['monochromator_wavelength']['motors']
+            
+            # Create dictionary of {motor: position} pairs
+            motor_positions = {}
+            for i, motor in enumerate(motors):
+                if i < len(pos_values) and pos_values[i].strip():
+                    motor_positions[motor] = int(pos_values[i])
+            
+            # Send set position commands for each motor
+            responses = []
+            for motor, pos in motor_positions.items():
+                response = self.controller.send_command(f"set_absolute_position {motor} {pos}")
+                responses.extend(response if isinstance(response, list) else [response])
+                
+            return responses
+            
+        else:
+            raise ValueError("Positions must be a comma-separated string")
     
     def _generate_calibrations(self):
         """
@@ -1165,6 +1306,9 @@ class Microscope(Instrument):
             action_name='laser_wavelength', 
             backlash=backlash
         )
+        
+        # Update the laser_steps property with the new positions
+        self.get_laser_wavelength_positions()
 
     
     @ui_callable
@@ -1256,6 +1400,9 @@ class Microscope(Instrument):
             action_name='monochromator_wavelength', 
             backlash=backlash
         )
+        
+        # Update the monochromator_steps property with the new positions
+        self.get_monochromator_wavelength_positions()
 
     def calculate_monochromator_wavelength(self, current_pos=None):
         if current_pos is None:

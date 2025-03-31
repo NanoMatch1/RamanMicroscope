@@ -71,13 +71,7 @@ class ArduinoController:
 
         # Command mapping
         self.message_map = {
-            # Motor position reporting commands
-            'get_laser_positions': self._get_laser_positions_command,
-            'get_monochromator_positions': self._get_monochromator_positions_command,
-            'gpa': self._get_laser_positions_command,
-            'gpb': self._get_monochromator_positions_command,
-            
-            # Individual motor control - these now use module/motor addressing
+            # Individual motor control - direct motor commands
             'l1': self._map_motor_command,
             'l2': self._map_motor_command,
             'l3': self._map_motor_command, 
@@ -86,28 +80,16 @@ class ArduinoController:
             'g2': self._map_motor_command,
             'g3': self._map_motor_command,
             'g4': self._map_motor_command,
+            'p1': self._map_motor_command,
+            'p2': self._map_motor_command,
             
-            # Action-based position commands
-            'set_laser_wavelength': self._set_laser_wavelength_command,
-            'set_monochromator_wavelength': self._set_monochromator_wavelength_command,
+            # Get positions for a specific motor or module
+            'get_motor_position': self._get_motor_position_command,
+            'get_module_positions': self._get_module_positions_command,
             
-            # Legacy set position commands - for backward compatibility
-            'setposa': self._set_laser_positions_command,
-            'setposb': self._set_monochromator_positions_command,
-            
-            # Running status commands - check all motors in an action group
-            'laser_wavelength_is_running': self._check_laser_wavelength_motors_running,
-            'monochromator_wavelength_is_running': self._check_monochromator_wavelength_motors_running,
-            
-            # Legacy running status commands - for backward compatibility
-            'aisrun': self._check_laser_motors_running,
-            'bisrun': self._check_monochromator_motors_running,
-            
-            # Other commands that stay the same
+            # Other commands
             'ld0': 'ld0',
             'gsh': 'gsh',
-            
-            # Mode commands
             'ramanmode': 'ramanmode',
             'imagemode': 'imagemode',
         }
@@ -133,18 +115,40 @@ class ArduinoController:
             '1': False, '2': False, '3': False, '4': False
         }
 
-    def _get_laser_positions_command(self, command_parts):
-        """Command handler for getting laser motor positions"""
-        # Returns positions for motors in module 1
-        return 'get_module_positions 1'
+    def _get_motor_position_command(self, command_parts):
+        """
+        Command handler for getting a specific motor's position
+        Format: get_motor_position <motor_name>
+        """
+        if len(command_parts) < 2:
+            return None  # Not enough information
+            
+        motor_name = command_parts[1].lower()
+        if motor_name not in self.motor_map:
+            return None  # Unknown motor
+            
+        module, motor = self.motor_map[motor_name]
+        
+        # Format: get_module_positions <module>
+        return f"get_module_positions {module}"
     
-    def _get_monochromator_positions_command(self, command_parts):
-        """Command handler for getting monochromator motor positions"""
-        # Returns positions for motors in module 2
-        return 'get_module_positions 2'
+    def _get_module_positions_command(self, command_parts):
+        """
+        Command handler for getting all positions in a module
+        This is a pass-through command for the Arduino
+        Format: get_module_positions <module_number>
+        """
+        if len(command_parts) < 2:
+            return None  # Not enough information
+        
+        # This gets passed directly to the Arduino
+        return command_parts[0] + " " + command_parts[1]
     
     def _map_motor_command(self, command_parts):
-        """Maps old motor commands (l1, g2, etc.) to new module-motor format"""
+        """
+        Maps motor commands (l1, g2, etc.) to module-motor format
+        Format: <motor_name> <steps>
+        """
         if len(command_parts) < 2:
             return None  # Not enough information
             
@@ -157,58 +161,6 @@ class ArduinoController:
         
         # Format: <module><motor><steps>
         return f"{module}{motor}{steps}"
-    
-    def _set_laser_positions_command(self, command_parts):
-        """Command handler for setting absolute positions of laser motors"""
-        if len(command_parts) < 2:
-            return None
-            
-        positions = command_parts[1].split(',')
-        if len(positions) < 4:
-            return None
-            
-        # Convert old format (X,Y,Z,A values) to new format (individual motor commands)
-        commands = []
-        motor_letters = ['X', 'Y', 'Z', 'A']
-        
-        for i, pos in enumerate(positions[:4]):
-            if pos.strip():  # Only process non-empty positions
-                module = '1'  # Laser motors are in module 1
-                motor = motor_letters[i]
-                commands.append(f"set_absolute_position {module}{motor} {pos}")
-                
-        return commands
-    
-    def _set_monochromator_positions_command(self, command_parts):
-        """Command handler for setting absolute positions of monochromator motors"""
-        if len(command_parts) < 2:
-            return None
-            
-        positions = command_parts[1].split(',')
-        if len(positions) < 4:
-            return None
-            
-        # Convert old format (X,Y,Z,A values) to new format (individual motor commands)
-        commands = []
-        motor_letters = ['X', 'Y', 'Z', 'A']
-        
-        for i, pos in enumerate(positions[:4]):
-            if pos.strip():  # Only process non-empty positions
-                module = '2'  # Monochromator motors are in module 2
-                motor = motor_letters[i]
-                commands.append(f"set_absolute_position {module}{motor} {pos}")
-                
-        return commands
-    
-    def _check_laser_motors_running(self, command_parts):
-        """Check if any of the laser motors are running"""
-        # Check if motors in module 1 are running
-        return "check_module_running 1"
-    
-    def _check_monochromator_motors_running(self, command_parts):
-        """Check if any of the monochromator motors are running"""
-        # Check if motors in module 2 are running
-        return "check_module_running 2"
         
     def _set_laser_wavelength_command(self, command_parts):
         """Action-based command handler for setting laser wavelength motors"""
@@ -462,67 +414,71 @@ class ArduinoController:
         
         return response
 
-    def get_monochromator_motor_positions(self):
-        """Get the positions of the monochromator motors (Module 2)"""
-        response = self.send_command('get_monochromator_positions')
+    def get_motor_positions(self, motor_names):
+        """
+        Get positions for a list of motors by name
         
-        # Retry once if response is empty (handles potential communication issues)
-        if not response:
-            response = self.send_command('get_monochromator_positions')
+        Args:
+            motor_names: List of motor names (l1, g2, etc.)
             
-        if self.report:
-            print(response)
-        
-        try:
-            # New format handling: <P>X200000,Y200000,Z0,A0</P>
-            positions_data = response[0].split(':', 1)[1] if ':' in response[0] else response[0]
-            positions_data = positions_data.strip('<P></P>')
-            positions = positions_data.split(',')
-            
-            # Extract values from format X200000,Y200000,Z0,A0
-            monochromator_steps = [int(pos[1:]) for pos in positions if pos and pos[0] in "XYZA"]
-            
-            # Fill with zeros if we don't have 4 values
-            while len(monochromator_steps) < 4:
-                monochromator_steps.append(0)
+        Returns:
+            Dictionary mapping motor names to their positions
+        """
+        # Group motors by module for efficient querying
+        modules_to_query = {}
+        for motor_name in motor_names:
+            if motor_name not in self.motor_map:
+                print(f"Warning: Unknown motor name {motor_name}")
+                continue
                 
-            self.monochromator_steps = monochromator_steps[:4]  # Ensure we only have 4 values
-            return self.monochromator_steps
-            
-        except (IndexError, ValueError) as e:
-            print(f"Error parsing monochromator positions: {e}")
-            return [0, 0, 0, 0]  # Default to zeros if parsing fails
-    
-    def get_laser_motor_positions(self):
-        """Get the positions of the laser motors (Module 1)"""
-        response = self.send_command('get_laser_positions')
+            module, _ = self.motor_map[motor_name]
+            if module not in modules_to_query:
+                modules_to_query[module] = []
+            modules_to_query[module].append(motor_name)
         
-        # Retry once if response is empty
-        if not response:
-            response = self.send_command('get_laser_positions')
+        # Query each module once and extract positions for all motors in it
+        position_dict = {}
+        for module, motors in modules_to_query.items():
+            # Query the module
+            response = self.send_command(f'get_module_positions {module}')
             
-        if self.report:
-            print(response)
-        
-        try:
-            # New format handling: <P>X100000,Y100000,Z0,A0</P>
-            positions_data = response[0].split(':', 1)[1] if ':' in response[0] else response[0]
-            positions_data = positions_data.strip('<P></P>')
-            positions = positions_data.split(',')
-            
-            # Extract values from format X100000,Y100000,Z0,A0
-            laser_steps = [int(pos[1:]) for pos in positions if pos and pos[0] in "XYZA"]
-            
-            # Fill with zeros if we don't have 4 values
-            while len(laser_steps) < 4:
-                laser_steps.append(0)
+            # Retry once if response is empty
+            if not response:
+                response = self.send_command(f'get_module_positions {module}')
                 
-            self.laser_steps = laser_steps[:4]  # Ensure we only have 4 values
-            return self.laser_steps
+            if self.report:
+                print(response)
             
-        except (IndexError, ValueError) as e:
-            print(f"Error parsing laser positions: {e}")
-            return [0, 0, 0, 0]  # Default to zeros if parsing fails
+            try:
+                # Parse response: <P>X100000,Y100000,Z0,A0</P>
+                positions_data = response[0].split(':', 1)[1] if ':' in response[0] else response[0]
+                positions_data = positions_data.strip('<P></P>')
+                position_pairs = positions_data.split(',')
+                
+                # Create a dictionary mapping motor letters to positions for this module
+                module_positions = {}
+                for pair in position_pairs:
+                    if len(pair) > 1:
+                        motor_letter = pair[0]
+                        position = int(pair[1:])
+                        module_positions[motor_letter] = position
+                
+                # Map each motor to its position
+                for motor_name in motors:
+                    _, motor_letter = self.motor_map[motor_name]
+                    if motor_letter in module_positions:
+                        position_dict[motor_name] = module_positions[motor_letter]
+                    else:
+                        print(f"Warning: No position data for motor {motor_name}")
+                        position_dict[motor_name] = 0
+                        
+            except (IndexError, ValueError) as e:
+                print(f"Error parsing positions for module {module}: {e}")
+                # Set default positions for all motors in this module
+                for motor_name in motors:
+                    position_dict[motor_name] = 0
+        
+        return position_dict
 
     def _connect_to_arduino(self):
         """Connect to the Arduino MEGA"""
