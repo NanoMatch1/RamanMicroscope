@@ -1,17 +1,8 @@
 import serial
 import time
 
-from instruments import Instrument, simulate, ui_callable
+from instruments import Instrument, ui_callable
 
-def command_formatter(command):
-    '''Formats the command to be sent to the Arduino UNO - this is a workaround until the firmware is updated.'''
-
-    hardware_command = ['gsh', 'ld0']
-
-    if command.split(' ')[0] in hardware_command:
-        return 'm{}m'.format(command)
-    else:
-        return 'o{}o'.format(command)
 
 class ArduinoUNO:
 
@@ -60,143 +51,87 @@ class ArduinoUNO:
     def initialise(self):
         self.connect()
 
-    @simulate(expected_value=serial.Serial)
     def connect(self):
         self.serial = self._connect_to_UNO()
-        # Initialize simulated motor positions if in simulation mode
-        if self.simulate:
-            self._sim_laser_motors = [100000, 100000, 0, 0]  # Initial simulated positions for laser motors
-            self._sim_monochromator_motors = [200000, 200000, 0, 0]  # Initial simulated positions for monochromator motors
-            self._sim_motor_running = False
 
-    def _format_command_length(self, command):
-        '''Formats the command by checking length and compiling the correct command from the message_map. Work around until firmware is updated.'''
-        command_set = command.split(' ')
-        try:
-            new_command = self.message_map[command_set[0].lower()]
-        except KeyError:
-            # print('Command not recognized by Arduino UNO: {}'.format(command))
-            return command # if not recognized, return the original command and attempt to send it anyway
-
-        if len(command_set) > 1:
-            new_command = ' '.join([new_command] + command_set[1:])
-        else:
-            new_command = '{}'.format(new_command)
+    def _format_command_length(self, command, threshold=56):
+        """
+        Splits the command string into multiple commands if its length
+        exceeds the threshold. Assumes command delimiters (e.g., 'o' ... 'o')
+        that enclose space-separated tokens.
         
-        return new_command
+        Parameters:
+        command (str): The original command string.
+        threshold (int): Maximum allowed command length.
+        
+        Returns:
+        list: A list of command segments that are within the length limit.
+        """
+        if len(command) <= threshold:
+            return [command]
+        
+        if not command[0] == command[-1]:
+            raise ValueError("Command must start and end with the same delimiter.")
+            return []
+        
+        # Check if the command is properly delimited
+        if command[0] not in ['o', 'g', 'c', 's', 'm']:
+            raise ValueError("Command must start with 'o', 'g', 'c', 's', or 'm'.")
+        
+        delimiter = command[0]
+        
+        # Remove the starting and ending delimiters; adjust if using a different format.
+        inner = command[1:-1]
+        tokens = inner.split()
+        segments = []
+        current_tokens = []
+        
+        # Account for delimiters in the length calculation.
+        # The total length is: len(start_delim) + len(' '.join(tokens)) + len(end_delim)
+        # Here, delimiters are assumed to be a single character each.
+        for token in tokens:
+            # Check if adding the token would exceed the threshold.
+            # +1 for the space if current_tokens is non-empty.
+            projected = len(' '.join(current_tokens + [token]))
+            if projected + 2 > threshold:  # +2 for the two delimiters
+                # Save current segment and start a new one.
+                segment = delimiter + ' '.join(current_tokens) + delimiter
+                segments.append(segment)
+                current_tokens = [token]
+            else:
+                current_tokens.append(token)
+        
+        # Add the last segment if there are any tokens left.
+        if current_tokens:
+            segment = delimiter + ' '.join(current_tokens) + delimiter
+            segments.append(segment)
+        
+        return segments
     
-    def _simulate_command_response(self, command):
-        """Generate appropriate simulated responses for different commands"""
-        if command.startswith('o'):
-            cmd = command[1:-1]  # Strip the 'o' and 'o' markers
-        elif command.startswith('m'):
-            cmd = command[1:-1]  # Strip the 'm' and 'm' markers
-        else:
-            cmd = command
-            
-        parts = cmd.split(' ')
-        cmd_type = parts[0].lower()
-        
-        # Check for motor movement commands (AX, AY, etc)
-        if cmd_type in ['ax', 'ay', 'az', 'aa', 'bx', 'by', 'bz', 'ba']:
-            if len(parts) > 1:
-                try:
-                    steps = int(parts[1])
-                    motor_type = cmd_type[0].upper()  # A or B
-                    motor_index = {'X': 0, 'Y': 1, 'Z': 2, 'A': 3}[cmd_type[1].upper()]
-                    
-                    # Move the appropriate simulated motor
-                    if motor_type == 'A':
-                        self._sim_laser_motors[motor_index] += steps
-                    else:  # motor_type == 'B'
-                        self._sim_monochromator_motors[motor_index] += steps
-                        
-                    # In real operation, this would be R1 for running, but we simulate completion immediately
-                    return ['S0:Success', '#CF']
-                except (ValueError, IndexError):
-                    return ['F0:Invalid command', '#CF']
-        
-        # Handle specific command types
-        if cmd_type == 'apos' or cmd_type == 'get_laser_positions':
-            positions = ','.join([f"X{self._sim_laser_motors[0]}", 
-                                 f"Y{self._sim_laser_motors[1]}", 
-                                 f"Z{self._sim_laser_motors[2]}", 
-                                 f"A{self._sim_laser_motors[3]}"])
-            return [f'S0:<P>{positions}</P>', '#CF']
-            
-        elif cmd_type == 'bpos' or cmd_type == 'get_monochromator_positions':
-            positions = ','.join([f"X{self._sim_monochromator_motors[0]}", 
-                                 f"Y{self._sim_monochromator_motors[1]}", 
-                                 f"Z{self._sim_monochromator_motors[2]}", 
-                                 f"A{self._sim_monochromator_motors[3]}"])
-            return [f'S0:<P>{positions}</P>', '#CF']
-            
-        elif cmd_type == 'aisrun':
-            return ['S0:Not running', '#CF']  # Always return not running in simulation
-            
-        elif cmd_type == 'bisrun':
-            return ['S0:Not running', '#CF']  # Always return not running in simulation
-            
-        elif cmd_type == 'ld0':
-            # Simulate LDR0 (light sensor) reading - could be made more sophisticated
-            # Higher means more light detected
-            return [f'S0:3000', '#CF']
-            
-        elif cmd_type == 'gsh':
-            # Shutter command
-            status = "on" if "on" in cmd.lower() else "off"
-            return [f'S0:Shutter {status}', '#CF']
-            
-        elif cmd_type == 'setposa':
-            # Set absolute position for laser motors
-            if len(parts) > 1:
-                try:
-                    positions = parts[1].split(',')
-                    if len(positions) >= 4:
-                        self._sim_laser_motors = [int(p) for p in positions[:4]]
-                    else:
-                        # If fewer positions provided, only update those specified
-                        for i, p in enumerate(positions):
-                            if p.strip():
-                                self._sim_laser_motors[i] = int(p)
-                    return ['S0:Positions set', '#CF']
-                except ValueError:
-                    return ['F0:Invalid position values', '#CF']
-            return ['F0:Missing position values', '#CF']
-            
-        elif cmd_type == 'setposb':
-            # Set absolute position for monochromator motors
-            if len(parts) > 1:
-                try:
-                    positions = parts[1].split(',')
-                    if len(positions) >= 4:
-                        self._sim_monochromator_motors = [int(p) for p in positions[:4]]
-                    else:
-                        # If fewer positions provided, only update those specified
-                        for i, p in enumerate(positions):
-                            if p.strip():
-                                self._sim_monochromator_motors[i] = int(p)
-                    return ['S0:Positions set', '#CF']
-                except ValueError:
-                    return ['F0:Invalid position values', '#CF']
-            return ['F0:Missing position values', '#CF']
-            
-        # Default response for unrecognized commands
-        return ['F0:Unknown command', '#CF']
-            
-    @simulate(function_handler=lambda self, orig_com, **kwargs: self._simulate_command_response(command_formatter(self._format_command_length(orig_com))))
-    def send_command(self, orig_com):
-        new_com = self._format_command_length(orig_com)
-        if new_com is None:
-            return None
-        new_com = command_formatter(new_com)
+    def send_command(self, command):
+        '''Simple command to send to the controller. Assumes command length is correct for buffer size'''
 
         if self.report is True:
-            print('>UNO:{}'.format(new_com))
-        self._send_command_to_UNO(new_com)
+            print('>MEGA:{}'.format(command))
+
+        self._send_command_to_UNO(command)
         response = self._read_from_serial_until()
-        
+
         return response
+    
+    def get_motor_positions(self, motor_list):
+        command = 'g{}g'.format(' '.join(motor_list))
+        # Check length here
+        new_command = self._format_command_length(command) # return  a list
+
+        motor_positions = []
+        for command in new_command:
+            repsonse = self.send_command(command)
+            motor_positions.append(repsonse)
+
+        breakpoint()
+        return motor_positions
+
 
     def get_monochromator_motor_positions(self):
         response = self.send_command('get_monochromator_positions')
