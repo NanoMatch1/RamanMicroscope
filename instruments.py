@@ -1398,17 +1398,9 @@ class Microscope(Instrument):
         wavelengths = {}
         
         # Calculate wavelengths for each motor using calibration functions
-        if 'g1' in current_pos:
-            wavelengths['g1'] = round(self.calibrations.g1_to_wl(current_pos['g1']), 4)
-            # Keep backward compatibility for now
-            self.monochromator_wavelength[0] = wavelengths['g1']
-            
-        if 'g2' in current_pos:
-            wavelengths['g2'] = round(self.calibrations.g2_to_wl(current_pos['g2']), 4)
-            # Keep backward compatibility for now
-            self.monochromator_wavelength[1] = wavelengths['g2']
-            
-        # Add more motors as needed
+        wavelengths = self.calibrations.steps_to_wl(current_pos)
+
+        breakpoint()
         
         return wavelengths
 
