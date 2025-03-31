@@ -126,21 +126,45 @@ class Calibration:
 
         print("Calibrations successfully built.")
 
-    def wl_to_steps(self, motor_dict):
-        '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''
+    def wl_to_steps(self, wavelength, action_group):
+        """
+        Convert wavelength to motor steps for a group of motors.
+        
+        Parameters:
+        wavelength (float): Target wavelength in nm
+        action_group (dict): Dictionary mapping motor names to Arduino motor IDs
+        
+        Returns:
+        dict: Dictionary mapping motor names to calculated step positions (integers)
+              Motors without calibration functions will have value None
+        """
         steps_dict = {}
-
-        for key, value in motor_dict.items():
-            calibration_name = 'wl_to_{}'.format(key)
+        
+        # Convert wavelength to float to ensure calculations work properly
+        try:
+            wavelength = float(wavelength)
+        except (ValueError, TypeError):
+            print(f"Invalid wavelength value: {wavelength}. Must be a number.")
+            return {}
+            
+        # Process each motor in the action group
+        for motor in action_group.keys():
+            calibration_name = f'wl_to_{motor}'
             if hasattr(self, calibration_name):
-                calibration = getattr(self, calibration_name)
-                steps_dict[key] = calibration(value)
+                try:
+                    # Get the calibration function and apply it to the wavelength
+                    calibration = getattr(self, calibration_name)
+                    # Round to nearest integer and convert to int for motor steps
+                    steps_dict[motor] = int(round(calibration(wavelength)))
+                except Exception as e:
+                    print(f"Error calculating steps for {motor}: {e}")
+                    steps_dict[motor] = None
             else:
-                print(f'{key} not found in calibrations')
-                steps_dict[key] = None
-
+                print(f'{motor} not found in calibrations')
+                steps_dict[motor] = None
+                
         return steps_dict
-
+    
     def ammend_calibrations(self, report=True):
         '''If an autocalibration has been performed, this function will update the current calibrations with the new data. Loads individual files'''
         json_files = [f for f in os.listdir(self.calibrationDir) if f.endswith('autocal.json')]
