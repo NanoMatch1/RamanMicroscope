@@ -95,8 +95,8 @@ class LdrScan:
     
 class Calibration:
 
-    def __init__(self, microscope):
-        self.scriptDir = microscope.interface.scriptDir
+    def __init__(self):
+        self.scriptDir = os.path.dirname(os.path.abspath(__file__))
         self.calibrationDir = os.path.join(self.scriptDir, 'calibrations')
         self.generate_calibrations()
     
@@ -138,7 +138,7 @@ class Calibration:
             else:
                 print(f'{key} not found in calibrations')
                 steps_dict[key] = None
-                
+
         return steps_dict
 
     def ammend_calibrations(self, report=True):

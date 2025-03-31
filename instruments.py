@@ -570,6 +570,7 @@ class Microscope(Instrument):
         self.detector_safety = True
 
         self.acquire_mode = 'spectrum'
+        self.calibrations = Calibration()
 
         self._integrity_checker()  # Validate on init
 
