@@ -126,20 +126,36 @@ class Calibration:
 
         print("Calibrations successfully built.")
 
-    def wl_to_steps(self, motor_dict):
+    def wl_to_steps(self, wavelength, action_group):
         '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''
         steps_dict = {}
 
-        for key, value in motor_dict.items():
-            calibration_name = 'wl_to_{}'.format(key)
+        for motor in action_group.keys():
+            calibration_name = 'wl_to_{}'.format(motor)
             if hasattr(self, calibration_name):
                 calibration = getattr(self, calibration_name)
-                steps_dict[key] = calibration(value)
+                steps_dict[motor] = calibration(wavelength)
             else:
-                print(f'{key} not found in calibrations')
-                steps_dict[key] = None
+                print(f'{motor} not found in calibrations')
+                steps_dict[motor] = None
 
         return steps_dict
+    
+    def steps_to_wl(self, motor_steps: dict):
+        '''Convert motor steps to wavelength. Takes a dictionary of motor labels ('l1', ...) and their steps'''
+        wl_dict = {}
+
+        for motor, steps in motor_steps.items():
+            calibration_name = '{}_to_wl'.format(motor)
+            if hasattr(self, calibration_name):
+                calibration = getattr(self, calibration_name)
+                wl_dict[motor] = calibration(steps)
+            else:
+                print(f'{motor} not found in calibrations')
+                wl_dict[motor] = None
+
+        return wl_dict
+    
 
     def ammend_calibrations(self, report=True):
         '''If an autocalibration has been performed, this function will update the current calibrations with the new data. Loads individual files'''
