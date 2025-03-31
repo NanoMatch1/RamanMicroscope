@@ -56,6 +56,7 @@ class Interface:
         
         # Create directories first
         self._build_directories()
+        self.calibration_service = Calibration()
 
 
         if simulate:

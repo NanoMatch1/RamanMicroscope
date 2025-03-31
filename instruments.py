@@ -570,7 +570,6 @@ class Microscope(Instrument):
         self.detector_safety = True
 
         self.acquire_mode = 'spectrum'
-        self.calibrations = Calibration()
 
         self._integrity_checker()  # Validate on init
 
@@ -632,7 +631,7 @@ class Microscope(Instrument):
         # Use the injected calibration service
         self.calibrations = self.calibration_service
         # Update calibrations with auto-calibration data if available
-        self.calibrations.update_calibrations()
+        self.calibrations.ammend_calibrations()
 
         # Initialize components
         self.get_laser_motor_positions()
@@ -1230,17 +1229,6 @@ class Microscope(Instrument):
         print("Setting absolute positions B: {}".format(positions))
         response = self.controller.send_command('setposB {}'.format(positions))
     
-    def _generate_calibrations(self):
-        """
-        This method is maintained for backward compatibility but now returns
-        the calibration service injected during initialization.
-        """
-        if self.calibration_service is None:
-            # Fallback to the old method if no calibration service was injected
-            from calibration import Calibration
-            return Calibration(self)
-        return self.calibration_service
-    
     def check_hard_limits(self, value, limits):
         '''Checks the hard limits dictionary of the microscope for the allowed range of values.'''
         if not limits[0] < value < limits[1]:
@@ -1257,10 +1245,6 @@ class Microscope(Instrument):
             return False
         
         return wavelength
-    
-    # def get_steps_calibration_wavelength(self, calibration, wavelength):
-    #     '''Determines the motor steps for a given wavelength using the calibration function.'''
-    #     return int(round(calibration(wavelength)))
 
     def calculate_laser_steps_to_wavelength(self, target_wavelength):
         '''Calculates the number of steps needed to move the laser motors to the target wavelength.'''
