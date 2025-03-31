@@ -325,10 +325,9 @@ class MotionControl:
     
     @ui_callable
     def get_monochromator_motor_positions(self, *args):
-        '''Get the current positions of the grating motors.'''
-        self.monochromator_steps = self.controller.get_monochromator_motor_positions()
+        '''Get the current positions of the monochromator motors.'''
+        self.monochromator_steps = self.motion_control.get_motor_positions(self.action_groups['monochromator_wavelength'])
         print('Current monochromator pos: {}'.format(self.monochromator_steps))
-
         return self.monochromator_steps
 
     @property
