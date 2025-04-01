@@ -269,11 +269,20 @@ class MotionControl:
         '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
         motors = [motor_dict[i] for i in motor_dict.keys()]
         print("Getting motor positions {}".format(motors))
-        response = self.controller.send_command('g{}g'.format(' '.join(motors)))
+        response = self.controller.get_motor_positions(motors)
         pos_dict = self._parse_motor_positions(response)
         labelled_dict = self._return_labelled_positions(pos_dict, motor_dict)
         
         return labelled_dict
+    
+    def write_motor_positions(self, motor_dict):
+        '''Writes the motor positions as defined in motor_dict. Takes a dictionary of motor names and their positions. Returns the response from the controller.'''
+        motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items()}
+        print("Writing motor positions {}".format(motor_id_dict))
+        response = self.controller.write_motor_positions(motor_id_dict)
+
+        print("Motor positions written: {}".format(response))
+
 
     def _return_labelled_positions(self, pos_dict, motor_dict):
         '''Returns a dictionary of motor positions with the motor names as keys.'''
@@ -530,8 +539,7 @@ class Microscope(Instrument):
             'camera': self.connect_to_camera,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
             'report': self.report_status,
-            'writemotora': self.set_absolute_positions_A,
-            'writemotorb': self.set_absolute_positions_B,
+            'writemotors': self.write_motor_positions,
             'rldr': self.read_ldr0,
             'calibrate': self.run_calibration,
             # motor commands
@@ -561,10 +569,6 @@ class Microscope(Instrument):
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
-
-
-
-
         }
 
         self.current_shift = 0
@@ -595,6 +599,27 @@ class Microscope(Instrument):
     def connect_to_camera(self):
         '''Connects to the camera after already running.'''
         self.interface.connect_to_camera()
+
+    @ui_callable
+    def write_motor_positions(self, motor_positions, motor_dict=None):
+        '''Writes the current motor positions to a file for a string entered by the user. Optionally, a dictionary of motor names to positions can be passed.'''
+
+        if motor_dict is None:
+            motor_dict = {}
+            try:
+                # example = 'l1:300,l2:400,l3:500,g1:600,g2:700'
+                for motor in motor_positions.split(','):
+                    name, position = motor.split(':')
+
+                    motor_dict[name] = int(position)
+            except ValueError:
+                print('Invalid motor positions format. Use "name:position" delimited by space " " between motors')
+                return
+            
+        motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items() if motor in self.motor_map}
+            
+        self.controller.write_motor_positions(motor_id_dict)
+        print('Motor positions written to file')
 
     
     @ui_callable
@@ -1142,16 +1167,6 @@ class Microscope(Instrument):
     #         print('Calibration shift failed')
     #         print('New Positions:\n Laser: {}\n Grating: {}'.format(new_laser_wavelength, new_grating_wavelength))
 
-    @ui_callable
-    def set_absolute_positions_A(self, positions):
-        print("Setting absolute positions A: {}".format(positions))
-        response = self.controller.send_command('setposA {}'.format(positions))
-    
-    @ui_callable
-    def set_absolute_positions_B(self, positions):
-        print("Setting absolute positions B: {}".format(positions))
-        response = self.controller.send_command('setposB {}'.format(positions))
-    
     def check_hard_limits(self, value, limits):
         '''Checks the hard limits dictionary of the microscope for the allowed range of values.'''
         if not limits[0] < value < limits[1]:
@@ -1267,7 +1282,7 @@ class Microscope(Instrument):
         
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
-        self.laser_safety_check()
+        # self.laser_safety_check()
         self.open_mono_shutter()
         
         # Report primary wavelength
@@ -1334,13 +1349,11 @@ class Microscope(Instrument):
 
         self.monochromator_steps = current_pos
         
-        # Dictionary to store calculated wavelengths
-        wavelengths = {}
-        
+
         # Calculate wavelengths for each motor using calibration functions
         self.monochromator_wavelengths = self.calibrations.steps_to_wl(current_pos)
       
-        return wavelengths
+        return self
 
     @ui_callable
     def close_mono_shutter(self):
@@ -1448,14 +1461,11 @@ class Microscope(Instrument):
             current_pos = self.get_laser_motor_positions()
 
         self.laser_steps = current_pos
-        
-        # Dictionary to store calculated wavelengths
-        wavelengths = {}
-        
+               
         # Calculate wavelengths for each motor using calibration functions
         self.laser_wavelengths = self.calibrations.steps_to_wl(current_pos)
       
-        return wavelengths
+        return self.laser_wavelengths
 
     @ui_callable
     def go_to_wavenumber(self, wavenumber):
@@ -1473,14 +1483,15 @@ class Microscope(Instrument):
             
         # Get the current laser wavelength
         laser_wavelengths = self.calculate_laser_wavelength()
+        
         if not laser_wavelengths:
-            print("Failed to get laser wavelength")
+            print("Failed to get laser wavelength <Microscope.go_to_wavenumber()>")
             return
             
         # Use l1 wavelength (primary laser wavelength) for calculations
-        laser_wavelength = laser_wavelengths.get('l1')
+        laser_wavelength = next(iter(laser_wavelengths.values()))
         if not laser_wavelength:
-            print("Failed to determine primary laser wavelength")
+            print("Failed to determine primary laser wavelength <Microscope.go_to_wavenumber()>")
             return
             
         # Calculate the target wavelength for the monochromator
