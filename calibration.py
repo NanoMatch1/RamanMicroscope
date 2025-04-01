@@ -134,7 +134,7 @@ class Calibration:
             calibration_name = 'wl_to_{}'.format(motor)
             if hasattr(self, calibration_name):
                 calibration = getattr(self, calibration_name)
-                steps_dict[motor] = calibration(wavelength)
+                steps_dict[motor] = round(calibration(wavelength)) # round to nearest integer
             else:
                 print(f'{motor} not found in calibrations')
                 steps_dict[motor] = None

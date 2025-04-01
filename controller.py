@@ -119,6 +119,12 @@ class ArduinoUNO:
 
         return response
     
+    def close_mono_shutter(self):
+        self.send_command('mgsh offm')
+    
+    def open_mono_shutter(self):
+        self.send_command('mgsh onm')
+    
     def get_motor_positions(self, motor_list):
         command = 'g{}g'.format(' '.join(motor_list))
         # Check length here

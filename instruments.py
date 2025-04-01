@@ -135,8 +135,9 @@ class AcquitisionParameters:
 
 class MotionControl:
     '''Handles the motion control of the microscope. Needs access to the controller to move the motors.'''
-    def __init__(self, controller):
+    def __init__(self, controller, motor_map):
         self.controller = controller
+        self.motor_map = motor_map  # Dictionary mapping motor names to IDs
         self._monochromator_steps = None
         self._laser_steps = None
         self._spectrometer_position = None
@@ -213,38 +214,47 @@ class MotionControl:
             
         return status
 
+    def generate_motor_dict(self, motor_list):
+        """
+        Generate a dictionary mapping motor names to their IDs.
+        
+        Parameters:
+        motor_list (list): List of motor names, e.g., ["1X", "2Y", "1Z"].
+        
+        Returns:
+        dict: Dictionary mapping motor names to IDs.
+        """
+        return {motor: self.motor_map[motor] for motor in motor_list if motor in self.motor_map}
 
-    def confirm_motor_positions(self, target_positions, action_group_name):
+    def confirm_motor_positions(self, target_positions):
         """
         Confirm that motors have reached their target positions.
         
         Parameters:
         target_positions (dict): Dictionary of motor names and their target positions
-        action_group_name (str): Name of the action group ('laser_wavelength', 'monochromator_wavelength', etc.)
-        
+
         Returns:
         bool: True if all motors reached their targets, False otherwise
         """
-        # Choose the appropriate get_positions function based on action group
-        if action_group_name == 'laser_wavelength':
-            current_positions = self.get_laser_motor_positions()
-        elif action_group_name == 'monochromator_wavelength':
-            current_positions = self.get_monochromator_motor_positions()
-        else:
-            raise ValueError(f"Unknown action group: {action_group_name}")
-            
+
         # Check if all target positions match current positions
         all_match = True
         discrepancies = {}
         
-        for motor, target in target_positions.items():
-            if motor in current_positions:
-                if current_positions[motor] != target:
-                    all_match = False
-                    discrepancies[motor] = {
-                        'expected': target,
-                        'actual': current_positions[motor]
-                    }
+        # retrieve current positions
+        motor_dict = self.generate_motor_dict(target_positions.keys())
+        current_positions = self.get_motor_positions(motor_dict)
+
+        for motor, value in current_positions.items():
+            target = target_positions.get(motor)
+            if target is None:
+                continue
+            if value != target:
+                all_match = False
+                discrepancies[motor] = {
+                    'expected': target,
+                    'actual': value
+                }
         
         if all_match:
             print("Motors at target positions")
@@ -256,7 +266,7 @@ class MotionControl:
             return False
         
     def get_motor_positions(self, motor_dict):
-        '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions.'''
+        '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
         motors = [motor_dict[i] for i in motor_dict.keys()]
         print("Getting motor positions {}".format(motors))
         response = self.controller.send_command('g{}g'.format(' '.join(motors)))
@@ -504,7 +514,7 @@ class Microscope(Instrument):
         self.acquisition_parameters = AcquitisionParameters()
 
         # Motion control
-        self.motion_control = MotionControl(self.controller)
+        self.motion_control = MotionControl(self.controller, self.motor_map)
 
         self.command_functions = {
             # general commands
@@ -748,7 +758,6 @@ class Microscope(Instrument):
         '''
         # Get current positions
         current_positions = self.get_laser_motor_positions()
-        breakpoint()
         # Calculate steps to move
         motor_steps = {}
         for motor, target in target_positions.items():
@@ -766,11 +775,10 @@ class Microscope(Instrument):
         if motor_steps:
             self.motion_control.move_motors(motor_steps)
             self.motion_control.backlash_correction(motor_steps)
+            self.motion_control.confirm_motor_positions(target_positions)
             
-            # Update positions and confirm they match targets
-            self.laser_steps = self.get_laser_motor_positions()
-            self.motion_control.confirm_motor_positions(target_positions, 'laser_wavelength')
-            self.laser_wavelengths = self.calculate_laser_wavelength(self.laser_steps)
+            # Update laser wavelength
+            self.calculate_laser_wavelength(target_positions)
             print("Moved to laser steps: ", self.laser_steps)
 
     @ui_callable
@@ -799,12 +807,12 @@ class Microscope(Instrument):
         if motor_steps:
             self.motion_control.move_motors(motor_steps)
             self.motion_control.backlash_correction(motor_steps)
+            self.motion_control.confirm_motor_positions(target_positions)
             
-            # Update positions and confirm they match targets
-            self.monochromator_steps = self.get_monochromator_motor_positions()
-            self.motion_control.confirm_motor_positions(target_positions, 'monochromator_wavelength')
-            self.monochromator_wavelengths = self.calculate_monochromator_wavelength(self.monochromator_steps)
+            # Update monochromator wavelength
+            self.calculate_monochromator_wavelength()
             print("Moved to monochromator steps: ", self.monochromator_steps)
+
 
     def run_ldr0_scan(self, motor, search_length=None, resolution=None):
         """
@@ -880,94 +888,6 @@ class Microscope(Instrument):
         '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
         wavelength_sample = next(iter(self.monochromator_wavelengths.values()))
         return 10_000_000/wavelength_sample
-
-    @property
-    def laser_steps(self):
-        return self.motion_control._laser_steps
-    
-    @laser_steps.setter
-    def laser_steps(self, value):
-        """
-        Set the laser motor positions.
-        
-        Parameters:
-        value (dict): Dictionary of motor names to positions {'l1': 1000, 'l2': 2000}
-        """
-        valid_steps = True
-        
-        # Handle dictionary input
-        if isinstance(value, dict):
-            # Make sure all values are integers
-            try:
-                for motor, pos in value.items():
-                    if not isinstance(pos, int):
-                        value[motor] = int(pos)
-            except ValueError:
-                print('Invalid laser steps: positions must be integers')
-                valid_steps = False
-        # Handle list input for backward compatibility
-        elif isinstance(value, list):
-            try:
-                # Convert to dictionary if needed
-                motor_dict = {}
-                for i, motor in enumerate(['l1', 'l2', 'l3', 'l4']):
-                    if i < len(value):
-                        motor_dict[motor] = int(value[i])
-                value = motor_dict
-            except (ValueError, TypeError):
-                print('Invalid laser steps: unable to convert list to dictionary')
-                valid_steps = False
-        else:
-            print('Invalid laser steps: must be dictionary or list')
-            valid_steps = False
-
-        if valid_steps:
-            self.motion_control._laser_steps = value
-        return self.motion_control._laser_steps
-
-    @property
-    def monochromator_steps(self):
-        return self.motion_control._monochromator_steps
-    
-    @monochromator_steps.setter
-    def monochromator_steps(self, value):
-        """
-        Set the monochromator motor positions.
-        
-        Parameters:
-        value (dict): Dictionary of motor names to positions {'g1': 1000, 'g2': 2000}
-        """
-        valid_steps = True
-        
-        # Handle dictionary input
-        if isinstance(value, dict):
-            # Make sure all values are integers
-            try:
-                for motor, pos in value.items():
-                    if not isinstance(pos, int):
-                        value[motor] = int(pos)
-            except ValueError:
-                print('Invalid monochromator steps: positions must be integers')
-                valid_steps = False
-        # Handle list input for backward compatibility
-        elif isinstance(value, list):
-            try:
-                # Convert to dictionary if needed
-                motor_dict = {}
-                for i, motor in enumerate(['g1', 'g2', 'g3', 'g4']):
-                    if i < len(value):
-                        motor_dict[motor] = int(value[i])
-                value = motor_dict
-            except (ValueError, TypeError):
-                print('Invalid monochromator steps: unable to convert list to dictionary')
-                valid_steps = False
-        else:
-            print('Invalid monochromator steps: must be dictionary or list')
-            valid_steps = False
-
-        if valid_steps:
-            self.motion_control._monochromator_steps = value
-        return self.motion_control._monochromator_steps
 
     @property
     def spectrometer_position(self):
@@ -1289,17 +1209,13 @@ class Microscope(Instrument):
         
         # Move to target positions
         self.go_to_laser_steps(target_positions)
-        
-        # Calculate the new wavelength after movement
-        new_wavelengths = self.calculate_laser_wavelength()
-        
+              
         # Safety checks and reopen shutter
         self.laser_safety_check()
         self.open_mono_shutter()
         
         # Report primary wavelength
-        if 'l1' in new_wavelengths:
-            print(f'Laser excitation at {new_wavelengths["l1"]} nm')
+        print("New laser wavelength: ", next(iter(self.laser_wavelengths.values())))
         
         return True
 
@@ -1398,11 +1314,11 @@ class Microscope(Instrument):
 
     @ui_callable
     def close_mono_shutter(self):
-        self.controller.send_command('gsh on')
+        self.controller.close_mono_shutter()
 
     @ui_callable
     def open_mono_shutter(self):
-        self.controller.send_command('gsh off')
+        self.controller.open_mono_shutter()
 
 
 
