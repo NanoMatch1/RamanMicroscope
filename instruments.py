@@ -1058,32 +1058,41 @@ class Microscope(Instrument):
             true_wavelength_grating = true_wavelength_laser
 
 
-        l1_target = round(self.calibrations.wl_to_l1(true_wavelength_laser))
-        l2_target = round(self.calibrations.wl_to_l2(true_wavelength_laser))
-        g1_target = round(self.calibrations.wl_to_g1(true_wavelength_grating))
-        g2_target = round(self.calibrations.wl_to_g2(true_wavelength_grating))
+        # Calculate target positions for laser and monochromator motors
+        laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
+        mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
+        
+        # Use dictionary-based go_to methods which use the motor_map and move_motors under the hood
+        self.go_to_laser_steps(laser_steps)
+        self.go_to_monochromator_steps(mono_steps)
 
-        #  #378617
+        # Get current positions after movement
+        current_laser_pos = self.get_laser_motor_positions()
+        current_mono_pos = self.get_monochromator_motor_positions()
 
-        self.set_absolute_positions_A(f'{l1_target},{l2_target},0,0')
-        self.set_absolute_positions_B(f'{g1_target},{g2_target},0,0')
-
-        laser_pos = self.get_laser_motor_positions()
-        grating_pos = self.get_monochromator_motor_positions()
-
-        if l1_target == laser_pos[0] and l2_target == laser_pos[1]:
+        # Verify all laser motors reached their targets
+        laser_calibrated = True
+        for motor, target in laser_steps.items():
+            if motor in current_laser_pos and current_laser_pos[motor] != target:
+                laser_calibrated = False
+                print(f'Laser motor {motor}: Expected {target}, got {current_laser_pos[motor]}')
+        
+        if laser_calibrated:
             print('Laser motors successfully calibrated')
         else:
             print('Error calibrating laser motors')
-            print('Expected: {}, {}'.format(l1_target, l2_target))
-            print('Actual: {}, {}'.format(laser_pos[0], laser_pos[1]))
+            
+        # Verify all monochromator motors reached their targets
+        mono_calibrated = True
+        for motor, target in mono_steps.items():
+            if motor in current_mono_pos and current_mono_pos[motor] != target:
+                mono_calibrated = False
+                print(f'Monochromator motor {motor}: Expected {target}, got {current_mono_pos[motor]}')
         
-        if g1_target == grating_pos[0] and g2_target == grating_pos[1]:
-            print('Grating motors successfully calibrated')
+        if mono_calibrated:
+            print('Monochromator motors successfully calibrated')
         else:
-            print('Error calibrating grating motors')
-            print('Expected: {}, {}'.format(g1_target, g2_target))
-            print('Actual: {}, {}'.format(grating_pos[0], grating_pos[1]))
+            print('Error calibrating monochromator motors')
 
     def wavenumber_to_wavelength(self, wavenumber):
         return 10_000_000/wavenumber
@@ -1161,27 +1170,41 @@ class Microscope(Instrument):
         return wavelength
 
     def calculate_laser_steps_to_wavelength(self, target_wavelength):
-        '''Calculates the number of steps needed to move the laser motors to the target wavelength.'''
+        '''
+        Calculates the target steps and move steps needed for laser motors to reach target wavelength.
+        
+        Parameters:
+        target_wavelength (float): Target wavelength in nm
+        
+        Returns:
+        tuple: (move_steps, target_steps) where both are dictionaries mapping motor IDs to steps
+        '''
+        # Get current position of laser motors
         current_pos = self.get_laser_motor_positions()
-        target_steps = [i for i in self.laser_steps]
-
-        target_steps[0] = round(self.calibrations.wl_to_l1(target_wavelength))
-        target_steps[1] = round(self.calibrations.wl_to_l2(target_wavelength))
-
-        # implement new logic for other motors here
-        print('Current laser position: {}'.format(current_pos))
-        print('Target laser position: {}'.format(target_steps))
-        move_steps = [i - j for i, j in zip(target_steps, current_pos)]
-        if all(x == 0 for x in move_steps):
+        
+        # Calculate target positions based on wavelength
+        target_steps = self.calibrations.wl_to_steps(target_wavelength, self.action_groups['laser_wavelength'])
+        
+        # Calculate steps to move (difference between target and current)
+        move_steps = {}
+        for motor, target in target_steps.items():
+            if motor in current_pos:
+                steps_to_move = target - current_pos[motor]
+                if steps_to_move != 0:
+                    # Get Arduino motor ID from motor_map
+                    motor_id = self.motor_map.get(motor)
+                    if motor_id:
+                        move_steps[motor_id] = steps_to_move
+        
+        # Log the calculated positions
+        print(f'Current laser position: {current_pos}')
+        print(f'Target laser position: {target_steps}')
+        
+        if not move_steps:
             print('Laser already at target position')
-
+            
         return move_steps, target_steps
     
-    def move_laser_motors(self, move_steps, backlash=True):
-        '''Moves the laser motors the specified number of steps.'''
-        self.motion_control.move_motors(move_steps, 'A')
-        if backlash is True:
-            self.motion_control.backlash_correction(move_steps, 'A')
 
     
     @ui_callable
@@ -1268,26 +1291,41 @@ class Microscope(Instrument):
         return wavelength
 
     def calculate_monochromator_steps_to_wavelength(self, target_wavelength):
+        '''
+        Calculates the target steps and move steps needed for monochromator motors to reach target wavelength.
+        
+        Parameters:
+        target_wavelength (float): Target wavelength in nm
+        
+        Returns:
+        tuple: (move_steps, target_steps) where both are dictionaries mapping motor IDs to steps
+        '''
+        # Get current position of monochromator motors
         current_pos = self.get_monochromator_motor_positions()
-        target_steps = [i for i in self.monochromator_steps]
-
-        target_steps[0] = round(self.calibrations.wl_to_g1(target_wavelength))
-        target_steps[1] = round(self.calibrations.wl_to_g2(target_wavelength))
-
-        print('Current monochromator position: {}'.format(current_pos))
-        print('Target monochromator position: {}'.format(target_steps))
-
-        move_steps = [i - j for i, j in zip(target_steps, current_pos)]
-
-        if all(x == 0 for x in move_steps):
+        
+        # Calculate target positions based on wavelength
+        target_steps = self.calibrations.wl_to_steps(target_wavelength, self.action_groups['monochromator_wavelength'])
+        
+        # Calculate steps to move (difference between target and current)
+        move_steps = {}
+        for motor, target in target_steps.items():
+            if motor in current_pos:
+                steps_to_move = target - current_pos[motor]
+                if steps_to_move != 0:
+                    # Get Arduino motor ID from motor_map
+                    motor_id = self.motor_map.get(motor)
+                    if motor_id:
+                        move_steps[motor_id] = steps_to_move
+        
+        # Log the calculated positions
+        print(f'Current monochromator position: {current_pos}')
+        print(f'Target monochromator position: {target_steps}')
+        
+        if not move_steps:
             print('Monochromator already at target position')
-
+            
         return move_steps, target_steps
 
-    def move_monochromator_motors(self, move_steps, backlash=True):
-        self.motion_control.move_motors(move_steps, 'B')
-        if backlash is True:
-            self.motion_control.backlash_correction(move_steps, 'B')
 
     def calculate_monochromator_wavelength(self, current_pos=None):
         """
