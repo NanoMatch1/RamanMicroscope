@@ -146,6 +146,9 @@ class ArduinoUNO:
         
         return response
 
+    def read_ldr0(self):
+        response = self.send_command('mld0m')
+        return response
 
     def get_monochromator_motor_positions(self):
         response = self.send_command('get_monochromator_positions')

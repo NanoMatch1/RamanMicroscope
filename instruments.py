@@ -6,6 +6,7 @@ import numpy as np
 import os
 import json
 import ctypes
+from copy import copy
 from ctypes import *
 try:
     from tucsen.TUCam import *
@@ -324,31 +325,31 @@ class MotionControl:
         
         return
 
-    def move_motors(self, motor_steps: dict, backlash=True):
+    def move_motors(self, motor_id_steps: dict, backlash=True):
         """
         Move motors by specified steps.
         
         Parameters:
-        motor_steps (dict): Dictionary mapping motor IDs to step counts, e.g. {'1X': 100, '1Y': -50}
+        motor_id_steps (dict): Dictionary mapping motor IDs to step counts, e.g. {'1X': 100, '1Y': -50}
         backlash (bool): Whether to apply backlash correction
         
         Returns:
         str: Response from the controller
         """
-        if not motor_steps:
+        if not motor_id_steps:
             return "No movement needed"
             
         # Filter out zero-step movements
-        motor_steps = {motor: steps for motor, steps in motor_steps.items() if steps != 0}
-        if not motor_steps:
+        motor_id_steps = {motor: steps for motor, steps in motor_id_steps.items() if steps != 0}
+        if not motor_id_steps:
             return "No movement needed"
             
         # Build command in the format o1X100 1Y-50o
-        motor_commands = [f"{motor_id}{steps}" for motor_id, steps in motor_steps.items()]
+        motor_commands = [f"{motor_id}{steps}" for motor_id, steps in motor_id_steps.items()]
         motion_command = 'o' + ' '.join(motor_commands) + 'o'
         
         response = self.controller.send_command(motion_command)
-        self.wait_for_motors(list(motor_steps.keys()))
+        self.wait_for_motors(list(motor_id_steps.keys()))
         
         return response
 
@@ -459,6 +460,7 @@ class Microscope(Instrument):
         super().__init__()
         self.interface = interface
         self.scriptDir = interface.scriptDir
+        self.autocalibrationDir = interface.autocalibrationDir
         self.controller = controller or interface.controller
         self.camera = camera or interface.camera
         self.spectrometer = spectrometer or interface.spectrometer
@@ -714,7 +716,7 @@ class Microscope(Instrument):
     @ui_callable
     def read_ldr0(self):
         '''Reads the light-dependent resistor value from the microscope. Used to detect laser light in autocalibrations.'''
-        response = self.controller.send_command('ld0')
+        response = self.controller.read_ldr0()
         ldr_value = int(response[0][1:])
         print("LDR0:", ldr_value)
         return ldr_value
@@ -739,15 +741,16 @@ class Microscope(Instrument):
 
         resolution = float(resolution)
 
-        initial_grating = [i for i in self.monochromator_steps]
-        initial_laser = [i for i in self.laser_steps]
+        initial_grating = copy(self.monochromator_steps)
+        initial_laser = copy(self.laser_steps)
 
         wavelengths = np.arange(*wavelength_range, resolution)
         print(f"Running {motor} calibration for wavelengths: ", wavelengths)
         condition = input("Continue? (y/n): ")
         if condition.lower() == 'n':
             return
-        index = len([file for file in os.listdir(os.path.join(self.scriptDir, 'autocalibration')) if file.endswith('.json')])
+
+        index = len([file for file in os.listdir(self.autocalibrationDir) if file.endswith('.json')])
         
         # initial_pinhole_pos = int(self.pinhole)
         # self.close_pinhole(pinhole_size)
@@ -762,7 +765,7 @@ class Microscope(Instrument):
 
             print("Saving state...")        
 
-            with open(os.path.join(self.scriptDir, 'autocalibration', 'autocal_{}_{}.json'.format(index, motor)), 'w') as f:
+            with open(os.path.join(self.autocalibrationDir, 'autocal_{}_{}.json'.format(index, motor)), 'w') as f:
                 json.dump(calibrationDict, f)
 
         print(f"{motor.lower()} Scan complete. Data saved to autocal_{index}_{motor}.json")

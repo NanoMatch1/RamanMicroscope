@@ -53,6 +53,7 @@ class Interface:
         self.dataDir = os.path.join(self.scriptDir, 'data')
         self.transientDir = os.path.join(self.scriptDir, 'transient')
         self.saveDir = os.path.join(self.dataDir, 'data')
+        self.autocalibrationDir = os.path.join(self.scriptDir, 'autocalibration')
         
         # Create directories first
         self._build_directories()
@@ -243,6 +244,8 @@ class Interface:
             os.makedirs(self.transientDir)
         if not os.path.exists(self.saveDir):
             os.makedirs(self.saveDir)
+        if not os.path.exists(self.autocalibrationDir):
+            os.makedirs(self.autocalibrationDir)
 
     def _generate_command_map(self):
         '''Dynamically generate a command map from the instruments declared in __init__'''
@@ -254,22 +257,23 @@ class Interface:
         }
         return command_map
     
-    def _format_motion_commands(self, command:str):
-        pattern = re.compile(r'(?P<x>x-?\d+(\.\d+)?|X-?\d+(\.\d+)?|)?(?P<y>y-?\d+(\.\d+)?|Y-?\d+(\.\d+)?|)?(?P<z>z-?\d+(\.\d+)?|Z-?\d+(\.\d+)?|)?')
-        match = pattern.fullmatch(command)
-        if not match:
-            return None
+    # def _format_motion_commands(self, command:str):
+    #     pattern = re.compile(r'(?P<x>x-?\d+(\.\d+)?|X-?\d+(\.\d+)?|)?(?P<y>y-?\d+(\.\d+)?|Y-?\d+(\.\d+)?|)?(?P<z>z-?\d+(\.\d+)?|Z-?\d+(\.\d+)?|)?')
+    #     match = pattern.fullmatch(command)
+    #     if not match:
+    #         return None
 
-        match_dict = {}
-        for key, value in match.groupdict().items():
-            if value == '':
-                match_dict[key] = '0'.format(key.lower())
-            else:
-                match_dict[key] = value[1:]
+    #     match_dict = {}
+    #     for key, value in match.groupdict().items():
+    #         if value == '':
+    #             match_dict[key] = '0'.format(key.lower())
+    #         else:
+    #             match_dict[key] = value[1:]
         
-        motion_commands = 'xyz {} {} {}'.format(match_dict['x'], match_dict['y'], match_dict['z'])
+    #     motion_commands = 'xyz {} {} {}'.format(match_dict['x'], match_dict['y'], match_dict['z'])
 
-        return motion_commands
+    #     return motion_commands
+
 
     def _command_handler(self, command:str):
         '''Handles the command and arguments passed to the Interface'''
@@ -284,6 +288,14 @@ class Interface:
                 error_details = traceback.format_exc()
                 result = f" > Error: {e}\n{error_details}"
             return result
+        
+        elif funct in self.microscope.motor_map.keys():
+            # This is a motion command, so we need to format it first
+            motor_id = self.microscope.motor_map[funct]
+            steps = int(arguments[0])
+            motion_command = 'o{}{}o'.format(motor_id, steps)
+            self.controller.send_command(motion_command)
+
         else:
             try:
 
