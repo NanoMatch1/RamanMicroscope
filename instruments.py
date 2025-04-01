@@ -1263,25 +1263,17 @@ class Microscope(Instrument):
         self.close_mono_shutter()
         
         # Get target positions from calibration service
-        # Assumes the calibration service has a wl_to_steps method that returns a dictionary
         target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
         
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
-        
-        # Calculate the new wavelength after movement
-        new_wavelengths = self.calculate_monochromator_wavelength()
-        
-        # Safety checks and reopen shutter
         self.laser_safety_check()
         self.open_mono_shutter()
         
         # Report primary wavelength
-        if 'g1' in new_wavelengths:
-            print(f'Monochromator set to {new_wavelengths["g1"]} nm')
+        print("New monochromator wavelength: ", next(iter(self.monochromator_wavelengths.values())))
         
         return True
-
     def check_monochromator_wavelength(self, wavelength):
         wavelength = string_to_float(wavelength)
         if not self.check_hard_limits(wavelength, self.hard_limits['monochromator_wavelength']):
