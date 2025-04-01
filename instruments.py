@@ -213,8 +213,6 @@ class MotionControl:
             
         return status
 
-    
-
 
     def confirm_motor_positions(self, target_positions, action_group_name):
         """
@@ -338,14 +336,14 @@ class MotionControl:
     @ui_callable
     def get_laser_motor_positions(self, *args):
         '''Get the current positions of the laser motors.'''
-        self.laser_steps = self.motion_control.get_motor_positions(self.action_groups['laser_wavelength'])
+        self.laser_steps = self.get_motor_positions(self.action_groups['laser_wavelength'])
         print('Current laser pos: {}'.format(self.laser_steps))
         return self.laser_steps
     
     @ui_callable
     def get_monochromator_motor_positions(self, *args):
         '''Get the current positions of the monochromator motors.'''
-        self.monochromator_steps = self.motion_control.get_motor_positions(self.action_groups['monochromator_wavelength'])
+        self.monochromator_steps = self.get_motor_positions(self.action_groups['monochromator_wavelength'])
         print('Current monochromator pos: {}'.format(self.monochromator_steps))
         return self.monochromator_steps
 
@@ -559,11 +557,6 @@ class Microscope(Instrument):
 
         }
 
-        # scientific attributes
-        # self.laser_steps = None
-        self.laser_wavelength = [700, 700, 700, 700]
-        self.monochromator_wavelength = [700, 700, 700, 700]
-        # self.spectrometer_position = None
         self.current_shift = 0
         self.current_wavenumber = None
 
@@ -634,9 +627,9 @@ class Microscope(Instrument):
         self.calibrations.ammend_calibrations()
 
         # Initialize components
-        self.get_laser_motor_positions()
-        self.get_monochromator_motor_positions()
-        self.get_spectrometer_position()
+        self.calculate_laser_wavelength()
+        self.calculate_monochromator_wavelength()
+        self.calculate_spectrometer_wavelength()
         self.report_status(initialise=True)
         
         return 'Microscope initialised'
@@ -653,8 +646,8 @@ class Microscope(Instrument):
 
 
         report = {
-            'laser l1, l2 lambda': self.calculate_laser_wavelength(self.laser_steps),
-            'g1 lambda': self.calculate_monochromator_wavelength(self.monochromator_steps),
+            'laser': self.calculate_laser_wavelength(self.laser_steps),
+            'monochromator': self.calculate_monochromator_wavelength(self.monochromator_steps),
             'TRIAX lambda': self.calculate_spectrometer_wavelength(self.spectrometer_position),
             'laser motor positions': self.laser_steps,
             'monochromator motor positions': self.monochromator_steps,
@@ -666,11 +659,6 @@ class Microscope(Instrument):
         }
         
 
-        if  report['g1 lambda'][0] < 500 or report['g1 lambda'][0] > 2000:
-            print('Grating wavelength out of range - please check monochromator mode')
-
-        # self.pinhole = report['monochromator motor positions'][2]
-        # report['pinhole'] = self.pinhole
 
         print('-'*20)
         for key, value in report.items():
@@ -760,10 +748,12 @@ class Microscope(Instrument):
         '''
         # Get current positions
         current_positions = self.get_laser_motor_positions()
-        
+        breakpoint()
         # Calculate steps to move
         motor_steps = {}
         for motor, target in target_positions.items():
+            if target is None:
+                continue
             if motor in current_positions:
                 steps = target - current_positions[motor]
                 if steps != 0:
@@ -780,6 +770,7 @@ class Microscope(Instrument):
             # Update positions and confirm they match targets
             self.laser_steps = self.get_laser_motor_positions()
             self.motion_control.confirm_motor_positions(target_positions, 'laser_wavelength')
+            self.laser_wavelengths = self.calculate_laser_wavelength(self.laser_steps)
             print("Moved to laser steps: ", self.laser_steps)
 
     @ui_callable
@@ -812,6 +803,7 @@ class Microscope(Instrument):
             # Update positions and confirm they match targets
             self.monochromator_steps = self.get_monochromator_motor_positions()
             self.motion_control.confirm_motor_positions(target_positions, 'monochromator_wavelength')
+            self.monochromator_wavelengths = self.calculate_monochromator_wavelength(self.monochromator_steps)
             print("Moved to monochromator steps: ", self.monochromator_steps)
 
     def run_ldr0_scan(self, motor, search_length=None, resolution=None):
@@ -880,12 +872,14 @@ class Microscope(Instrument):
     @property
     def current_laser_wavenumber(self):
         '''Takes the current laser wavelength and calculates the absolute wavenumbers.'''
-        return 10_000_000/self.laser_wavelength[0]
+        wavelength_sample = next(iter(self.laser_wavelengths.values()))
+        return 10_000_000/wavelength_sample
     
     @property
     def current_monochromator_wavenumber(self):
         '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
-        return 10_000_000/self.monochromator_wavelength[0]
+        wavelength_sample = next(iter(self.monochromator_wavelengths.values()))
+        return 10_000_000/wavelength_sample
 
     @property
     def laser_steps(self):
@@ -1291,7 +1285,7 @@ class Microscope(Instrument):
         
         # Get target positions from calibration service
         # Assumes the calibration service has a wl_to_steps method that returns a dictionary
-        target_positions = self.calibrations.wl_to_steps(wavelength, 'laser_wavelength')
+        target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['laser_wavelength'])
         
         # Move to target positions
         self.go_to_laser_steps(target_positions)
@@ -1331,7 +1325,7 @@ class Microscope(Instrument):
         
         # Get target positions from calibration service
         # Assumes the calibration service has a wl_to_steps method that returns a dictionary
-        target_positions = self.calibrations.wl_to_steps(wavelength, 'monochromator_wavelength')
+        target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
         
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
@@ -1398,10 +1392,8 @@ class Microscope(Instrument):
         wavelengths = {}
         
         # Calculate wavelengths for each motor using calibration functions
-        wavelengths = self.calibrations.steps_to_wl(current_pos)
-
-        breakpoint()
-        
+        self.monochromator_wavelengths = self.calibrations.steps_to_wl(current_pos)
+      
         return wavelengths
 
     @ui_callable
@@ -1445,6 +1437,13 @@ class Microscope(Instrument):
         return self.interface.spectrometer.spectrometer_position
     
 
+    def get_laser_wavelength(self):
+        '''Get the current laser wavelength in nm.'''
+        return self.calculate_laser_wavelength()
+    
+    def get_monochromator_wavelength(self):
+        '''Get the current monochromator wavelength in nm.'''
+        return self.calculate_monochromator_wavelength()
     
     def get_all_current_positions(self):
         '''Get the current positions of all motors and calculate the corresponding wavelengths.'''
@@ -1464,21 +1463,28 @@ class Microscope(Instrument):
     
     def report_all_current_positions(self):
         '''Formats and prints the current positions of the microscope.'''
+        print("---Laser---")
+        for motor, position in self.laser_steps.items():
+            print(f'{motor}: {position} steps')
+        for motor, position in self.monochromator_steps.items():
+            print(f'{motor}: {position} steps')
 
-        l1_wavelength, l2_wavelength, _, _ = [round(x, 2) for x in self.laser_wavelength]
-        g1_wavelength, g2_wavelength, g3_wavelength, g4_wavelength = [round(x, 2) for x in self.monochromator_wavelength]
-        spectrometer_wavelength = round(self.spectrometer_wavelength, 2)
+        print('---Monochromator---')
+        for motor, wavelength in self.laser_wavelengths.items():
+            if wavelength is None:
+                print(f'{motor}: None')
+                continue
+            print(f'{motor}: {round(wavelength, 2)} nm')
+        for motor, wavelength in self.monochromator_wavelengths.items():
+            if wavelength is None:
+                print(f'{motor}: None')
+                continue
+            print(f'{motor}: {round(wavelength, 2)} nm')
 
-        print('laser pos: {}'.format(self.laser_steps))
-        print('monochromator pos: {}'.format(self.monochromator_steps))
-        print('triax pos: {}'.format(self.spectrometer_position))
-
-        print('triax wavelength: {}'.format(spectrometer_wavelength))
-        print('l1 wavelength: {}'.format(l1_wavelength))
-        print('l2 wavelength: {}'.format(l2_wavelength))
-        print('g1 wavelength: {}'.format(g1_wavelength))
-        print('g2 wavelength: {}'.format(g2_wavelength))
-        print('Raman shift: {}'.format(self.current_shift))
+        print('---Spectrometer---')
+        print(f'Spectrometer position: {self.spectrometer_position} steps')
+        print(f'Spectrometer wavelength: {self.spectrometer_wavelength} nm')
+        
 
         return 
     
@@ -1501,18 +1507,8 @@ class Microscope(Instrument):
         wavelengths = {}
         
         # Calculate wavelengths for each motor using calibration functions
-        if 'l1' in current_pos:
-            wavelengths['l1'] = round(self.calibrations.l1_to_wl(current_pos['l1']), 4)
-            # Keep backward compatibility for now
-            self.laser_wavelength[0] = wavelengths['l1']
-            
-        if 'l2' in current_pos:
-            wavelengths['l2'] = round(self.calibrations.l2_to_wl(current_pos['l2']), 4)
-            # Keep backward compatibility for now
-            self.laser_wavelength[1] = wavelengths['l2']
-            
-        # Add more motors as needed
-        
+        self.laser_wavelengths = self.calibrations.steps_to_wl(current_pos)
+      
         return wavelengths
 
     @ui_callable
