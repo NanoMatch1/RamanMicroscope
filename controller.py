@@ -133,10 +133,18 @@ class ArduinoUNO:
         motor_positions = []
         for command in new_command:
             repsonse = self.send_command(command)
-            motor_positions.append(repsonse)
+            motor_positions.append(repsonse[0])
 
-        breakpoint()
         return motor_positions
+
+    def write_motor_positions(self, motor_id_dict:dict):
+        command = 's{}s'.format(' '.join(['{}{}'.format(motor_id, steps) for motor_id, steps in motor_id_dict.items()]))
+        # Check length here
+        new_command = self._format_command_length(command)
+        for command in new_command:
+            response = self.send_command(command)
+        
+        return response
 
 
     def get_monochromator_motor_positions(self):

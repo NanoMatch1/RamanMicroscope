@@ -95,10 +95,10 @@ void imageMode() {
 }
 
 void monoShutter(String state) {
-  if (state == "on") {
+  if (state == "off") {
     digitalWrite(gShutPin, LOW);
     Serial.println("Shutter closed.");
-  } else if (state == "off") {
+  } else if (state == "on") {
     digitalWrite(gShutPin, HIGH);
     Serial.println("Shutter open.");
   }
