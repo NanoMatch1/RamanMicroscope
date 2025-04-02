@@ -58,8 +58,8 @@ void setup() {
   // custom speeds
   stepperY4.setMaxSpeed(10000);
   stepperY4.setAcceleration(10000);
-  stepperA4.setMaxSpeed(300);
-  stepperA4.setAcceleration(1000);
+  stepperX4.setMaxSpeed(300);
+  stepperX4.setAcceleration(1000);
   stepperA1.setMaxSpeed(1000);
   stepperA1.setAcceleration(1000);
 
