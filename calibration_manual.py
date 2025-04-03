@@ -557,8 +557,8 @@ class Calibration:
         print("Successfully saved TRIAX calibration data to 'TRIAX_calibration.json' file.")
 
     def save_all_calibrations(self):
-        calibrationDir = os.path.join(os.path.dirname(__file__), 'calibrations')
-        with open(os.path.join(calibrationDir, 'calibrations_main.json'), 'w') as f:
+        
+        with open(os.path.join(self.calibrationDir, 'calibrations_main.json'), 'w') as f:
             json.dump(calibration.calibrations, f)
 
         print("Calibration complete: Successfully saved calibration data to 'calibrations_main.json' file.")
@@ -677,14 +677,19 @@ class Calibration:
             data_group = 'laser_positions'
         elif axis_label in self.full_data['monochromator_positions']:
             data_group = 'monochromator_positions'
-        elif axis_label in self.full_data['triax_positions']:
+        
+        elif 'triax' in axis_label:
             data_group = 'triax_positions'
+            axis_label = 'triax'
         else:
             raise ValueError(f"Axis label '{axis_label}' not found in full_data. Check label or motor_positions file.")
 
         # Extract axes
         wavelength_axis = np.array(self.full_data['wavelength'])
-        motor_steps = np.array(self.full_data[data_group][axis_label])
+        if data_group == 'triax_positions':
+            motor_steps = np.array(self.full_data[data_group])
+        else:
+            motor_steps = np.array(self.full_data[data_group][axis_label])
 
         # Forward fit: wavelength → motor steps
         fit_coeff_fwd = np.polyfit(wavelength_axis, motor_steps, poly_order)
@@ -708,7 +713,6 @@ class Calibration:
 
         # Plot forward calibration if requested
         if show or getattr(self, 'showplots', False):
-            breakpoint()
             fig, ax = plt.subplots(2, 1)
             ax[0].scatter(wavelength_axis, motor_steps, label=f'{axis_label} steps', color='black')
             ax[0].plot(wavelength_axis, pred_steps, label='Fit', color='tab:purple')
@@ -1570,20 +1574,13 @@ if __name__ == '__main__':
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
 
-    coefficients = calibration.calibrate_motor_axis('l1')
-    breakpoint()
-    triax_calibrations(calibration, cal_data)
-    # calibration.triax_pixel_calibration()
-    # breakpoint()
-    cal_data, cal_data_array = calibration.load_aapt_file()
-    subtractive_calibrations(calibration, cal_data, show_plots=True)
-    additive_calibrations(calibration, cal_data, duplicate=True, show_plots=False)
-    
-    print(calibration.calibrations)
-    breakpoint()
+    for label in calibration.laser_positions.keys():
+        coefficients = calibration.calibrate_motor_axis(label)
+
+  
     # TRIAX cal is absolute - only needs to be saved once
     # calibration.save_triax_calibrations()
-    # calibration.save_all_calibrations()
+    calibration.save_all_calibrations()
     # calibration.save_report()
     # review_report()
     # print(calibration.calibrations)
