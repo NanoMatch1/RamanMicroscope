@@ -1,3 +1,6 @@
+# l1: 46 steps
+# l2: -59 steps
+# l3: -247 steps
 import inspect
 import serial
 import time
@@ -685,7 +688,7 @@ class Microscope(Instrument):
         # Use the injected calibration service
         self.calibrations = self.calibration_service
         # Update calibrations with auto-calibration data if available
-        self.calibrations.ammend_calibrations()
+        # self.calibrations.ammend_calibrations()
 
         # Initialize components
         self.calculate_laser_wavelength()
@@ -1085,9 +1088,7 @@ class Microscope(Instrument):
         print(f"All components set to wavelength: {wavelength} nm")
         return True
     
-#     l1: 46 steps
-# l2: -59 steps
-# l3: -247 steps
+
 
     @ui_callable
     def go_to_spectrometer_wavelength(self, wavelength):
