@@ -159,8 +159,8 @@ class Calibration:
         self.dataDir = os.path.join(self.calibrationDir, 'motor_recordings')
 
         self.showplots = showplots
-        self.calibration_metrics = {}
         self.calibrations = {}
+        self.calibration_metrics = {}
         self.report_dict = {'initial': {}, 'subtractive': {}, 'additive': {}}
 
     def load_calibration_file(self):
@@ -170,11 +170,16 @@ class Calibration:
             data = json.load(f)
         
         self.full_data = self._flatten_calibration_data(data)
-
-        breakpoint()
         
         return self.full_data
     
+    def assign_calibration_data(self):
+        # self.wavelength_data = self.full_data['wavelength']
+        # self.laser_positions = self.full_data['laser_positions']
+        # self.monochromator_positions = self.full_data['monochromator_positions']
+        # self.triax_positions = self.full_data['triax_positions']
+        self.__dict__.update(self.full_data)
+
     def _flatten_calibration_data(self, data):
         # Prepare output structure
         flattened = {}
@@ -200,7 +205,51 @@ class Calibration:
                 flattened[key] = dict(flattened[key])
 
         return flattened
+    
+    def sort_flattened_data_by_wavelength(self):
+        # Get the sorted indices from the wavelength list
+        sorted_indices = np.argsort(self.full_data["wavelength"])
 
+        sorted_data = {}
+
+        for key, value in self.full_data.items():
+            if isinstance(value, list):
+                # Directly sort 1D lists
+                sorted_data[key] = [value[i] for i in sorted_indices]
+            elif isinstance(value, dict):
+                # Recursively sort each subkey in nested dictionaries
+                sorted_data[key] = {
+                    subkey: [subval[i] for i in sorted_indices]
+                    for subkey, subval in value.items()
+                }
+            else:
+                raise ValueError(f"Unsupported type for key {key}: {type(value)}")
+
+        self.full_data = sorted_data
+        return sorted_data
+
+    def build_motor_sorted_array(self, flattened_data, motor_set):
+        # Extract motor positions
+        wavelengths = np.array(flattened_data["wavelength"])
+        # TODO: enable calibration of a list of unique motors, independent of the motor_set label
+        
+        # Extract laser_positions keys in a stable order
+        data_keys = list(flattened_data[motor_set].keys())
+
+        # Stack laser position values
+        data_values = np.column_stack([flattened_data["laser_positions"][k] for k in data_keys])
+
+        # Combine into one array with wavelength first
+        combined = np.column_stack((wavelengths, data_values))
+
+        # Sort by wavelength (column 0)
+        sorted_data = combined[np.argsort(combined[:, 0])]
+
+        # Insert labels as first row — cast all to object to mix types
+        labels = ["wavelength"] + data_keys
+        labeled_array = np.vstack([labels, sorted_data.astype(object)])
+
+        return labeled_array
     
     def load_pixel_calibration(self):
         pixel_cal_dir = os.path.join(os.path.dirname(__file__), 'triax_calibration')
@@ -438,13 +487,6 @@ class Calibration:
         coeff_wl_to_l1 = np.polyfit(wavelength, l1_steps, 2)
         p_l1_steps = np.poly1d(coeff_wl_to_l1)
 
-        # coeff_wl_to_l1, pcov = opt.curve_fit(simple_sin_fit, wavelength, l1_steps, p0=[100000, 0.001, 1.5, -75000])
-        # p_l1_steps = simple_sin_fit(l1_steps, *coeff_wl_to_l1)
-        # alias to simple_sin_fit for testing
-        # p_l1_steps = lambda x: simple_sin_fit(x, *coeff_wl_to_l1)
-
-        # test_eq = simple_sin_fit(wavelength, 100000, 0.001, 1.5, -75000)
-
         y_pred = p_l1_steps(wavelength)
         residuals = l1_steps - y_pred
         residuals_scaled = (residuals/abs(l1_steps[0]-l1_steps[1])) * 100
@@ -628,6 +670,71 @@ class Calibration:
 
         return steps_to_wavelength, fit_metrics
         
+    def calibrate_motor_axis(self, axis_label, poly_order=2, show=False):
+        """Calibrate a given motor axis (e.g., 'l1') against wavelength using polynomial fit."""
+        
+        if axis_label in self.full_data['laser_positions']:
+            data_group = 'laser_positions'
+        elif axis_label in self.full_data['monochromator_positions']:
+            data_group = 'monochromator_positions'
+        elif axis_label in self.full_data['triax_positions']:
+            data_group = 'triax_positions'
+        else:
+            raise ValueError(f"Axis label '{axis_label}' not found in full_data. Check label or motor_positions file.")
+
+        # Extract axes
+        wavelength_axis = np.array(self.full_data['wavelength'])
+        motor_steps = np.array(self.full_data[data_group][axis_label])
+
+        # Forward fit: wavelength → motor steps
+        fit_coeff_fwd = np.polyfit(wavelength_axis, motor_steps, poly_order)
+        poly_fwd = np.poly1d(fit_coeff_fwd)
+        pred_steps = poly_fwd(wavelength_axis)
+        residuals_fwd = motor_steps - pred_steps
+        metrics_fwd = self.calculate_fit_metrics(motor_steps, pred_steps)
+
+        # Inverse fit: motor steps → wavelength
+        fit_coeff_inv = np.polyfit(motor_steps, wavelength_axis, poly_order)
+        poly_inv = np.poly1d(fit_coeff_inv)
+        pred_wl = poly_inv(motor_steps)
+        residuals_inv = wavelength_axis - pred_wl
+        metrics_inv = self.calculate_fit_metrics(wavelength_axis, pred_wl)
+
+        # Store results
+        self.calibrations[f'wl_to_{axis_label}'] = fit_coeff_fwd.tolist()
+        self.calibrations[f'{axis_label}_to_wl'] = fit_coeff_inv.tolist()
+        self.calibration_metrics[f'wl_to_{axis_label}'] = metrics_fwd
+        self.calibration_metrics[f'{axis_label}_to_wl'] = metrics_inv
+
+        # Plot forward calibration if requested
+        if show or getattr(self, 'showplots', False):
+            breakpoint()
+            fig, ax = plt.subplots(2, 1)
+            ax[0].scatter(wavelength_axis, motor_steps, label=f'{axis_label} steps', color='black')
+            ax[0].plot(wavelength_axis, pred_steps, label='Fit', color='tab:purple')
+            ax[0].set_ylabel('Steps')
+            ax[0].set_title(f'Wavelength to {axis_label.upper()} Calibration')
+            ax[0].legend()
+
+            ax[1].plot(wavelength_axis, residuals_fwd, label='Residuals', marker='o')
+            ax[1].set_ylabel('Residuals')
+            ax[1].set_xlabel('Wavelength (nm)')
+            ax[1].legend()
+            plt.tight_layout()
+            plt.show()
+
+        return {
+            'forward': {
+                'coeff': fit_coeff_fwd,
+                'metrics': metrics_fwd,
+                'poly': poly_fwd,
+            },
+            'inverse': {
+                'coeff': fit_coeff_inv,
+                'metrics': metrics_inv,
+                'poly': poly_inv,
+            }
+        }
 
         
     def wavelength_to_l1(self, l1_steps, poly_order=2, mode=None, show=False):
@@ -1373,6 +1480,13 @@ if __name__ == '__main__':
     # initialise calibration object
         calibration = Calibration(**kwargs)
         calibration.load_calibration_file()
+        calibration.sort_flattened_data_by_wavelength()
+        calibration.assign_calibration_data()
+
+        # laser_array = calibration.build_motor_sorted_array(calibration.full_data, 'laser_positions')
+        return
+        breakpoint()
+
         # initial wavelength calibration
         initial_wavelength_cal = calibration.initial_wavelength_calibration(show=False)
         # load eept calibration file
@@ -1450,7 +1564,13 @@ if __name__ == '__main__':
         # calibration.wavelength_to_g2_tester(g2_steps, mode='additive', show=True)
         # calibration.g2_to_wavelength_tester(g2_steps, mode='additive', show=True)
 
-    calibration, cal_data = initialise(showplots=False)
+    # calibration, cal_data = initialise(showplots=False)
+    calibration = Calibration(showplots=True)
+    calibration.load_calibration_file()
+    calibration.sort_flattened_data_by_wavelength()
+    calibration.assign_calibration_data()
+
+    coefficients = calibration.calibrate_motor_axis('l1')
     breakpoint()
     triax_calibrations(calibration, cal_data)
     # calibration.triax_pixel_calibration()

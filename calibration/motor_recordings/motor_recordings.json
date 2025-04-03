@@ -1,6 +1,6 @@
-{"0":{"laser_positions":{"l1": 0, "l2": 0, "l3": 0},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_position":380000,"wavelength":800.26},
-"1":{"laser_positions":{"l1": 2000, "l2": 10, "l3": 0},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_position":380000,"wavelength":779.628},
-"2":{"laser_positions":{"l1": 6000, "l2": 45, "l3": 2500},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_position":380000,"wavelength":737.297},
-"3":{"laser_positions":{"l1": 8000, "l2": 65, "l3": 3500},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_position":380000,"wavelength":716.037},
-"4":{"laser_positions":{"l1": -4000, "l2": -40, "l3": -3000},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_position":380000,"wavelength":842.214},
-"5":{"laser_positions":{"l1": -8000, "l2": -60, "l3": -5500},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_position":380000,"wavelength":883.049}}
+{"0":{"laser_positions":{"l1": 0, "l2": 0, "l3": 0},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_positions":380000,"wavelength":800.26},
+"1":{"laser_positions":{"l1": 2000, "l2": 10, "l3": 0},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_positions":380000,"wavelength":779.628},
+"2":{"laser_positions":{"l1": 6000, "l2": 45, "l3": 2500},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_positions":380000,"wavelength":737.297},
+"3":{"laser_positions":{"l1": 8000, "l2": 65, "l3": 3500},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_positions":380000,"wavelength":716.037},
+"4":{"laser_positions":{"l1": -4000, "l2": -40, "l3": -3000},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_positions":380000,"wavelength":842.214},
+"5":{"laser_positions":{"l1": -8000, "l2": -60, "l3": -5500},"monochromator_positions":{"g1": 0, "g2": 0, "g3": 0, "g4": 0},"triax_positions":380000,"wavelength":883.049}}
