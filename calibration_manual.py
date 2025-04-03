@@ -1,5 +1,6 @@
 import csv
 import json
+from collections import defaultdict
 from dataclasses import dataclass
 import scipy.optimize as opt
 
@@ -168,13 +169,38 @@ class Calibration:
         with open(motor_recordings_file, 'r') as f:
             data = json.load(f)
         
-        
+        self.full_data = self._flatten_calibration_data(data)
+
         breakpoint()
         
+        return self.full_data
+    
+    def _flatten_calibration_data(self, data):
+        # Prepare output structure
+        flattened = {}
 
+        # Sort top-level keys numerically
+        sorted_entries = [data[key] for key in sorted(data, key=int)]
 
-        wavelength_data = np.array(data_set_1).astype(float)
-        return wavelength_data
+        for entry in sorted_entries:
+            for key, value in entry.items():
+                if isinstance(value, dict):
+                    if key not in flattened:
+                        flattened[key] = defaultdict(list)
+                    for subkey, subval in value.items():
+                        flattened[key][subkey].append(subval)
+                else:
+                    if key not in flattened:
+                        flattened[key] = []
+                    flattened[key].append(value)
+
+        # Convert nested defaultdicts to dicts
+        for key in flattened:
+            if isinstance(flattened[key], defaultdict):
+                flattened[key] = dict(flattened[key])
+
+        return flattened
+
     
     def load_pixel_calibration(self):
         pixel_cal_dir = os.path.join(os.path.dirname(__file__), 'triax_calibration')
