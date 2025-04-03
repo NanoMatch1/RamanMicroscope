@@ -641,7 +641,7 @@ class Microscope(Instrument):
         if extra is None:
             extra = self.calculate_laser_wavelength()
             
-        with open(os.path.join(self.scriptDir, 'motor_recordings.txt'), 'a') as f:
+        with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.txt'), 'a') as f:
             f.write('{}:{}:{}:{}\n'.format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
         print("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
         return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"

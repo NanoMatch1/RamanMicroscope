@@ -54,6 +54,7 @@ class Interface:
         self.transientDir = os.path.join(self.scriptDir, 'transient')
         self.saveDir = os.path.join(self.dataDir, 'data')
         self.autocalibrationDir = os.path.join(self.scriptDir, 'autocalibration')
+        self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         
         # Create directories first
         self._build_directories()
@@ -246,6 +247,11 @@ class Interface:
             os.makedirs(self.saveDir)
         if not os.path.exists(self.autocalibrationDir):
             os.makedirs(self.autocalibrationDir)
+        if not os.path.exists(self.calibrationDir):
+            os.makedirs(self.calibrationDir)
+
+        if not os.path.exists(os.path.join(self.calibrationDir, 'motor_recordings')):
+            os.makedirs(os.path.join(self.calibrationDir, 'motor_recordings'))
 
     def _generate_command_map(self):
         '''Dynamically generate a command map from the instruments declared in __init__'''
