@@ -500,7 +500,10 @@ class Microscope(Instrument):
                 'l1': '1X',
                 'l2': '1Y',
                 'l3': '1Z',
-            },
+            }, # l2 range ~120 steps edge to edge @ 800nm
+            # l2 range ~80 steps @ 750nm
+            # l2 range ~60 steps @ 716nm
+
 
             'monochromator_wavelength': {
                 'g1': '2X',
