@@ -515,7 +515,12 @@ class Microscope(Instrument):
             'polarization': {
                 'in': '3X', 
                 'out': '3Y'
-            }
+            },
+            # put the triax in here for labelling purposes
+            'triax': {
+                'triax':'triax'
+            },
+
             # Add more action groups as needed
         }
         
@@ -641,10 +646,20 @@ class Microscope(Instrument):
         if extra is None:
             extra = self.calculate_laser_wavelength()
 
-        data = {'laser_positions':laser_motor_positions, 'monochromator_positions':monochromator_motor_positions, 'triax_positions':triax_position,'wavelength':extra}
+        try:
+            with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'r') as f:
+                current_data = json.load(f)
+        except FileNotFoundError:
+            current_data = {}
+
+
+        data = {'laser_positions':laser_motor_positions, 'monochromator_positions':monochromator_motor_positions, 'triax_positions':triax_position,'wavelength':float(extra)}
+
+        current_data[f'{len(current_data)}'] = data
+        # breakpoint()
         # dump the data to a json file
-        with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'a') as f:
-            json.dump(data, f)
+        with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'w') as f:
+            json.dump(current_data, f)
             # f.write('\n')
             
         # with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.txt'), 'a') as f:
@@ -1069,6 +1084,10 @@ class Microscope(Instrument):
         
         print(f"All components set to wavelength: {wavelength} nm")
         return True
+    
+#     l1: 46 steps
+# l2: -59 steps
+# l3: -247 steps
 
     @ui_callable
     def go_to_spectrometer_wavelength(self, wavelength):
@@ -1429,7 +1448,8 @@ class Microscope(Instrument):
         if steps is None:
             steps = self.interface.spectrometer.get_spectrometer_position()
 
-        self.spectrometer_wavelength = self.calibrations.triax_steps_to_wl(self.spectrometer_position) # TODO: rename triax_steps_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
+
+        self.spectrometer_wavelength = self.calibrations.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_steps_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
         return self.spectrometer_wavelength
     
     def report_all_current_positions(self):

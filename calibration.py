@@ -97,14 +97,14 @@ class Calibration:
 
     def __init__(self):
         self.scriptDir = os.path.dirname(os.path.abspath(__file__))
-        self.calibrationDir = os.path.join(self.scriptDir, 'calibrations')
+        self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         self.generate_calibrations()
     
     def _load_calibrations(self):
         """
         Load the calibration data from the calibrations_main.json file.
         """
-        with open(os.path.join(self.scriptDir, 'calibrations', 'calibrations_main.json'), 'r') as f:
+        with open(os.path.join(self.scriptDir, 'calibration', 'calibrations_main.json'), 'r') as f:
             calibrations = json.load(f)
             print('Calibrations loaded from file')
         return calibrations
@@ -137,7 +137,8 @@ class Calibration:
                 steps_dict[motor] = round(calibration(wavelength)) # round to nearest integer
             else:
                 print(f'{motor} not found in calibrations')
-                steps_dict[motor] = None
+                self.__dict__[calibration_name] = np.poly1d([0]) # default to zero
+                steps_dict[motor] = 0
 
         return steps_dict
     
@@ -152,6 +153,7 @@ class Calibration:
                 wl_dict[motor] = calibration(steps)
             else:
                 print(f'{motor} not found in calibrations')
+                self.__dict__[calibration_name] = np.poly1d([0]) # default to zero
                 wl_dict[motor] = None
 
         return wl_dict
