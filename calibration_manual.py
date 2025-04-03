@@ -31,11 +31,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'analysis-spectroscopy','analysis_spectroscopy'))
 
-from analysis_spectroscopy import dataset_analysis as asp
+# from analysis_spectroscopy import dataset_analysis as asp
 
 calibration_records = {
-    'date': '2024-08-27'
-    ,
 
     'manual_measurements': {
         'nm_per_laser_step': 0.0158,
@@ -44,23 +42,6 @@ calibration_records = {
         # nm_per_step = 0
         'triax_steps': 410000,
         'nm_per_triax_step': 0.00110267
-    },
-
-    'eept': {
-        'headers': {
-            'L1': 0,
-            'L2': 1,
-            'NIU': 2,
-            'NIU': 3,
-            'G1': 4,
-            'G2': 5,
-            'NIU': 6,
-            'NIU': 7,
-            'triax_steps': 8,
-            'pixels': 9
-        },
-        'data':
-            "['X-473', 'Y212', 'Z0', 'A0']:['X58', 'Y45', 'Z0', 'A0']:380000,518\n['X-973', 'Y424', 'Z0', 'A0']:['X112', 'Y90', 'Z0', 'A0']:385000,390\n['X-1473', 'Y636', 'Z0', 'A0']:['X184', 'Y170', 'Z0', 'A0']:390000,263\n['X-2473', 'Y1058', 'Z0', 'A0']:['X350', 'Y359', 'Z0', 'A0']:395000,645\n['X-3473', 'Y1479', 'Z0', 'A0']:['X508', 'Y587', 'Z0', 'A0']:405000,414\n['X-4473', 'Y1897', 'Z0', 'A0']:['X619', 'Y698', 'Z0', 'A0']:415000,152\n['X-5473', 'Y2327', 'Z0', 'A0']:['X770', 'Y851', 'Z0', 'A0']:420000,542\n['X-6473', 'Y2735', 'Z0', 'A0']:['X917', 'Y970', 'Z0', 'A0']:430000,300\n['X-7473', 'Y3149', 'Z0', 'A0']:['X1023', 'Y1064', 'Z0', 'A0']:435000,668\n['X-8473', 'Y3572', 'Z0', 'A0']:['X1163', 'Y1181', 'Z0', 'A0']:445000,436\n['X27', 'Y1', 'Z0', 'A0']:['X-28', 'Y-28', 'Z0', 'A0']:375000,646\n['X1027', 'Y-413', 'Z0', 'A0']:['X-198', 'Y-224', 'Z0', 'A0']:370000,274\n['X2027', 'Y-846', 'Z0', 'A0']:['X-323', 'Y-343', 'Z0', 'A0']:360000,489\n['X3027', 'Y-1262', 'Z0', 'A0']:['X-468', 'Y-455', 'Z0', 'A0']:355000,140\n['X4027', 'Y-1687', 'Z0', 'A0']:['X-603', 'Y-566', 'Z0', 'A0']:345000,367\n#['X5027', 'Y-2186', 'Z0', 'A0']:['X-693', 'Y-650', 'Z0', 'A0']:335000,589\n#['X6027', 'Y-2609', 'Z0', 'A0']:['X-848', 'Y-782', 'Z0', 'A0']:330000,242\n#['X7027', 'Y-3045', 'Z0', 'A0']:['X-963', 'Y-888', 'Z0', 'A0']:320000,473\n#['X-473', 'Y168', 'Z0', 'A0']:['X62', 'Y50', 'Z0', 'A0']:380000,515"
     }
 }
 
@@ -173,129 +154,28 @@ class Calibration:
 
     def __init__(self, showplots=False):
         # self.data = data
-        self.dataDir = os.path.join(os.path.dirname(__file__), 'laser_calibration')
-        self.files = [f for f in os.listdir(self.dataDir) if f.endswith('.txt')]
-        self.eept_file = os.path.join(os.path.dirname(__file__), 'eept.txt')
-        self.aapt_file = os.path.join(os.path.dirname(__file__), 'aapt.txt')
+        self.calibrationDir = os.path.join(os.path.dirname(__file__), 'calibration')
+        self.dataDir = os.path.join(self.calibrationDir, 'motor_recordings')
+
         self.showplots = showplots
         self.calibration_metrics = {}
         self.calibrations = {}
         self.report_dict = {'initial': {}, 'subtractive': {}, 'additive': {}}
 
     def load_calibration_file(self):
-        file = self.files[0]
+        motor_recordings_file = os.path.join(self.dataDir, 'motor_recordings.json')
 
-        with open(os.path.join(self.dataDir, file), 'r') as f:
-            lines = f.readlines()
-            data_set_1 = []
-            data_set_2 = []
-            for line in lines:
-                if line.startswith('#'):
-                    continue
-                cols = line.split(',')
-                data_set_1.append([cols[0], cols[3]])
-                # data_set_2.append([float(cols[3]), float(cols[0])])
+        with open(motor_recordings_file, 'r') as f:
+            data = json.load(f)
+        
+        
+        breakpoint()
+        
+
 
         wavelength_data = np.array(data_set_1).astype(float)
         return wavelength_data
     
-    def load_eept_file(self, plot_rows=[0,1,4,5]):
-        cal_data = np.array(["l1", "l2", "NIU", "NIU", "g1", "g2", "NIU", "NIU", "triax_steps", "pixels"])
-        with open(self.eept_file, 'r') as f:
-            lines = f.readlines()
-
-            for line in lines:
-                data = []
-                if line.startswith('#'):
-                    continue
-                line = line.strip('\n')
-                if len(line) == 0:
-                    continue
-                try:
-                    set_avo, set_gary, set_triax = line.split(':')
-                except Exception as e:
-                    print(e)
-                    print("check data file eept.txt")
-                    continue
-        
-                set_avo = set_avo.strip('[]')
-                set_gary = set_gary.strip('[]')
-
-                set_avo = set_avo.split(',')
-                set_gary = set_gary.split(',')
-                set_triax = set_triax.split(',')
-
-                data.extend([*set_avo, *set_gary, *set_triax])
-                new_data = []
-                for x in data:
-                    value = float(x.strip("' XYZA"))
-                    new_data.append(value)
-
-                cal_data = np.column_stack((cal_data, new_data))
-
-        headers = cal_data.T[0, :]
-        cal_data_array = cal_data.T[1:, :].astype(float)
-
-        # sort the data by steps on l1 (/propto wavelength)
-        sorted_data = cal_data_array[np.argsort(cal_data_array[:, 0])]
-
-        cal_data = {header: sorted_data[:, idx] for idx, header in enumerate(headers)}
-
-        return cal_data, sorted_data
-    
-    def load_aapt_file(self):
-        cal_data = np.array(["laser_wl", "l1", "l2", "NIU", "NIU", "g1", "g2", "NIU", "NIU", 'grating_wl'])
-        with open(self.aapt_file, 'r') as f:
-            lines = f.readlines()
-
-            for line in lines:
-                data = []
-                if line.startswith('#'):
-                    continue
-                line = line.strip('\n')
-                if len(line) == 0:
-                    continue
-                try:
-                    laser_wl, set_avo, set_gary, grating_wl = line.split(':')
-                except Exception as e:
-                    print(e)
-                    print("check data file aapt.txt")
-                    continue
-        
-                set_avo = set_avo.strip('[]')
-                set_gary = set_gary.strip('[]')
-
-                set_avo = set_avo.split(',')
-                set_gary = set_gary.split(',')
-                # set_triax = set_triax.split(',')
-
-                data.extend([laser_wl, *set_avo, *set_gary, grating_wl])
-                new_data = []
-                for x in data:
-                    value = float(x.strip("' XYZA"))
-                    new_data.append(value)
-
-
-                cal_data = np.column_stack((cal_data, new_data))
-
-        headers = cal_data.T[0, :]
-        cal_data_array = cal_data.T[1:, :].astype(float)
-
-        sorted_data = cal_data_array[np.argsort(cal_data_array[:, 0])]
-        sorted_data_grating = cal_data_array[np.argsort(cal_data_array[:, -1])]
-
-        # breakpoint()
-
-        # cal_data = {header: sorted_data[:, idx] for idx, header in enumerate(headers)}
-        # sort by grating wavelength
-        # cal_data = {header: sorted_data_grating[:, idx] for idx, header in enumerate(headers)}
-        cal_data = {header: sorted_data[:, idx] for idx, header in enumerate(headers)}
-
-        self.laser_wavelength_axis = cal_data['laser_wl']
-        self.grating_wavelength_axis = cal_data['grating_wl']
-
-        return cal_data, sorted_data
-
     def load_pixel_calibration(self):
         pixel_cal_dir = os.path.join(os.path.dirname(__file__), 'triax_calibration')
         files = [file for file in os.listdir(pixel_cal_dir) if file.endswith('.json')]
@@ -1466,6 +1346,7 @@ if __name__ == '__main__':
     def initialise(**kwargs):
     # initialise calibration object
         calibration = Calibration(**kwargs)
+        calibration.load_calibration_file()
         # initial wavelength calibration
         initial_wavelength_cal = calibration.initial_wavelength_calibration(show=False)
         # load eept calibration file
@@ -1544,6 +1425,7 @@ if __name__ == '__main__':
         # calibration.g2_to_wavelength_tester(g2_steps, mode='additive', show=True)
 
     calibration, cal_data = initialise(showplots=False)
+    breakpoint()
     triax_calibrations(calibration, cal_data)
     # calibration.triax_pixel_calibration()
     # breakpoint()

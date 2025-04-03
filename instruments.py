@@ -640,11 +640,17 @@ class Microscope(Instrument):
         
         if extra is None:
             extra = self.calculate_laser_wavelength()
+
+        data = {'laser_positions':laser_motor_positions, 'monochromator_positions':monochromator_motor_positions, 'triax_positions':triax_position,'wavelength':extra}
+        # dump the data to a json file
+        with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'a') as f:
+            json.dump(data, f)
+            # f.write('\n')
             
-        with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.txt'), 'a') as f:
-            f.write('{}:{}:{}:{}\n'.format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
-        print("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
-        return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"
+        # with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.txt'), 'a') as f:
+        #     f.write('{}:{}:{}:{}\n'.format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
+        # print("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
+        # return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"
 
     @ui_callable
     def set_camera_gain(self, imagemode, gain):
