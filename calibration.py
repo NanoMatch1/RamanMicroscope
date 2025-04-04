@@ -146,6 +146,11 @@ class Calibration:
         '''Convert motor steps to wavelength. Takes a dictionary of motor labels ('l1', ...) and their steps'''
         wl_dict = {}
 
+        # if 'triax' in motor_steps.keys():
+        #     breakpoint()
+        # g3 -2740 50 inside
+        # IMPORTANT: triax steps at 805 nm = 142073
+
         for motor, steps in motor_steps.items():
             calibration_name = '{}_to_wl'.format(motor)
             if hasattr(self, calibration_name):
