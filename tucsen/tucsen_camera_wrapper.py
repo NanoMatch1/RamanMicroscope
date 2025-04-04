@@ -306,7 +306,7 @@ class TucamCamera:
         
         return sim_frame
 
-    @simulate(function_handler=lambda self, *args, **kwargs: 'Simulated camera initialized')
+    # @simulate(function_handler=lambda self, *args, **kwargs: 'Simulated camera initialized')
     def initialise(self):
         print("Initialising TUCam API...")
         # Prepare TUCAM structures
@@ -333,7 +333,7 @@ class TucamCamera:
         self.set_hardware_binning()
         self.set_acqtime(self.acqtime)
         self.set_image_processing(0)
-        # self.set_resolution(1)
+        self.set_resolution(1)
         # self.set_denoise(0)
         self.set_image_and_gain()
         self.set_roi(self.roi_new)

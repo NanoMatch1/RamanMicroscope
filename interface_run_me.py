@@ -332,8 +332,8 @@ class Interface:
 
 if __name__ == '__main__':
     instrument = Interface(simulate=False, com_port='COM10', debug_skip=[
-        'camera',
+        #'camera',
         'laser', 
-        'TRIAX'
+        #'TRIAX'
         ])
     cli(instrument)

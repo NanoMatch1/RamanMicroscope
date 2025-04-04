@@ -1,5 +1,5 @@
 # l1: 46 steps
-# l2: -59 steps
+# l2: -5 steps
 # l3: -247 steps
 import inspect
 import serial
@@ -509,15 +509,15 @@ class Microscope(Instrument):
 
 
             'monochromator_wavelength': {
-                'g1': '2X',
-                'g2': '2Y',
-                'g3': '2Z',
-                'g4': '2A',
+                'g1': '3X',
+                'g2': '3Y',
+                'g3': '3Z',
+                'g4': '3A',
             },
 
             'polarization': {
-                'in': '3X', 
-                'out': '3Y'
+                'in': '4X', 
+                'out': '4Y'
             },
             # put the triax in here for labelling purposes
             'triax': {
@@ -546,7 +546,8 @@ class Microscope(Instrument):
             'sm': self.go_to_monochromator_wavelength,
             'sall': self.go_to_wavelength_all,
             'st': self.go_to_spectrometer_wavelength,
-            'reference': self.reference_calibration,
+            'reference': self.reference_calibration_from_wavelength,
+            'referencetriax': self.reference_calibration_from_triax,
             'shift': self.go_to_wavenumber,
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
@@ -1096,7 +1097,7 @@ class Microscope(Instrument):
         self.interface.spectrometer.go_to_wavelength(wavelength)
 
     @ui_callable
-    def reference_calibration(self, steps=None, shift=True):
+    def reference_calibration_from_triax(self, steps=None, shift=True):
         '''Used to reference the current motor position to the laser wavelength, as defined by the current calibration. Measure a spectrum on the TRIAX and enter the stepper motor position and pixel count of the peak wavelength here. In the future, this will be automated with a peak detection algorithm.'''
         # Instructions: Ensure that the entire system is well aligned, and that the stepper motors are in the correct positions relative to one another for passing the laser wavelength to the spectrograph.
         # Centre the laser peak in pixel 50 of the CCD. Enter the stepper motor position here.
@@ -1104,7 +1105,7 @@ class Microscope(Instrument):
             
         if steps is None:
             steps = self.get_spectrometer_position()
-        true_wavelength_laser = self.calibrations.triax_steps_to_wl(float(steps))
+        true_wavelength_laser = self.calibrations.triax_to_wl(float(steps))
         print('True wavelength: {}. Shifting motor positions to true wavelength'.format(true_wavelength_laser))
         
         if shift is True:
@@ -1150,6 +1151,63 @@ class Microscope(Instrument):
             print('Monochromator motors successfully calibrated')
         else:
             print('Error calibrating monochromator motors')
+
+    @ui_callable
+    def reference_calibration_from_wavelength(self, wavelength, shift=True):
+        '''
+        Reference the current system configuration to a known laser wavelength (in nm).
+        Provide the true laser wavelength from an external reference.
+
+        Parameters
+        ----------
+        wavelength : float
+            Known laser wavelength (in nm).
+        shift : bool, optional
+            Whether to apply Raman shift correction. Default is True.
+        '''
+        true_wavelength_laser = float(wavelength)
+        print(f'True wavelength provided: {true_wavelength_laser} nm')
+
+        if shift:
+            grating_wavenumber = (10_000_000 / true_wavelength_laser) - self.current_shift
+            true_wavelength_grating = 10_000_000 / grating_wavenumber
+        else:
+            true_wavelength_grating = true_wavelength_laser
+
+        # Calculate target motor positions from the provided wavelength
+        target_laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
+        target_mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
+
+        # Move motors using high-level go_to methods
+        self.go_to_laser_steps(target_laser_steps)
+        self.go_to_monochromator_steps(target_mono_steps)
+
+        # Check laser motor positions
+        current_laser_pos = self.get_laser_motor_positions()
+        current_mono_pos = self.get_monochromator_motor_positions()
+
+        laser_calibrated = True
+        for motor, target in target_laser_steps.items():
+            if motor in current_laser_pos and current_laser_pos[motor] != target:
+                laser_calibrated = False
+                print(f'Laser motor {motor}: Expected {target}, got {current_laser_pos[motor]}')
+        
+        if laser_calibrated:
+            print('Laser motors successfully calibrated')
+        else:
+            print('Error calibrating laser motors')
+
+        mono_calibrated = True
+        for motor, target in target_mono_steps.items():
+            if motor in current_mono_pos and current_mono_pos[motor] != target:
+                mono_calibrated = False
+                print(f'Monochromator motor {motor}: Expected {target}, got {current_mono_pos[motor]}')
+        
+        if mono_calibrated:
+            print('Monochromator motors successfully calibrated')
+        else:
+            print('Error calibrating monochromator motors')
+
 
     def wavenumber_to_wavelength(self, wavenumber):
         return 10_000_000/wavenumber
@@ -1450,7 +1508,7 @@ class Microscope(Instrument):
             steps = self.interface.spectrometer.get_spectrometer_position()
 
 
-        self.spectrometer_wavelength = self.calibrations.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_steps_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
+        self.spectrometer_wavelength = self.calibrations.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
         return self.spectrometer_wavelength
     
     def report_all_current_positions(self):
@@ -1953,7 +2011,7 @@ class Triax(Instrument):
         
         triax_steps = self.get_triax_steps()
         
-        target_steps = round(self.interface.microscope.calibrations.wl_to_triax_steps(wavelength))
+        target_steps = round(self.interface.microscope.calibrations.wl_to_triax(wavelength))
         # 
         new_steps = target_steps - triax_steps
         # return if no movement is required

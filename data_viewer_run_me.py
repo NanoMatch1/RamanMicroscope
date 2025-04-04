@@ -11,7 +11,7 @@ from matplotlib.widgets import RectangleSelector
 
 
 class LiveDataPlotter:
-    def __init__(self, file_path):
+    def __init__(self, file_path, **kwargs):
         self.file_path = file_path
         self.autoscale_enabled = True
         self.updating = True
@@ -24,6 +24,8 @@ class LiveDataPlotter:
         self.spectrum_roi = (50,1100)
 
         self.image_limits = (None, None)
+
+        self.bin_height = 30
 
 
         # Initialize Tkinter and Matplotlib
@@ -276,9 +278,24 @@ class LiveDataPlotter:
         else:
             roi = self.spectrum_roi  # Use selected region
 
-        spectrum_data = np.mean(self.data[roi[0]:roi[1]], axis=0)
-        return spectrum_data
+        center_y = self.data.shape[0] // 2
+        bin_region = (max(0, center_y - self.bin_height), min(self.data.shape[0], center_y + self.bin_height))
 
+        # print(bin_region)
+        data_array = self.data[bin_region[0]:bin_region[1], :]
+
+        # print(data_array.shape)
+
+        spectrum_data = np.mean(data_array, axis=0)  # Average over the selected region
+
+        # print(new_array.shape)
+        print(spectrum_data.shape)
+
+        # spectrum_data = np.mean(self.data[roi[0]:roi[1], bin_region[0]:bin_region[1]], axis=0)  
+        # print(self.data.shape)
+        # print(self.data)
+        # print(spectrum_data.shape)
+        return spectrum_data
 
     def monitor_file(self):
         while True:
@@ -317,5 +334,5 @@ if __name__ == "__main__":
     scriptDir = os.path.dirname(__file__)
     file_path = os.path.join(scriptDir, 'transient', 'transient_data.npy')
 
-    plotter = LiveDataPlotter(file_path)
+    plotter = LiveDataPlotter(file_path, bin_height=1)
     plotter.start()
