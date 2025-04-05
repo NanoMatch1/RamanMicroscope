@@ -16,16 +16,16 @@ class LiveDataPlotter:
         self.autoscale_enabled = True
         self.updating = True
         self.roi = None  # Region of Interest for autoscaling
-
-
-
+        self.y_center_entry = kwargs.get('bin_center', 70)
+        self.y_width_entry = kwargs.get('bin_width', 10)
 
         self.data_mode = "Image"
+        self.data_mode = "Spectrum"
         self.spectrum_roi = (50,1100)
 
         self.image_limits = (None, None)
 
-        self.bin_height = 30
+        self.bin_height = kwargs.get("bin_height", 0)  # Default bin height
 
 
         # Initialize Tkinter and Matplotlib
@@ -52,6 +52,9 @@ class LiveDataPlotter:
         # Start a background thread to monitor the file and update the plot
         self.monitor_thread = threading.Thread(target=self.monitor_file, daemon=True)
         self.monitor_thread.start()
+        
+        
+        self.apply_y_roi()
 
     def zoom(self, event):
         """ Zooms in/out using the mouse scroll wheel. """
@@ -157,34 +160,43 @@ class LiveDataPlotter:
         self.image_autoscale_button = tk.Button(button_frame, text="Image Autoscale: ON", command=self.toggle_image_autoscale)
         self.image_autoscale_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        tk.Label(button_frame, text="Y Start:").pack(side=tk.LEFT)
-        self.y_start_entry = tk.Entry(button_frame, width=5)
-        self.y_start_entry.pack(side=tk.LEFT)
-        tk.Label(button_frame, text="Y Finish:").pack(side=tk.LEFT)
-        self.y_finish_entry = tk.Entry(button_frame, width=5)
-        self.y_finish_entry.pack(side=tk.LEFT)
+        tk.Label(button_frame, text="Y Center:").pack(side=tk.LEFT)
+        self.y_center_entry = tk.Entry(button_frame, width=5)
+        self.y_center_entry.pack(side=tk.LEFT)
+        tk.Label(button_frame, text="Y Width:").pack(side=tk.LEFT)
+        self.y_width_entry = tk.Entry(button_frame, width=5)
+        self.y_width_entry.pack(side=tk.LEFT)
+
 
         apply_roi_button = tk.Button(button_frame, text="Apply Y ROI", command=self.apply_y_roi)
         apply_roi_button.pack(side=tk.LEFT, padx=5, pady=5)
 
     def apply_y_roi(self):
-        """ Manually set Y ROI from textboxes and update spectrum view. """
+        """ Set Y ROI from center and width, update spectrum view. """
         try:
-            y_start = int(self.y_start_entry.get())
-            y_finish = int(self.y_finish_entry.get())
+            center = int(self.y_center_entry.get())
+            width = int(self.y_width_entry.get())
 
-            if 0 <= y_start < self.data.shape[0] and 0 <= y_finish < self.data.shape[0]:
-                self.spectrum_roi = (min(y_start, y_finish), max(y_start, y_finish))
+            half_width = int(round(width // 2))
+            y_start = center - half_width
+            y_end = center + half_width
+
+            # Clamp to valid range
+            y_start = max(0, y_start)
+            y_end = min(self.data.shape[0], y_end)
+
+            if y_end > y_start:
+                self.spectrum_roi = (y_start, y_end)
                 print(f"Updated Spectrum ROI: {self.spectrum_roi}")
-
-                # Update spectrum immediately
                 if self.data_mode == "Spectrum":
                     spectrum = self.frame_to_spectrum()
                     self.update_plot(spectrum)
             else:
-                print("Invalid Y values")
+                print("Invalid ROI: width too small or center out of bounds")
+
         except ValueError:
-            print("Invalid input for Y ROI")
+            print("Invalid input for ROI center or width")
+
 
 
     def toggle_image_autoscale(self):
@@ -273,28 +285,21 @@ class LiveDataPlotter:
 
     def frame_to_spectrum(self):
         """ Calculate spectrum by averaging the selected ROI in the image. """
+
         if self.spectrum_roi is None:
-            roi = (0, self.data.shape[0])  # Default: use full range
+            y_start, y_end = 0, self.data.shape[0]  # Default to full height
         else:
-            roi = self.spectrum_roi  # Use selected region
+            y_start, y_end = self.spectrum_roi
+            y_start = max(0, min(self.data.shape[0], y_start))
+            y_end = max(0, min(self.data.shape[0], y_end))
 
-        center_y = self.data.shape[0] // 2
-        bin_region = (max(0, center_y - self.bin_height), min(self.data.shape[0], center_y + self.bin_height))
+        if y_end <= y_start:
+            print("Invalid ROI: end must be greater than start")
+            y_end = y_start + 1
 
-        # print(bin_region)
-        data_array = self.data[bin_region[0]:bin_region[1], :]
+        data_array = self.data[y_start:y_end, :]
+        spectrum_data = np.mean(data_array, axis=0)
 
-        # print(data_array.shape)
-
-        spectrum_data = np.mean(data_array, axis=0)  # Average over the selected region
-
-        # print(new_array.shape)
-        print(spectrum_data.shape)
-
-        # spectrum_data = np.mean(self.data[roi[0]:roi[1], bin_region[0]:bin_region[1]], axis=0)  
-        # print(self.data.shape)
-        # print(self.data)
-        # print(spectrum_data.shape)
         return spectrum_data
 
     def monitor_file(self):
@@ -334,5 +339,6 @@ if __name__ == "__main__":
     scriptDir = os.path.dirname(__file__)
     file_path = os.path.join(scriptDir, 'transient', 'transient_data.npy')
 
-    plotter = LiveDataPlotter(file_path, bin_height=1)
+    plotter = LiveDataPlotter(file_path, bin_centre=70, bin_width=10)
     plotter.start()
+
