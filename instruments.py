@@ -583,6 +583,7 @@ class Microscope(Instrument):
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
+            'closecamera': self.close_camera_connection,
         }
 
         self.current_shift = 0
@@ -974,6 +975,11 @@ class Microscope(Instrument):
         print('Acquisition mode set to image')
 
     #? camera commands
+
+    @ui_callable
+    def close_camera_connection(self):
+        '''Closes the camera connection.'''
+        self.camera.close_camera_connection()
 
     @ui_callable
     def set_acquisition_time(self, value):

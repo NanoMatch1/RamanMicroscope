@@ -48,6 +48,7 @@ class Interface:
         self.com_port = com_port
         self.baud = baud
         self.debug_skip = debug_skip
+        self.connected_to_camera = False
 
         self.scriptDir = os.path.dirname(os.path.realpath(__file__))
         self.dataDir = os.path.join(self.scriptDir, 'data')
@@ -201,7 +202,7 @@ class Interface:
 
     def connect_to_camera(self):
         """Switch from simulated to real camera"""
-        if self.simulate or 'camera' in self.debug_skip:
+        if self.simulate or 'camera' in self.debug_skip or not self.connected_to_camera:
             print("Attempting to connect to real camera...")
             from tucsen.tucsen_camera_wrapper import TucamCamera
             try:

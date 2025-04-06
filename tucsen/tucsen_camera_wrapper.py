@@ -139,6 +139,7 @@ class TucamCamera:
             'setres': self.set_resolution,
             'setlft': self.set_lft,
             'setrgt': self.set_rgt,
+            'closecam': self.close_camera_connection,
             # "safe": self.safe_acquisition,
 
         }
@@ -260,7 +261,7 @@ class TucamCamera:
 
         # Make sure to close if open, then uninit
         self.close_camera()
-        self.uninit_api()
+
 
         # Re-init the TUCam API
         self.initialise()
@@ -368,6 +369,14 @@ class TucamCamera:
         Uninitialize the TUCam API. Call this once you are done with all operations.
         """
         TUCAM_Api_Uninit()
+
+    def close_camera_connection(self):
+        """
+        Close the camera and uninitialize the API.
+        """
+        self.close_camera()
+        self.uninit_api()
+        print("Camera connection closed and API uninitialized.")
 
     def set_hardware_binning(self, binning_level=1):
         """
