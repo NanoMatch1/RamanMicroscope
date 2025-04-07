@@ -315,7 +315,8 @@ class Interface:
             return result
             # return f" > Unknown command: {funct}"
 
-         # Detail: * operator unpacks the list - since an empty list has nothing to unpack, nothing is passed to the function. This avoids a TypeError
+         # Detail: * operator unpacks the list - since an empty list has nothing to unpack, nothi
+         # ng is passed to the function. This avoids a TypeError
     
     def _command_parser(self, command:str):
         if command == '':
