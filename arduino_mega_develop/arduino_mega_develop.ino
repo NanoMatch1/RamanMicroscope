@@ -1,4 +1,5 @@
 /*
+  RamanMicroscope V1.0
   Multi-Module Stepper Motor Control with Extended Commands
   ----------------------------------------------------------
   This code now supports:
@@ -40,6 +41,10 @@ AccelStepper stepperZ4(AccelStepper::DRIVER, 52, 53);
 const int ldr0pin = A0;      // LDR input pin
 const int gShutPin = 9;      // Grating shutter pin
 
+const int homingLimitPin = 8; // Or whatever pin you use
+
+
+
 // Global array pointer for easier access:
 AccelStepper* steppers[] = {
   &stepperA1, &stepperX1, &stepperY1, &stepperZ1,
@@ -65,6 +70,8 @@ void setup() {
 
   pinMode(gShutPin, OUTPUT);
   digitalWrite(gShutPin, LOW);
+  pinMode(homingLimitPin, INPUT_PULLUP); // Assuming active-low switch
+
   Serial.print("Arduino controller ready to receive commands");
   Serial.println("#CF");
 }
@@ -114,6 +121,55 @@ void readLDR() {
   Serial.print('t');
   Serial.println(ldr0value);
 }
+
+void homeMotor(char module, char motor) {
+  int idx = getStepperIndex(module, motor);
+  if (idx < 0 || idx >= 16) {
+    Serial.println("Invalid motor.");
+    return;
+  }
+
+  AccelStepper* m = steppers[idx];
+  const int fastSpeed = 1000;
+  const int slowSpeed = 300;
+  const int backoffSteps = 300;
+
+  // Fast approach
+  m->setMaxSpeed(fastSpeed);
+  m->setAcceleration(fastSpeed);
+  m->move(-100000);  // Move towards home
+
+  while (digitalRead(limitPin) == HIGH) {
+    m->run();
+  }
+
+  // Hit switch — back off
+  m->stop();  // ensure stop
+  while (m->isRunning()) m->run();  // block until fully stopped
+
+  m->move(backoffSteps);  // Move back
+  while (m->distanceToGo() != 0) m->run();
+
+  // Slow re-approach
+  m->setMaxSpeed(slowSpeed);
+  m->setAcceleration(slowSpeed);
+  m->move(-100000);
+  while (digitalRead(limitPin) == HIGH) {
+    m->run();
+  }
+
+  m->stop();
+  while (m->isRunning()) m->run();
+
+  // Done
+  long pos = m->currentPosition();
+  Serial.print("Homed motor ");
+  Serial.print(module);
+  Serial.print(motor);
+  Serial.print(" at position ");
+  Serial.println(pos);
+}
+
 
 // --- Command parsing helper ---
 /*
@@ -306,6 +362,13 @@ void parseCommand(String command) {
       Serial.println("Unknown hardware command.");
     }
   }
+  // Home a motor: e.g., h1A
+  else if (command.startsWith("h") && command.length() == 3) {
+    char module = command.charAt(1);
+    char motor = command.charAt(2);
+    homeMotor(module, motor);
+  }
+
   // Legacy mode commands
   else if (command == "imagemode") {
     imageMode();
