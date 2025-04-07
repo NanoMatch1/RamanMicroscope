@@ -485,63 +485,14 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
 
-        self.ldr_scan_dict = {
-            'l1': {
-                'range': 150,
-                'resolution': 5,
-            },
-            'l2': {
-                'range': 150,
-                'resolution': 5,
-            },
-            'l3': {
-                'range': 150,
-                'resolution': 5,
-            },
-            'g1': {
-                'range': 150,
-                'resolution': 5,
-            },
-            'g2': {
-                'range': 150,
-                'resolution': 5,
-            }
-        }
-        # Microscope hard limits for hardware
-        self.hard_limits = {
-            'laser_wavelength': [650, 1000],
-            'monochromator_wavelength': [500, 1300],
-        }
 
-        self.action_groups = {
-            'laser_wavelength': {
-                'l1': '1X',
-                'l2': '1Y',
-                'l3': '1Z',
-            }, # l2 range ~120 steps edge to edge @ 800nm
-            # l2 range ~80 steps @ 750nm
-            # l2 range ~60 steps @ 716nm
+        self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
+        self.config = self.load_config()
 
+        self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
+        self.hard_limits = self.config.get("hard_limits", {})
+        self.action_groups = self.config.get("action_groups", {})
 
-            'monochromator_wavelength': {
-                'g1': '3X',
-                'g2': '3Y',
-                'g3': '3Z',
-                'g4': '3A',
-            },
-
-            'polarization': {
-                'in': '4X', 
-                'out': '4Y'
-            },
-            # put the triax in here for labelling purposes
-            'triax': {
-                'triax':'triax'
-            },
-
-            # Add more action groups as needed
-        }
-        
         # Create a flattened motor map for easy lookup of any motor ID by label
         self.motor_map = {}
         for group in self.action_groups.values():
@@ -619,6 +570,51 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
+    def load_config(self):
+        if os.path.exists(self.config_path):
+            with open(self.config_path, 'r') as f:
+                return json.load(f)
+        else:
+            raise FileNotFoundError(f"Config file not found at {self.config_path}")
+
+    def write_config(self):
+        with open(self.config_path, 'w') as f:
+            json.dump(self.config, f, indent=2)
+
+    def recalibrate_home(self, label):
+        if label not in self.action_groups:
+            raise ValueError(f"Unknown action group: {label}")
+
+        group = self.action_groups[label]
+        for axis, motor_id in group.items():
+            if motor_id == "triax":  # skip dummy entries
+                continue
+
+            # Send homing command
+            if self.simulate:
+                print(f"[Sim] Homing motor {motor_id}")
+                position = 12345  # dummy value
+            else:
+                self.controller.write(f"h{motor_id}\n")
+                response = self.controller.readline().decode().strip()
+                print(f"Homing response: {response}")
+                if "at position" in response:
+                    position = int(response.split("position")[-1].strip())
+                else:
+                    raise RuntimeError(f"Unexpected response: {response}")
+
+            # Save to config
+            self.config.setdefault("home_positions", {})
+            self.config["home_positions"][motor_id] = position
+            print(f"Saved home position {position} for {motor_id}")
+
+        self.write_config()
+
+    
+    def get_home_position(self, motor_id):
+        return self.config.get("home_positions", {}).get(motor_id)
+
+
     @ui_callable
     def connect_to_triax(self):
         '''Connects to the spectrometer after already running.'''
