@@ -153,6 +153,7 @@ class MotionControl:
     def extract_coms_flag(self, message):
         return message[0].split(':')[1].strip(' ')
 
+    @ui_callable
     def home_motor(self, motor_label):
         """
         Home the specified motor.
@@ -165,7 +166,11 @@ class MotionControl:
         """
         motor_id = self.motor_map.get(motor_label)
         command = f'h{motor_id}'
+        print(f"Homing motor {motor_label}...")
         response = self.controller.send_command(command)
+        print(response[0])
+        home_pos = int(response[0].split(' ')[-1])
+        self.move_motors({motor_label: 0-home_pos})
         return response
 
     def wait_for_motors(self, motors=None, delay=0.1):
@@ -342,6 +347,43 @@ class MotionControl:
         self.move_motors(forward_steps, backlash=False)
         
         return
+    
+    def resolve_motor_ids(self, motor_dict: dict) -> dict:
+        """
+        Convert a dictionary of {motor_label: steps} to {motor_id: steps},
+        using action_groups as the lookup. If keys are already motor_ids,
+        returns the dictionary unchanged.
+
+        Parameters:
+        motor_dict (dict): Dictionary with keys as motor_labels or motor_ids.
+
+        Returns:
+        dict: Dictionary with keys as motor_ids.
+        """
+        # # Flatten all label: id pairs from action_groups
+        # label_to_id = {
+        #     label: motor_id
+        #     for group in self.action_groups.values()
+        #     for label, motor_id in group.items()
+        # }
+
+        label_to_id = self.motor_map
+
+        # Check if all keys are already motor IDs
+        if all(k in label_to_id.values() for k in motor_dict):
+            return motor_dict  # already using motor_ids
+
+        # If any key is a label, convert all labels to IDs
+        result = {}
+        for label, steps in motor_dict.items():
+            if label in label_to_id:
+                motor_id = label_to_id[label]
+                result[motor_id] = steps
+            else:
+                raise ValueError(f"Unknown motor label or ID: {label}")
+
+        return result
+
 
     def move_motors(self, motor_id_steps: dict, backlash=True):
         """
@@ -354,6 +396,8 @@ class MotionControl:
         Returns:
         str: Response from the controller
         """
+        motor_id_steps = self.resolve_motor_ids(motor_id_steps)
+
         if not motor_id_steps:
             return "No movement needed"
             
@@ -528,6 +572,11 @@ class Microscope(Instrument):
             'slsteps': self.go_to_laser_steps,
             'smsteps': self.go_to_monochromator_steps,
             'recmot': self.record_motors,
+            'calhome': self.recalibrate_home,
+            'home': self.home_motor,
+            'homeall': self.home_all_motors,
+            'homelaser': self.home_laser,
+            'homemono': self.home_monochromator,
             # acquisition commands
             'scanmin': self.set_scan_min,
             'scanmax': self.set_scan_max,
@@ -573,7 +622,9 @@ class Microscope(Instrument):
     def load_config(self):
         if os.path.exists(self.config_path):
             with open(self.config_path, 'r') as f:
-                return json.load(f)
+                config = json.load(f)
+            print('Config loaded from file')
+            return config
         else:
             raise FileNotFoundError(f"Config file not found at {self.config_path}")
 
@@ -581,6 +632,7 @@ class Microscope(Instrument):
         with open(self.config_path, 'w') as f:
             json.dump(self.config, f, indent=2)
 
+    @ui_callable
     def recalibrate_home(self, label):
         if label not in self.action_groups:
             raise ValueError(f"Unknown action group: {label}")
@@ -609,6 +661,63 @@ class Microscope(Instrument):
             print(f"Saved home position {position} for {motor_id}")
 
         self.write_config()
+
+    @ui_callable
+    def home_all_motors(self):
+        # """
+        # Home all motors in the system.
+        
+        # Returns:
+        # str: The response from the controller after homing all motors.
+        # """
+
+        # for motor_label in self.motor_map.keys():
+        #     response = self.motion_control.home_motor(motor_label)
+        #     print(f"Homing motor {motor_label}: {response}")
+        # return response
+        print("Home all motors not implemented yet")
+    
+        return "Home all motors not implemented yet"
+
+    @ui_callable
+    def home_laser(self):
+        """
+        Home the laser motors.
+        
+        Returns:
+        str: The response from the controller after homing the laser motors.
+        """
+        for motor_label in self.action_groups['laser_wavelength'].keys():
+            response = self.motion_control.home_motor(motor_label)
+            print(f"Homing motor {motor_label}: {response}")
+        return response
+    
+    @ui_callable
+    def home_monochromator(self):
+        """
+        Home the monochromator motors.
+        
+        Returns:
+        str: The response from the controller after homing the monochromator motors.
+        """
+        for motor_label in self.action_groups['monochromator_wavelength'].keys():
+            response = self.motion_control.home_motor(motor_label)
+            print(f"Homing motor {motor_label}: {response}")
+        return response
+
+    @ui_callable
+    def home_motor(self, motor_label):
+        """
+        Home the specified motor.
+        
+        Parameters:
+        motor_label (str): The label of the motor to home, e.g., '1X', '2Y', etc.
+        
+        Returns:
+        str: The response from the controller after homing the motor.
+        """
+        response = self.motion_control.home_motor(motor_label)
+        return response
 
     
     def get_home_position(self, motor_id):
@@ -2148,8 +2257,8 @@ class StageControl(Instrument):
         self.controller = controller or interface.stage_controller
         self.simulate = simulate
         self.command_functions = {
-            'move': self.move_stage,
-            'home': self.home_stage
+            'movestage': self.move_stage,
+            'homestage': self.home_stage
         }
 
         self._integrity_checker()

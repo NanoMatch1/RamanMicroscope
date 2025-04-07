@@ -41,7 +41,7 @@ AccelStepper stepperZ4(AccelStepper::DRIVER, 52, 53);
 const int ldr0pin = A0;      // LDR input pin
 const int gShutPin = 9;      // Grating shutter pin
 
-const int homingLimitPin = 8; // Or whatever pin you use
+const int homingLimitPin = 13; // Or whatever pin you use
 
 
 
@@ -53,6 +53,24 @@ AccelStepper* steppers[] = {
   &stepperA4, &stepperX4, &stepperY4, &stepperZ4
 };
 
+// Backoff steps per motor (same order as steppers[])
+int backoffSteps[] = {
+  300, 5000, 2000, 300,  // module 1
+  300, 300, 300, 300,  // module 2
+  3000, 3000, 3000, 3000,  // module 3
+  300, 300, 100, 300   // module 4 — Y motor has smaller range
+};
+
+// Backoff steps per motor (same order as steppers[])
+int homeFastSpeed[] = {
+  300, 5000, 2000, 5000,  // module 1
+  1000, 1000, 1000, 1000,  // module 2
+  1000, 1000, 1000, 1000,  // module 3
+  300, 300, 300, 300   // module 4 — Y motor has smaller range
+};
+
+
+
 void setup() {
   Serial.begin(9600);
   for (int i = 0; i < 16; i++) {
@@ -61,12 +79,15 @@ void setup() {
   }
   
   // custom speeds
+  // stepperA1.setMaxSpeed(1000);
+  // stepperA1.setAcceleration(1000);
+
   stepperY4.setMaxSpeed(10000);
   stepperY4.setAcceleration(10000);
   stepperX4.setMaxSpeed(300);
   stepperX4.setAcceleration(1000);
-  stepperA1.setMaxSpeed(1000);
-  stepperA1.setAcceleration(1000);
+  // stepperX1.setMaxSpeed(10000);
+  // stepperX1.setAcceleration(5000);
 
   pinMode(gShutPin, OUTPUT);
   digitalWrite(gShutPin, LOW);
@@ -130,44 +151,69 @@ void homeMotor(char module, char motor) {
   }
 
   AccelStepper* m = steppers[idx];
-  const int fastSpeed = 1000;
+
+  // Save original settings
+  float originalMaxSpeed = m->maxSpeed();
+  float originalAcceleration = m->acceleration();
+
+  // Homing parameters
+  int fastSpeed = homeFastSpeed[idx];
   const int slowSpeed = 300;
-  const int backoffSteps = 300;
+  const unsigned long timeoutMs = 60000; // 1 min timeout
+  int backoff = backoffSteps[idx];
+
+  unsigned long tStart;
 
   // Fast approach
   m->setMaxSpeed(fastSpeed);
   m->setAcceleration(fastSpeed);
-  m->move(-100000);  // Move towards home
-
-  while (digitalRead(limitPin) == HIGH) {
-    m->run();
-  }
-
-  // Hit switch — back off
-  m->stop();  // ensure stop
-  while (m->isRunning()) m->run();  // block until fully stopped
-
-  m->move(backoffSteps);  // Move back
-  while (m->distanceToGo() != 0) m->run();
-
-  // Slow re-approach
-  m->setMaxSpeed(slowSpeed);
-  m->setAcceleration(slowSpeed);
   m->move(-100000);
-  while (digitalRead(limitPin) == HIGH) {
+
+  tStart = millis();
+  while (digitalRead(homingLimitPin) == HIGH) {
+    if (millis() - tStart > timeoutMs) {
+      Serial.println("Timeout during fast approach.");
+      goto restore;
+    }
     m->run();
   }
 
   m->stop();
   while (m->isRunning()) m->run();
 
-  // Done
+  // Back off
+  m->move(backoff);
+  while (m->distanceToGo() != 0) m->run();
+
+  // Slow approach
+  m->setMaxSpeed(slowSpeed);
+  m->setAcceleration(slowSpeed);
+  m->move(-100000);
+
+  tStart = millis();
+  while (digitalRead(homingLimitPin) == HIGH) {
+    if (millis() - tStart > timeoutMs) {
+      Serial.println("Timeout during slow re-approach.");
+      goto restore;
+    }
+    m->run();
+  }
+
+  m->stop();
+  while (m->isRunning()) m->run();
+
+restore:
+  // Restore original settings
+  m->setMaxSpeed(originalMaxSpeed);
+  m->setAcceleration(originalAcceleration);
+
   long pos = m->currentPosition();
   Serial.print("Homed motor ");
   Serial.print(module);
   Serial.print(motor);
   Serial.print(" at position ");
   Serial.println(pos);
+  // m->move(1000); // to move off limit switch
 }
 
 
