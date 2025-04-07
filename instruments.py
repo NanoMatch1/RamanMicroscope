@@ -153,6 +153,21 @@ class MotionControl:
     def extract_coms_flag(self, message):
         return message[0].split(':')[1].strip(' ')
 
+    def home_motor(self, motor_label):
+        """
+        Home the specified motor.
+        
+        Parameters:
+        motor_label (str): The label of the motor to home, e.g., '1X', '2Y', etc.
+        
+        Returns:
+        str: The response from the controller after homing the motor.
+        """
+        motor_id = self.motor_map.get(motor_label)
+        command = f'h{motor_id}'
+        response = self.controller.send_command(command)
+        return response
+
     def wait_for_motors(self, motors=None, delay=0.1):
         """
         Wait until all motors in the provided list are no longer running.
@@ -579,7 +594,7 @@ class Microscope(Instrument):
             'caminfo': self.camera_info,
             'temp': self.get_camera_temperature,
             'refresh': self.refresh_camera,
-            'close': self.close_camera,
+            'camclose': self.close_camera,
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
@@ -997,8 +1012,9 @@ class Microscope(Instrument):
 
     @ui_callable
     def close_camera(self):
-        '''Closes the camera connection.'''
+        '''Closes the hardware camera connection. Allows connection via Mosaic UI.'''
         self.camera.close_camera()
+        self.interface.debug_skip.append('camera')
 
     @ui_callable
     def acquire_one_frame(self):

@@ -209,6 +209,8 @@ class Interface:
                 self.camera = TucamCamera(self, simulate=False)
                 self.camera.initialise()
                 print("Successfully connected to real camera")
+                self.debug_skip.remove('camera')
+                self.microscope.camera = self.camera  # Update the microscope's camera reference
             except Exception as e:
                 print(f"Failed to connect to real camera: {e}")
                 # Fallback to simulation
@@ -333,8 +335,8 @@ class Interface:
 
 if __name__ == '__main__':
     instrument = Interface(simulate=False, com_port='COM10', debug_skip=[
-        #'camera',
+        'camera',
         'laser', 
-        #'TRIAX'
+        'TRIAX'
         ])
     cli(instrument)
