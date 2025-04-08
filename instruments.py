@@ -139,9 +139,11 @@ class AcquitisionParameters:
 
 class MotionControl:
     '''Handles the motion control of the microscope. Needs access to the controller to move the motors.'''
-    def __init__(self, controller, motor_map):
+    def __init__(self, controller, motor_map, config):
         self.controller = controller
         self.motor_map = motor_map  # Dictionary mapping motor names to IDs
+        self.config = config
+        self.home_positions = config.get("home_positions", {})
         self._monochromator_steps = None
         self._laser_steps = None
         self._spectrometer_position = None
@@ -156,7 +158,7 @@ class MotionControl:
     @ui_callable
     def home_motor(self, motor_label):
         """
-        Home the specified motor.
+        Home the specified motor, then moves it to the calibrated zero position (for v1.0, this is 799.4 nm)
         
         Parameters:
         motor_label (str): The label of the motor to home, e.g., '1X', '2Y', etc.
@@ -169,8 +171,10 @@ class MotionControl:
         print(f"Homing motor {motor_label}...")
         response = self.controller.send_command(command)
         print(response[0])
-        home_pos = int(response[0].split(' ')[-1])
-        self.move_motors({motor_label: 0-home_pos})
+        # home_pos = int(response[0].split(' ')[-1])
+        expected_home = self.home_positions.get(motor_id, None)
+        self.move_motors({motor_label: -expected_home}, backlash=False)
+
         return response
 
     def wait_for_motors(self, motors=None, delay=0.1):
@@ -546,7 +550,7 @@ class Microscope(Instrument):
         self.acquisition_parameters = AcquitisionParameters()
 
         # Motion control
-        self.motion_control = MotionControl(self.controller, self.motor_map)
+        self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
 
         self.command_functions = {
             # general commands
@@ -634,33 +638,35 @@ class Microscope(Instrument):
 
     @ui_callable
     def recalibrate_home(self, label):
-        if label not in self.action_groups:
+        if label not in self.motor_map:
             raise ValueError(f"Unknown action group: {label}")
 
-        group = self.action_groups[label]
-        for axis, motor_id in group.items():
-            if motor_id == "triax":  # skip dummy entries
-                continue
-
-            # Send homing command
-            if self.simulate:
-                print(f"[Sim] Homing motor {motor_id}")
-                position = 12345  # dummy value
+        # group = self.action_groups[label]
+        # for axis, motor_id in group.items():
+        #     if motor_id == "triax":  # skip dummy entries
+        #         continue
+        motor_id = self.motor_map[label]
+        # Send homing command
+        if self.simulate:
+            print(f"[Sim] Homing motor {motor_id}")
+            position = 12345  # dummy value
+        else:
+            response = self.controller.send_command(f"h{motor_id}")
+            response = response[0]
+            print(f"Homing response: {response}")
+            if "at position" in response:
+                position = int(response.split(' ')[-1].strip())
             else:
-                self.controller.write(f"h{motor_id}\n")
-                response = self.controller.readline().decode().strip()
-                print(f"Homing response: {response}")
-                if "at position" in response:
-                    position = int(response.split("position")[-1].strip())
-                else:
-                    raise RuntimeError(f"Unexpected response: {response}")
+                raise RuntimeError(f"Unexpected response: {response}")
 
-            # Save to config
-            self.config.setdefault("home_positions", {})
-            self.config["home_positions"][motor_id] = position
-            print(f"Saved home position {position} for {motor_id}")
+        # Save to config
+        self.config.setdefault("home_positions", {})
+        self.config["home_positions"][motor_id] = position
+        print(f"Saved home position {position} for {motor_id}")
 
         self.write_config()
+        self.motion_control.move_motors({label: -position})  # Move to home position
+
 
     @ui_callable
     def home_all_motors(self):
@@ -688,7 +694,7 @@ class Microscope(Instrument):
         str: The response from the controller after homing the laser motors.
         """
         for motor_label in self.action_groups['laser_wavelength'].keys():
-            response = self.motion_control.home_motor(motor_label)
+            response = self.home_motor(motor_label)
             print(f"Homing motor {motor_label}: {response}")
         return response
     

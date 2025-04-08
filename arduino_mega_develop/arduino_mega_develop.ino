@@ -55,7 +55,7 @@ AccelStepper* steppers[] = {
 
 // Backoff steps per motor (same order as steppers[])
 int backoffSteps[] = {
-  300, 5000, 2000, 300,  // module 1
+  300, 5000, 3000, 6000,  // module 1
   300, 300, 300, 300,  // module 2
   3000, 3000, 3000, 3000,  // module 3
   300, 300, 100, 300   // module 4 — Y motor has smaller range
@@ -167,7 +167,7 @@ void homeMotor(char module, char motor) {
   // Fast approach
   m->setMaxSpeed(fastSpeed);
   m->setAcceleration(fastSpeed);
-  m->move(-100000);
+  m->move(-150000);
 
   tStart = millis();
   while (digitalRead(homingLimitPin) == HIGH) {
@@ -263,7 +263,7 @@ void parseMultiMoveCommand(String cmdContent) {
     if (token.length() < 3) continue;  // invalid token
     char module = token.charAt(0);
     char motor  = token.charAt(1);
-    int pos = token.substring(2).toInt();
+    long pos = token.substring(2).toInt();  // works up to ±2,147,483,647
     int idx = getStepperIndex(module, motor);
     if (idx >= 0 && idx < 16) {
       steppers[idx]->move(pos);

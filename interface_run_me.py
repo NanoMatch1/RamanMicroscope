@@ -299,11 +299,16 @@ class Interface:
             return result
         
         elif funct in self.microscope.motor_map.keys():
+            try:
             # This is a motion command, so we need to format it first
-            motor_id = self.microscope.motor_map[funct]
-            steps = int(arguments[0])
-            motion_command = 'o{}{}o'.format(motor_id, steps)
-            self.controller.send_command(motion_command)
+                motor_id = self.microscope.motor_map[funct]
+                steps = int(arguments[0])
+                motion_command = 'o{}{}o'.format(motor_id, steps)
+                self.controller.send_command(motion_command)
+            except Exception as e:
+                error_details = traceback.format_exc()
+                result = f" > Error: {e}\n{error_details}"
+                return result
 
         else:
             try:
@@ -316,7 +321,7 @@ class Interface:
             # return f" > Unknown command: {funct}"
 
          # Detail: * operator unpacks the list - since an empty list has nothing to unpack, nothi
-         # ng is passed to the function. This avoids a TypeError
+         # ng is passed to the function. This avoids a TypeError -41861
     
     def _command_parser(self, command:str):
         if command == '':
@@ -341,3 +346,6 @@ if __name__ == '__main__':
         'TRIAX'
         ])
     cli(instrument)
+
+
+    # laser home (at zero steps) is currently 799.4 nm
