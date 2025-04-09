@@ -53,21 +53,31 @@ AccelStepper* steppers[] = {
   &stepperA4, &stepperX4, &stepperY4, &stepperZ4
 };
 
-// Backoff steps per motor (same order as steppers[])
+// Homing backoff steps per motor (same order as steppers[])
 int backoffSteps[] = {
-  300, 5000, 3000, 6000,  // module 1
+  300, 5000, 500, 6000,  // module 1
   300, 300, 300, 300,  // module 2
   3000, 3000, 3000, 3000,  // module 3
   300, 300, 100, 300   // module 4 — Y motor has smaller range
 };
 
-// Backoff steps per motor (same order as steppers[])
+// Homing fast speed per motor (same order as steppers[])
 int homeFastSpeed[] = {
-  300, 5000, 2000, 5000,  // module 1
+  300, 2500, 500, 2500,  // module 1
   1000, 1000, 1000, 1000,  // module 2
   1000, 1000, 1000, 1000,  // module 3
   300, 300, 300, 300   // module 4 — Y motor has smaller range
 };
+
+// homing slow speed per motor (same order as steppers[])
+int homeSlowSpeed[] = {
+  300, 250, 100, 300,  // module 1
+  300, 300, 300, 300,  // module 2
+  300, 300, 300, 300,  // module 3
+  300, 300, 300, 300   // module 4 — Y motor has smaller range
+};
+
+
 
 
 
@@ -84,10 +94,10 @@ void setup() {
 
   stepperY4.setMaxSpeed(10000);
   stepperY4.setAcceleration(10000);
-  stepperX4.setMaxSpeed(300);
-  stepperX4.setAcceleration(1000);
-  // stepperX1.setMaxSpeed(10000);
-  // stepperX1.setAcceleration(5000);
+  stepperY1.setMaxSpeed(1500);
+  stepperY1.setAcceleration(1000);
+  stepperX1.setMaxSpeed(3000);
+  stepperX1.setAcceleration(3000);
 
   pinMode(gShutPin, OUTPUT);
   digitalWrite(gShutPin, LOW);
@@ -113,12 +123,12 @@ void loop() {
 
 // --- Hardware specific functions ---
 void ramanMode() {
-  stepperA1.move(6000);
+  stepperA2.move(6000);
   Serial.println("Moving to Raman Mode...");
 }
 
 void imageMode() {
-  stepperA1.move(-6000);
+  stepperA2.move(-6000);
   Serial.println("Moving to Image Mode...");
 }
 
@@ -158,15 +168,15 @@ void homeMotor(char module, char motor) {
 
   // Homing parameters
   int fastSpeed = homeFastSpeed[idx];
-  const int slowSpeed = 300;
-  const unsigned long timeoutMs = 60000; // 1 min timeout
+  int slowSpeed = homeSlowSpeed[idx];
   int backoff = backoffSteps[idx];
+  const unsigned long timeoutMs = 120000; // 2 min timeout
 
   unsigned long tStart;
 
   // Fast approach
   m->setMaxSpeed(fastSpeed);
-  m->setAcceleration(fastSpeed);
+  // m->setAcceleration(fastSpeed);
   m->move(-150000);
 
   tStart = millis();
@@ -187,7 +197,7 @@ void homeMotor(char module, char motor) {
 
   // Slow approach
   m->setMaxSpeed(slowSpeed);
-  m->setAcceleration(slowSpeed);
+  m->setAcceleration(10000);
   m->move(-100000);
 
   tStart = millis();

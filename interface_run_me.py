@@ -308,7 +308,6 @@ class Interface:
             except Exception as e:
                 error_details = traceback.format_exc()
                 result = f" > Error: {e}\n{error_details}"
-                return result
 
         else:
             try:
