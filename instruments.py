@@ -562,6 +562,7 @@ class Microscope(Instrument):
             'st': self.go_to_spectrometer_wavelength,
             'reference': self.reference_calibration_from_wavelength,
             'referencetriax': self.reference_calibration_from_triax,
+            'invertcal': self.invert_calibrations,
             'shift': self.go_to_wavenumber,
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
@@ -648,7 +649,7 @@ class Microscope(Instrument):
             response = self.home_motor(label)
             print(f"Homing motor {label}: {response}")
             home_positions[series_name].append(response)
-            time.sleep(0.1)
+            time.sleep(1)
         
         # Save to config
         if os.path.exists(os.path.join(self.scriptDir, 'motor_tests.json')):
@@ -1467,7 +1468,11 @@ class Microscope(Instrument):
             
         return move_steps, target_steps
     
-
+    @ui_callable
+    def invert_calibrations(self):
+        '''Inverts the calibration for the laser and monochromator motors.'''
+        self.calibrations.invert_calibrations()
+        print('Calibration inverted')
     
     @ui_callable
     def go_to_laser_wavelength(self, wavelength):
