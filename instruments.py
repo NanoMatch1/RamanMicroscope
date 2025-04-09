@@ -171,11 +171,11 @@ class MotionControl:
         print(f"Homing motor {motor_label}...")
         response = self.controller.send_command(command)
         print(response[0])
-        # home_pos = int(response[0].split(' ')[-1])
+        home_pos = int(response[0].split(' ')[-1])
         expected_home = self.home_positions.get(motor_id, None)
         self.move_motors({motor_label: -expected_home}, backlash=False)
 
-        return response
+        return home_pos
 
     def wait_for_motors(self, motors=None, delay=0.1):
         """
@@ -581,6 +581,7 @@ class Microscope(Instrument):
             'homeall': self.home_all_motors,
             'homelaser': self.home_laser,
             'homemono': self.home_monochromator,
+            'testhoming': self.test_homing,
             # acquisition commands
             'scanmin': self.set_scan_min,
             'scanmax': self.set_scan_max,
@@ -637,6 +638,28 @@ class Microscope(Instrument):
             json.dump(self.config, f, indent=2)
 
     @ui_callable
+    def test_homing(self, label, series_name, cycles=20):
+        '''Test the reproducibility of the motor homing by moving to home and back in a cycle, n times.'''
+        if label not in self.motor_map:
+            raise ValueError(f"Unknown action group: {label}")
+        
+        home_positions = {series_name: []}
+        for index in range(cycles):
+            response = self.home_motor(label)
+            print(f"Homing motor {label}: {response}")
+            home_positions[series_name].append(response)
+            time.sleep(0.1)
+        
+        # Save to config
+        if os.path.exists(os.path.join(self.scriptDir, 'motor_tests.json')):
+            with open(os.path.join(self.scriptDir, 'motor_tests.json'), 'r') as f:
+                current_data = json.load(f)
+            home_positions.update(current_data)
+
+        with open(os.path.join(self.scriptDir, 'motor_tests.json'), 'w') as f:
+            json.dump(home_positions, f, indent=2)
+
+    @ui_callable
     def recalibrate_home(self, label):
         if label not in self.motor_map:
             raise ValueError(f"Unknown action group: {label}")
@@ -665,6 +688,7 @@ class Microscope(Instrument):
         print(f"Saved home position {position} for {motor_id}")
 
         self.write_config()
+        time.sleep(0.01)
         self.motion_control.move_motors({label: -position})  # Move to home position
 
 
