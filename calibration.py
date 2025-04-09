@@ -126,6 +126,19 @@ class Calibration:
 
         print("Calibrations successfully built.")
 
+    def invert_calibrations(self):
+        '''Inverts the calibrations for use in the controller. Takes a dictionary of motor names and their calibration functions'''
+        for name, calib in self.all_calibrations.items():
+            if len(calib) == 7:
+                self.__setattr__(name, PolySinModulation(*calib) * -1)
+            elif len(calib) == 6:
+                self.__setattr__(name, LinSinModulation(*calib) * -1)
+            else:
+                self.__setattr__(name, np.poly1d(calib) * -1)
+
+        print('Inverted calibrations successfully.')
+        
+
     def wl_to_steps(self, wavelength, action_group):
         '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''
         steps_dict = {}
