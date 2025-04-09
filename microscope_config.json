@@ -49,6 +49,12 @@
     "4Y": 0,
     "4Z": 0
   },
+  "last_stage_position": {
+    "X": 0,
+    "Y": 0,
+    "Z": 0,
+    "A": 0
+  },
   "action_groups": {
     "laser_wavelength": {
       "l1": "1X",
@@ -67,6 +73,12 @@
     },
     "triax": {
       "triax": "triax"
+    },
+    "stage_movement": {
+      "X": "2X",
+      "Y": "2Y",
+      "Z": "2Z",
+      "mode": "2A"
     }
   }
 }

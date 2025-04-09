@@ -152,6 +152,8 @@ class MotionControl:
         self._monochromator_wavelength = None
         self._spectrometer_wavelength = None
 
+
+
     def extract_coms_flag(self, message):
         return message[0].split(':')[1].strip(' ')
 
@@ -347,7 +349,7 @@ class MotionControl:
         
         # Execute the backlash correction with a delay between commands
         self.move_motors(back_steps, backlash=False)
-        time.sleep(0.1)  # Small delay to ensure controller processes the first command
+        time.sleep(0.2)  # Small delay to ensure controller processes the first command
         self.move_motors(forward_steps, backlash=False)
         
         return
@@ -416,6 +418,9 @@ class MotionControl:
         
         response = self.controller.send_command(motion_command)
         self.wait_for_motors(list(motor_id_steps.keys()))
+
+        if backlash:
+            self.backlash_correction(motor_id_steps)
         
         return response
 
@@ -533,6 +538,12 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
 
+        self.stage_positions = {
+            'X': 0,
+            'Y': 0,
+            'Z': 0,
+            'A': 0
+        }
 
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
@@ -570,6 +581,12 @@ class Microscope(Instrument):
             'writemotors': self.write_motor_positions,
             'rldr': self.read_ldr0,
             'calibrate': self.run_calibration,
+            # Stage motion
+            'x': self.move_x,
+            'y': self.move_y,
+            'z': self.move_z,
+            'mode': self.move_microscope_mode,
+            'stagehome': self.set_stage_home,
             # motor commands
             'laserpos': self.get_laser_motor_positions,
             'monopos': self.get_monochromator_motor_positions,
@@ -636,6 +653,8 @@ class Microscope(Instrument):
     def write_config(self):
         with open(self.config_path, 'w') as f:
             json.dump(self.config, f, indent=2)
+
+    #? Motor and Homing
 
     @ui_callable
     def test_homing(self, label, series_name, cycles=20):
@@ -822,18 +841,7 @@ class Microscope(Instrument):
         # print("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
         # return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"
 
-    @ui_callable
-    def set_camera_gain(self, imagemode, gain):
-        '''Sets the camera gain to the specified value.'''
-        try:
-            imagemode = int(imagemode)
-            gain = int(gain)
-        except ValueError:
-            print("Values for image mode and gain must be integers")
-            return
 
-        self.camera.set_image_and_gain(imagemode, gain)
-        
     @simulate(expected_value='Microscope initialised')
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
@@ -882,8 +890,56 @@ class Microscope(Instrument):
         print('-'*20)
 
     #? Stage control commands
-    def move_stage(self, command):
-        pass
+
+    def move_x(self, travel_distance):
+        '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
+        self.motion_control.move_motors({'X': travel_distance})
+        self.stage_positions['X'] += travel_distance
+        print('X stage moved by {} micrometers'.format(travel_distance))
+    
+    def move_y(self, travel_distance):
+        '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
+        self.motion_control.move_motors({'Y': travel_distance})
+        self.stage_positions['Y'] += travel_distance
+        print('Y stage moved by {} micrometers'.format(travel_distance))
+
+    def move_z(self, travel_distance):
+        '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
+        self.motion_control.move_motors({'Z': travel_distance})
+        self.stage_positions['Z'] += travel_distance
+        print('Z stage moved by {} micrometers'.format(travel_distance))
+
+    def move_microscope_mode(self, travel_distance):
+        '''Moves the microcsope sample stage in the microscope mode, by travel distance in micrometers.'''
+        self.motion_control.move_motors({'mode': travel_distance})
+        self.stage_positions['mode'] += travel_distance
+
+    def set_stage_home(self):
+        '''Sets the current stage position as the home position.'''
+        self.motion_control.set_stage_home()
+        for key in self.stage_positions.keys():
+            self.stage_positions[key] = 0
+        print('Stage home set to current position')
+
+    def enter_focus_mode(self):
+        '''Enters the mode for incrementally adjusting the microscope focus at the sample.'''
+        print("Entering focus mode.\nType focus steps in microns.\nType 'exit' to exit focus mode.")
+        while True:
+            command = input()
+
+    #? camera commands
+    @ui_callable
+    def set_camera_gain(self, imagemode, gain):
+        '''Sets the camera gain to the specified value.'''
+        try:
+            imagemode = int(imagemode)
+            gain = int(gain)
+        except ValueError:
+            print("Values for image mode and gain must be integers")
+            return
+
+        self.camera.set_image_and_gain(imagemode, gain)
+        
 
     def start_camera_ui(self):
         self.camera.start_ui()
