@@ -1580,7 +1580,7 @@ if __name__ == '__main__':
     for label in calibration.laser_positions.keys():
         coefficients = calibration.calibrate_motor_axis(label)
 
-    separate_g_cal = True
+    separate_g_cal = False
     if separate_g_cal:
         calibration.load_calibration_file(filename='grating_motor_recordings.json')
         calibration.sort_flattened_data_by_wavelength()
