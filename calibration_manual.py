@@ -162,13 +162,30 @@ class Calibration:
         self.calibrations = {}
         self.calibration_metrics = {}
         self.report_dict = {'initial': {}, 'subtractive': {}, 'additive': {}}
+        self.load_calibration_file()
+    
+    def load_calibration_file(self, calibration_name='calibrations_main.json'):
+        '''Load the existing calibration file and update the calibrations dictionary. This means new calibrations are added to the existing ones.'''
+        if os.path.exists(os.path.join(self.calibrationDir, calibration_name)):
+            with open(os.path.join(self.calibrationDir, 'calibrations_main.json'), 'r') as f:
+                calibrations = json.load(f)
+            
+            self.calibrations.update(calibrations)
+        
+        else:
+            print(f"Calibration file '{calibration_name}' not found. Proceeding with empty calibration data.")
 
-    def load_calibration_file(self, filename=None):
+
+    def load_motor_recordings(self, filename=None):
         if not filename:
             motor_recordings_file = os.path.join(self.dataDir, 'motor_recordings.json')
         else:
             motor_recordings_file = os.path.join(self.dataDir, filename)
 
+        if not os.path.exists(motor_recordings_file):
+            raise FileNotFoundError(f"Calibration file '{motor_recordings_file}' not found.")
+        
+        
         with open(motor_recordings_file, 'r') as f:
             data = json.load(f)
         
@@ -484,7 +501,7 @@ class Calibration:
 
         fig, ax = plt.subplots(2,2)
 
-        wavelength_data = self.load_calibration_file()
+        wavelength_data = self.load_motor_recordings()
         wavelength, l1_steps = wavelength_data[:, 0], wavelength_data[:, 1]
 
         coeff_wl_to_l1 = np.polyfit(wavelength, l1_steps, 2)
@@ -1486,16 +1503,20 @@ if __name__ == '__main__':
 
     # calibration, cal_data = initialise(showplots=False)
     calibration = Calibration(showplots=True)
-    calibration.load_calibration_file()
+    calibration.load_motor_recordings()
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
 
-    for label in calibration.laser_positions.keys():
-        coefficients = calibration.calibrate_motor_axis(label)
+    coefficients = calibration.calibrate_motor_axis('l1')
+    calibration.save_all_calibrations()
+    breakpoint()
+
+    # for label in calibration.laser_positions.keys():
+    #     coefficients = calibration.calibrate_motor_axis(label)
 
     separate_g_cal = False
     if separate_g_cal:
-        calibration.load_calibration_file(filename='grating_motor_recordings.json')
+        calibration.load_motor_recordings(filename='grating_motor_recordings.json')
         calibration.sort_flattened_data_by_wavelength()
         calibration.assign_calibration_data()
         # breakpoint()
@@ -1508,9 +1529,6 @@ if __name__ == '__main__':
             coefficients = calibration.calibrate_motor_axis(label)
 
     
-
-
-
     # TRIAX cal is absolute - only needs to be saved once
     # calibration.save_triax_calibrations()
     # breakpoint()

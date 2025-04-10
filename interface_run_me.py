@@ -189,6 +189,7 @@ class Interface:
                 self.spectrometer = Triax(self, simulate=False)
                 self.spectrometer.initialise()
                 print("Successfully connected to real TRIAX spectrometer")
+                self._generate_command_map()
             except Exception as e:
                 print(f"Failed to connect to real TRIAX: {e}")
                 # Fallback to simulation
@@ -211,6 +212,7 @@ class Interface:
                 print("Successfully connected to real camera")
                 self.debug_skip.remove('camera')
                 self.microscope.camera = self.camera  # Update the microscope's camera reference
+                self._generate_command_map()
             except Exception as e:
                 print(f"Failed to connect to real camera: {e}")
                 # Fallback to simulation
@@ -339,12 +341,12 @@ class Interface:
 
 
 if __name__ == '__main__':
-    instrument = Interface(simulate=False, com_port='COM10', debug_skip=[
+    interface = Interface(simulate=False, com_port='COM10', debug_skip=[
         #'camera',
         'laser', 
         #'TRIAX'
         ])
-    cli(instrument)
+    cli(interface)
 
 
-    # laser home (at zero steps) is currently 799.4 nm
+    # laser home (at zero steps) is currently 800nm
