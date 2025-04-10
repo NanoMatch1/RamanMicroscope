@@ -1509,6 +1509,13 @@ if __name__ == '__main__':
 
     coefficients = calibration.calibrate_motor_axis('l1')
     calibration.save_all_calibrations()
+    
+    calibration.load_motor_recordings(filename='laser_motor_recordings.json')
+    calibration.sort_flattened_data_by_wavelength()
+    calibration.assign_calibration_data()
+    calibration.calibrate_motor_axis('l2')
+    calibration.save_all_calibrations()
+
     breakpoint()
 
     # for label in calibration.laser_positions.keys():

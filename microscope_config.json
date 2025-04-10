@@ -1,16 +1,16 @@
 {
   "ldr_scan_dict": {
     "l1": {
-      "range": 150,
-      "resolution": 5
+      "range": 500,
+      "resolution": 10
     },
     "l2": {
-      "range": 150,
-      "resolution": 5
+      "range": 250,
+      "resolution": 25
     },
     "l3": {
-      "range": 150,
-      "resolution": 5
+      "range": 5000,
+      "resolution": 500
     },
     "g1": {
       "range": 150,
@@ -34,7 +34,7 @@
   "home_positions": {
     "1A": 0,
     "1X": -110749,
-    "1Y": -14017,
+    "1Y": -14104,
     "1Z": -40306,
     "2A": 0,
     "2X": 0,
