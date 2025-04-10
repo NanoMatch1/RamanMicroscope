@@ -275,6 +275,7 @@ class MotionControl:
         motor_dict = self.generate_motor_dict(target_positions.keys())
         current_positions = self.get_motor_positions(motor_dict)
 
+
         for motor, value in current_positions.items():
             target = target_positions.get(motor)
             if target is None:
@@ -344,12 +345,13 @@ class MotionControl:
             return
             
         # Create backlash correction steps (-20 back, then +20 forward)
-        back_steps = {motor_id: -20 for motor_id in motor_steps.keys()}
-        forward_steps = {motor_id: 20 for motor_id in motor_steps.keys()}
+        back_steps = {motor_id: -100 for motor_id in motor_steps.keys()}
+        forward_steps = {motor_id: 100 for motor_id in motor_steps.keys()}
         
         # Execute the backlash correction with a delay between commands
         self.move_motors(back_steps, backlash=False)
-        time.sleep(0.2)  # Small delay to ensure controller processes the first command
+        # time.sleep(0.2)  # Small delay to ensure controller processes the first command
+        
         self.move_motors(forward_steps, backlash=False)
         
         return
@@ -581,7 +583,8 @@ class Microscope(Instrument):
             'report': self.report_status,
             'writemotors': self.write_motor_positions,
             'rldr': self.read_ldr0,
-            'calibrate': self.run_calibration,
+            'autocal': self.run_calibration,
+            'loadconfig': self.load_config,
             # Stage motion
             'x': self.move_x,
             'y': self.move_y,
@@ -642,7 +645,7 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
-    def load_config(self):
+    def load_config_file(self):
         if os.path.exists(self.config_path):
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
@@ -650,6 +653,13 @@ class Microscope(Instrument):
             return config
         else:
             raise FileNotFoundError(f"Config file not found at {self.config_path}")
+        
+    @ui_callable
+    def load_config(self):
+        self.config = self.load_config_file()
+        self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
+        self.hard_limits = self.config.get("hard_limits", {})
+        self.action_groups = self.config.get("action_groups", {})
 
     def write_config(self):
         with open(self.config_path, 'w') as f:
@@ -786,7 +796,7 @@ class Microscope(Instrument):
         self.interface.connect_to_camera()
 
     @ui_callable
-    def write_motor_positions(self, motor_positions, motor_dict=None):
+    def write_motor_positions(self, motor_positions='', motor_dict=None):
         '''Writes the current motor positions to a file for a string entered by the user. Optionally, a dictionary of motor names to positions can be passed.'''
 
         if motor_dict is None:
@@ -831,7 +841,6 @@ class Microscope(Instrument):
         data = {'laser_positions':laser_motor_positions, 'monochromator_positions':monochromator_motor_positions, 'triax_positions':triax_position,'wavelength':float(extra)}
 
         current_data[f'{len(current_data)}'] = data
-        # breakpoint()
         # dump the data to a json file
         with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'w') as f:
             json.dump(current_data, f)
@@ -849,7 +858,7 @@ class Microscope(Instrument):
         # Use the injected calibration service
         self.calibrations = self.calibration_service
         # Update calibrations with auto-calibration data if available
-        # self.calibrations.ammend_calibrations()
+        self.calibrations.ammend_calibrations()
 
         # Initialize components
         self.calculate_laser_wavelength()
@@ -1043,6 +1052,8 @@ class Microscope(Instrument):
         # Move motors if needed
         if motor_steps:
             self.motion_control.move_motors(motor_steps)
+            print("backlash correction")
+            breakpoint()
             self.motion_control.backlash_correction(motor_steps)
             self.motion_control.confirm_motor_positions(target_positions)
             
@@ -1134,11 +1145,8 @@ class Microscope(Instrument):
             steps = final_pos - current_pos
             move_command = {motor_id: steps}
             self.motion_control.move_motors(move_command)
-            
-            # Wait for the motor to stop on the first movement
-            if idx == 0:
-                self.motion_control.wait_for_motors([motor_id])
-                
+            # Wait for the motor to stop
+            self.motion_control.wait_for_motors([motor_id])
             # Read the LDR value and store with position
             ldr_value = 6000 - int(self.read_ldr0())
             scan_data.append([int(final_pos), ldr_value])
@@ -1339,9 +1347,7 @@ class Microscope(Instrument):
         laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
         mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
         
-        # Use dictionary-based go_to methods which use the motor_map and move_motors under the hood
-        self.go_to_laser_steps(laser_steps)
-        self.go_to_monochromator_steps(mono_steps)
+        
 
         # Get current positions after movement
         current_laser_pos = self.get_laser_motor_positions()
@@ -1397,36 +1403,14 @@ class Microscope(Instrument):
         target_laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
         target_mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
 
-        # Move motors using high-level go_to methods
-        self.go_to_laser_steps(target_laser_steps)
-        self.go_to_monochromator_steps(target_mono_steps)
 
-        # Check laser motor positions
-        current_laser_pos = self.get_laser_motor_positions()
-        current_mono_pos = self.get_monochromator_motor_positions()
+        # write current position to motors
+        motor_dict = {}
+        motor_dict.update(target_laser_steps)
+        motor_dict.update(target_mono_steps)
+        self.write_motor_positions(motor_dict=motor_dict)
 
-        laser_calibrated = True
-        for motor, target in target_laser_steps.items():
-            if motor in current_laser_pos and current_laser_pos[motor] != target:
-                laser_calibrated = False
-                print(f'Laser motor {motor}: Expected {target}, got {current_laser_pos[motor]}')
-        
-        if laser_calibrated:
-            print('Laser motors successfully calibrated')
-        else:
-            print('Error calibrating laser motors')
-
-        mono_calibrated = True
-        for motor, target in target_mono_steps.items():
-            if motor in current_mono_pos and current_mono_pos[motor] != target:
-                mono_calibrated = False
-                print(f'Monochromator motor {motor}: Expected {target}, got {current_mono_pos[motor]}')
-        
-        if mono_calibrated:
-            print('Monochromator motors successfully calibrated')
-        else:
-            print('Error calibrating monochromator motors')
-
+        print('Motors successfully shifted')
 
     def wavenumber_to_wavelength(self, wavenumber):
         return 10_000_000/wavenumber
@@ -1562,7 +1546,7 @@ class Microscope(Instrument):
         self.go_to_laser_steps(target_positions)
               
         # Safety checks and reopen shutter
-        self.laser_safety_check()
+        # self.laser_safety_check()
         self.open_mono_shutter()
         
         # Report primary wavelength
@@ -1775,10 +1759,11 @@ class Microscope(Instrument):
             current_pos = self.get_laser_motor_positions()
 
         self.laser_steps = current_pos
+
                
         # Calculate wavelengths for each motor using calibration functions
         self.laser_wavelengths = self.calibrations.steps_to_wl(current_pos)
-      
+
         return self.laser_wavelengths
 
     @ui_callable

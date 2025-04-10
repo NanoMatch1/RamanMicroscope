@@ -274,7 +274,7 @@ class AutoCalibration:
                 continue
             for peak in peaks:
                 peak_list.append(Peak(*peak))
-            if len(peak_list) > 1:
+            if len(peak_list) > 1: # if there are multiple peaks, sort by amplitude and take the largest one
                 peak_list.sort(key=lambda x: x.amp)
             peak = peak_list[-1]
             calibration_peaks[wave] = peak
@@ -322,7 +322,7 @@ class AutoCalibration:
     
 
     def save_calibration(self, filename):
-        self.calibrationDir = os.path.join(os.path.dirname(__file__), 'calibrations')
+        self.calibrationDir = os.path.join(os.path.dirname(__file__), 'calibration')
         with open(os.path.join(self.calibrationDir, '{}_autocal.json'.format(filename)), 'w') as f:
             json.dump(self.calibrations, f)
 
@@ -999,9 +999,10 @@ calibration_name = 'autocal_2'
 scriptDir = os.path.dirname(__file__)
 dataDir = os.path.join(scriptDir, 'autocalibration')
 
-autocal = AutoCalibration(showplots=True, smoothing=2)
+autocal = AutoCalibration(showplots=True, smoothing=1)
 # autocal.autocalibrate_all(manual=False)
-autocal.autocalibrate_single('g2', manual=True, poly_order=2, load=False)
+autocal.autocalibrate_single('l2', manual=True, poly_order=2, load=False)
+breakpoint()
 
 # TODO: create unit tests, create metric for quality assessment at a glance
 
