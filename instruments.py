@@ -892,29 +892,34 @@ class Microscope(Instrument):
 
     #? Stage control commands
 
+    @ui_callable
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'X': travel_distance})
         self.stage_positions['X'] += travel_distance
         print('X stage moved by {} micrometers'.format(travel_distance))
     
+    @ui_callable
     def move_y(self, travel_distance):
         '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Y': travel_distance})
         self.stage_positions['Y'] += travel_distance
         print('Y stage moved by {} micrometers'.format(travel_distance))
 
+    @ui_callable
     def move_z(self, travel_distance):
         '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Z': travel_distance})
         self.stage_positions['Z'] += travel_distance
         print('Z stage moved by {} micrometers'.format(travel_distance))
 
+    @ui_callable
     def move_microscope_mode(self, travel_distance):
         '''Moves the microcsope sample stage in the microscope mode, by travel distance in micrometers.'''
         self.motion_control.move_motors({'mode': travel_distance})
         self.stage_positions['mode'] += travel_distance
 
+    @ui_callable
     def set_stage_home(self):
         '''Sets the current stage position as the home position.'''
         self.motion_control.set_stage_home()
