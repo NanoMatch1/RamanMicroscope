@@ -163,8 +163,11 @@ class Calibration:
         self.calibration_metrics = {}
         self.report_dict = {'initial': {}, 'subtractive': {}, 'additive': {}}
 
-    def load_calibration_file(self):
-        motor_recordings_file = os.path.join(self.dataDir, 'motor_recordings.json')
+    def load_calibration_file(self, filename=None):
+        if not filename:
+            motor_recordings_file = os.path.join(self.dataDir, 'motor_recordings.json')
+        else:
+            motor_recordings_file = os.path.join(self.dataDir, filename)
 
         with open(motor_recordings_file, 'r') as f:
             data = json.load(f)
@@ -1577,7 +1580,24 @@ if __name__ == '__main__':
     for label in calibration.laser_positions.keys():
         coefficients = calibration.calibrate_motor_axis(label)
 
-  
+    separate_g_cal = True
+    if separate_g_cal:
+        calibration.load_calibration_file(filename='grating_motor_recordings.json')
+        calibration.sort_flattened_data_by_wavelength()
+        calibration.assign_calibration_data()
+        # breakpoint()
+        calibration.monochromator_positions['g4'] = [-x for x in calibration.monochromator_positions['g3']]
+        calibration.monochromator_positions['g1'] = [int(round(-x/4)) for x in calibration.monochromator_positions['g3']]
+        calibration.monochromator_positions['g2'] = [int(round(x/4)) for x in calibration.monochromator_positions['g3']]
+        # for label in calibration.monochromator_positions.keys():
+        # coefficients = calibration.calibrate_motor_axis('g1')
+        for label in calibration.monochromator_positions.keys():
+            coefficients = calibration.calibrate_motor_axis(label)
+
+    
+
+
+
     # TRIAX cal is absolute - only needs to be saved once
     # calibration.save_triax_calibrations()
     # breakpoint()
