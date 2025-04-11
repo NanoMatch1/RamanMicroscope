@@ -138,7 +138,13 @@ class AcquitisionParameters:
 
 
 class MotionControl:
-    '''Handles the motion control of the microscope. Needs access to the controller to move the motors.'''
+    '''Handles the motion control of the microscope. Needs access to the controller to move the motors.
+    
+    Notes:
+    - Backlash is applied to all move_motor commands if the direction of travel is negative.
+    - Homing commands to not apply backlash corrections to the homed position. This means if the backlash changes, the motor homes need to be recalibrated.
+    - Home calibration is performed at the microscope level by calling "calhome" at the interface level. Home positions are stored in the config file.'''
+
     def __init__(self, controller, motor_map, config):
         self.controller = controller
         self.motor_map = motor_map  # Dictionary mapping motor names to IDs
@@ -395,7 +401,7 @@ class MotionControl:
 
     def move_motors(self, motor_id_steps: dict, backlash=True):
         """
-        Move motors by specified steps.
+        Move motors by specified steps. Actively waits for motors to stop moving by polling controller. Backlash correction is applied to movements in the negative direction.
         
         Parameters:
         motor_id_steps (dict): Dictionary mapping motor IDs to step counts, e.g. {'1X': 100, '1Y': -50}
@@ -404,6 +410,7 @@ class MotionControl:
         Returns:
         str: Response from the controller
         """
+
         motor_id_steps = self.resolve_motor_ids(motor_id_steps)
 
         if not motor_id_steps:
@@ -422,7 +429,8 @@ class MotionControl:
         self.wait_for_motors(list(motor_id_steps.keys()))
 
         if backlash:
-            self.backlash_correction(motor_id_steps)
+            motors_for_correction = {motor: steps for motor, steps in motor_id_steps.items() if steps < 0} # Only apply backlash if moving backwards. i.e. forwards direction should already have the backlash taken up
+            self.backlash_correction(motors_for_correction)
         
         return response
 
@@ -1144,11 +1152,9 @@ class Microscope(Instrument):
             # Move the motor by the specified amount
             steps = final_pos - current_pos
             move_command = {motor_id: steps}
-            self.motion_control.move_motors(move_command)
-            # Wait for the motor to stop
-            self.motion_control.wait_for_motors([motor_id])
-            # Read the LDR value and store with position
-            ldr_value = 6000 - int(self.read_ldr0())
+            self.motion_control.move_motors(move_command, backlash = False)
+
+            ldr_value = 11000 - int(self.read_ldr0())
             scan_data.append([int(final_pos), ldr_value])
             current_pos = final_pos
         

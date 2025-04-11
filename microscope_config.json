@@ -19,6 +19,14 @@
     "g2": {
       "range": 150,
       "resolution": 5
+    },
+    "g3": {
+      "range": 150,
+      "resolution": 5
+    },
+    "g4": {
+      "range": 150,
+      "resolution": 5
     }
   },
   "hard_limits": {
