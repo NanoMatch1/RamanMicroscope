@@ -176,6 +176,9 @@ class Calibration:
 
         return wl_dict
     
+    def ammend_triax_calibration(self):
+        '''Simple correction of triax position'''
+        pass
 
     def ammend_calibrations(self, report=True):
         '''If an autocalibration has been performed, this function will update the current calibrations with the new data. Loads individual files'''

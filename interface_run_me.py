@@ -342,9 +342,9 @@ class Interface:
 
 if __name__ == '__main__':
     interface = Interface(simulate=False, com_port='COM10', debug_skip=[
-        'camera',
+        #'camera',
         'laser', 
-        'TRIAX'
+        #'TRIAX'
         ])
     cli(interface)
 
