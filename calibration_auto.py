@@ -160,13 +160,21 @@ class Peak:
 class AutoCalibration:
 
     def __init__(self, showplots=True, exclude=[], **kwargs):
+        self.linked_motor_scalars = {
+            'g2': ('g1', -1),
+            'g3': ('g1', -0.25),
+            'g4': ('g1', 0.25),
+        }
+
         self.excluded = exclude
-        self.data_mask_dict = {'l1': (710, 880), 'l2': (710, 880), 'g1': (710, 880), 'g2': (710, 880)}
+        self.data_mask_dict = {'l1': (710, 880), 'l2': (710, 880), 'g1': (710, 880), 'g2': (710, 880), 'g3': (710, 880), 'g4': (710, 880)}
         self.motor_calibrations = {
             'l1': (self.l1_to_wavelength, self.wavelength_to_l1),
             'l2': (self.l2_to_wavelength, self.wavelength_to_l2),
             'g1': (self.g1_to_wavelength, self.wavelength_to_g1),
-            'g2': (self.g2_to_wavelength, self.wavelength_to_g2)
+            'g2': (self.g2_to_wavelength, self.wavelength_to_g2),
+            'g3': (self.g2_to_wavelength, self.wavelength_to_g2),
+            'g4': (self.g2_to_wavelength, self.wavelength_to_g2),
         } # dict of possible motor calibrations and their methods. Update here as new autocals are created
         self.scriptDir = os.path.dirname(__file__)
         self.showplots = showplots
@@ -183,7 +191,7 @@ class AutoCalibration:
         files = [f for f in os.listdir(os.path.join(self.scriptDir, 'autocalibration')) if f.endswith('.json')]
 
         assert len(files) > 0, 'No calibration files found in the autocalibration directory.'
-
+        breakpoint()
         for motor_type in self.motor_calibrations:
             autocal_dict[motor_type] = [f for f in files if motor_type in f]
         
@@ -197,6 +205,122 @@ class AutoCalibration:
             autocal_dict[motor_type] = latest_cal
         
         return autocal_dict
+    
+    def autocalibrate_motor_axis(self, motor_label, poly_order=2, manual=False, load=False, show=False, **kwargs):
+        """Automatically calibrate a motor axis based on peak fitting of a spectral dataset."""
+        file = self.autocal_dict.get(motor_label)
+        if file is None:
+            print(f"No calibration file found for {motor_label}.")
+            return
+
+        print(f"Calibrating motor: {motor_label}")
+        print(f"Using file: {file}")
+
+        if load:
+            filename = f'peakfit_autocal_{motor_label}'
+            dataSet = asp.DataSet(dataDir)
+            dataSet.load_database(filename)
+        else:
+            dataSet = self._extract_peak_positions(file, motor_label, manual=manual, **kwargs)
+
+        return self._generate_motor_calibration(motor_label, dataSet, poly_order=poly_order, show=show)
+    
+    def _extract_peak_positions(self, file, motor_label, manual=False, **kwargs):
+        smoothing = self.kwargs.get('smoothing', 3)
+        dataSet = asp.DataSet(dataDir, fileList=[file])
+        data_mask = self.data_mask_dict[motor_label]
+
+        fileObj = dataSet.dataDict.get(file)
+        dataSet.dataDict = fileObj.data
+        dataSet.dataDict = mask_data(dataSet.dataDict, data_mask)
+
+        for cal_obj in dataSet.dataDict.values():
+            cal_obj._minimise_data()
+            cal_obj._apply_smoothing(window_length=smoothing)
+
+        peakfit_config = {
+            'peak_list': [],
+            'peak_type': 'voigt_pseudo',
+            'peak_sign': 'positive',
+            'threshold': 0.01,
+            'peak_detect': 'all',
+            'copy_peaks': False,
+            'show_ui': manual,
+        }
+
+        dataSet._peakfit(peakfitting_info=peakfit_config)
+        dataSet.save_database(tagList='', seriesName=f'peakfit_autocal_{motor_label}')
+        return dataSet
+
+    def _generate_motor_calibration(self, motor_label, dataSet, poly_order=2, show=False):
+        peak_positions = []
+
+        for wavelength, peakdict in dataSet.peakfitDict.items():
+            peaks = [Peak(*p) for p in peakdict.get('peaks', [])]
+            if not peaks:
+                continue
+            peaks.sort(key=lambda p: p.amp)
+            peak = peaks[-1]
+            peak_positions.append((float(wavelength), float(peak.pos)))
+
+        if not peak_positions:
+            raise RuntimeError(f"No peaks found for calibration of {motor_label}.")
+
+        peak_positions.sort()
+        data = np.array(peak_positions)
+        wavelengths = data[:, 0]
+        steps = data[:, 1]
+
+        # Forward calibration: wavelength → motor steps
+        coeff_fwd = np.polyfit(wavelengths, steps, poly_order)
+        poly_fwd = np.poly1d(coeff_fwd)
+        pred_steps = poly_fwd(wavelengths)
+        residuals_fwd = steps - pred_steps
+        metrics_fwd = self.calculate_fit_metrics(steps, pred_steps)
+
+        # Inverse calibration: motor steps → wavelength
+        coeff_inv = np.polyfit(steps, wavelengths, poly_order)
+        poly_inv = np.poly1d(coeff_inv)
+        pred_wl = poly_inv(steps)
+        residuals_inv = wavelengths - pred_wl
+        metrics_inv = self.calculate_fit_metrics(wavelengths, pred_wl)
+
+        # Store calibration
+        self.calibrations[f'wl_to_{motor_label}'] = coeff_fwd.tolist()
+        self.calibrations[f'{motor_label}_to_wl'] = coeff_inv.tolist()
+        self.calibration_metrics[f'wl_to_{motor_label}'] = metrics_fwd
+        self.calibration_metrics[f'{motor_label}_to_wl'] = metrics_inv
+
+        if show or getattr(self, 'showplots', False):
+            fig, ax = plt.subplots(2, 1)
+            ax[0].scatter(wavelengths, steps, color='black', label='Measured')
+            ax[0].plot(wavelengths, pred_steps, color='tab:blue', label='Fit')
+            ax[0].set_title(f'Auto Calibration: Wavelength to {motor_label.upper()}')
+            ax[0].set_ylabel('Motor Steps')
+            ax[0].legend()
+
+            ax[1].plot(wavelengths, residuals_fwd, marker='o', label='Residuals')
+            ax[1].set_xlabel('Wavelength (nm)')
+            ax[1].set_ylabel('Residuals (steps)')
+            ax[1].legend()
+            plt.tight_layout()
+            plt.show()
+
+        self.save_calibration(f'autocal_{motor_label}')
+
+        return {
+            'forward': {
+                'coeff': coeff_fwd,
+                'metrics': metrics_fwd,
+                'poly': poly_fwd,
+            },
+            'inverse': {
+                'coeff': coeff_inv,
+                'metrics': metrics_inv,
+                'poly': poly_inv,
+            }
+        }
+
     
     def autocalibrate_all(self, manual=False):
         for motor_type, file in self.autocal_dict.items():
@@ -1001,7 +1125,7 @@ dataDir = os.path.join(scriptDir, 'autocalibration')
 
 autocal = AutoCalibration(showplots=True, smoothing=1)
 # autocal.autocalibrate_all(manual=False)
-autocal.autocalibrate_single('l2', manual=True, poly_order=2, load=False)
+autocal.autocalibrate_single('g3', manual=True, poly_order=2, load=False)
 breakpoint()
 
 # TODO: create unit tests, create metric for quality assessment at a glance

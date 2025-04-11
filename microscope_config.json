@@ -70,10 +70,10 @@
       "l3": "1Z"
     },
     "monochromator_wavelength": {
-      "g1": "3X",
-      "g2": "3Y",
-      "g3": "3Z",
-      "g4": "3A"
+      "g1": "3Z",
+      "g2": "3A",
+      "g3": "3X",
+      "g4": "3Y"
     },
     "polarization": {
       "in": "4X",
