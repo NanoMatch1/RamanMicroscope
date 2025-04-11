@@ -191,7 +191,6 @@ class AutoCalibration:
         files = [f for f in os.listdir(os.path.join(self.scriptDir, 'autocalibration')) if f.endswith('.json')]
 
         assert len(files) > 0, 'No calibration files found in the autocalibration directory.'
-        breakpoint()
         for motor_type in self.motor_calibrations:
             autocal_dict[motor_type] = [f for f in files if motor_type in f]
         
@@ -206,7 +205,7 @@ class AutoCalibration:
         
         return autocal_dict
     
-    def autocalibrate_motor_axis(self, motor_label, poly_order=2, manual=False, load=False, show=False, **kwargs):
+    def autocalibrate_motor_axis(self, motor_label, poly_order=2, manual=False, load=False, show=False, linked=True, **kwargs):
         """Automatically calibrate a motor axis based on peak fitting of a spectral dataset."""
         file = self.autocal_dict.get(motor_label)
         if file is None:
@@ -223,7 +222,50 @@ class AutoCalibration:
         else:
             dataSet = self._extract_peak_positions(file, motor_label, manual=manual, **kwargs)
 
-        return self._generate_motor_calibration(motor_label, dataSet, poly_order=poly_order, show=show)
+        calibration_result = self._generate_motor_calibration(
+            motor_label, dataSet, poly_order=poly_order, show=show
+        )
+
+        if linked:
+            self._propagate_linked_calibrations(motor_label, calibration_result)
+
+        return calibration_result
+    
+    def _propagate_linked_calibrations(self, source_label, source_calibration):
+        """Propagate calibration from one motor to others using predefined scalar relations."""
+        for target_label, (base_label, scalar) in self.linked_motor_scalars.items():
+            if base_label != source_label:
+                continue  # Only apply if the calibration was for the linked base motor
+
+            print(f"Propagating calibration to {target_label} using scalar {scalar}")
+
+            # Scale forward poly: wavelength → steps
+            source_fwd_coeff = source_calibration['forward']['coeff']
+            scaled_fwd_coeff = np.array(source_fwd_coeff) * scalar
+            poly_fwd = np.poly1d(scaled_fwd_coeff)
+
+            # Compute inverse by fitting wavelength vs predicted steps again
+            wavelengths = np.array(self.wavelength_axis)
+            steps_scaled = poly_fwd(wavelengths)
+            coeff_inv = np.polyfit(steps_scaled, wavelengths, len(scaled_fwd_coeff)-1)
+            poly_inv = np.poly1d(coeff_inv)
+
+            pred_steps = poly_fwd(wavelengths)
+            pred_wavelengths = poly_inv(pred_steps)
+
+            metrics_fwd = self.calculate_fit_metrics(pred_steps, pred_steps)  # Fit is exact by construction
+            metrics_inv = self.calculate_fit_metrics(wavelengths, pred_wavelengths)
+
+            # Store results
+            self.calibrations[f'wl_to_{target_label}'] = scaled_fwd_coeff.tolist()
+            self.calibrations[f'{target_label}_to_wl'] = coeff_inv.tolist()
+            self.calibration_metrics[f'wl_to_{target_label}'] = metrics_fwd
+            self.calibration_metrics[f'{target_label}_to_wl'] = metrics_inv
+
+            self.save_calibration(f'autocal_{target_label}')
+
+            print(f"Saved propagated calibration for {target_label}")
+
     
     def _extract_peak_positions(self, file, motor_label, manual=False, **kwargs):
         smoothing = self.kwargs.get('smoothing', 3)
@@ -269,6 +311,7 @@ class AutoCalibration:
         peak_positions.sort()
         data = np.array(peak_positions)
         wavelengths = data[:, 0]
+        self.wavelength_axis = wavelengths # needed for linked calibrations
         steps = data[:, 1]
 
         # Forward calibration: wavelength → motor steps
@@ -1125,7 +1168,7 @@ dataDir = os.path.join(scriptDir, 'autocalibration')
 
 autocal = AutoCalibration(showplots=True, smoothing=1)
 # autocal.autocalibrate_all(manual=False)
-autocal.autocalibrate_single('g3', manual=True, poly_order=2, load=False)
+autocal.autocalibrate_motor_axis('g1', manual=True, poly_order=2, load=False, linked=True) # linked applies scalar calculation of g2-4 from g1
 breakpoint()
 
 # TODO: create unit tests, create metric for quality assessment at a glance

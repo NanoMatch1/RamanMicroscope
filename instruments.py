@@ -558,9 +558,9 @@ class Microscope(Instrument):
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
-        self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
-        self.hard_limits = self.config.get("hard_limits", {})
-        self.action_groups = self.config.get("action_groups", {})
+        # self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
+        # self.hard_limits = self.config.get("hard_limits", {})
+        # self.action_groups = self.config.get("action_groups", {})
 
         # Create a flattened motor map for easy lookup of any motor ID by label
         self.motor_map = {}
@@ -668,6 +668,8 @@ class Microscope(Instrument):
         self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
         self.hard_limits = self.config.get("hard_limits", {})
         self.action_groups = self.config.get("action_groups", {})
+
+        return self.config
 
     def write_config(self):
         with open(self.config_path, 'w') as f:
@@ -1061,7 +1063,6 @@ class Microscope(Instrument):
         if motor_steps:
             self.motion_control.move_motors(motor_steps)
             print("backlash correction")
-            breakpoint()
             self.motion_control.backlash_correction(motor_steps)
             self.motion_control.confirm_motor_positions(target_positions)
             
