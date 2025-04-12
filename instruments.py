@@ -579,6 +579,7 @@ class Microscope(Instrument):
             'rg': self.get_spectrometer_position,
             'sl': self.go_to_laser_wavelength,
             'sm': self.go_to_monochromator_wavelength,
+            'sg': self.go_to_grating_wavelength,
             'sall': self.go_to_wavelength_all,
             'st': self.go_to_spectrometer_wavelength,
             'reference': self.reference_calibration_from_wavelength,
@@ -604,12 +605,14 @@ class Microscope(Instrument):
             'monopos': self.get_monochromator_motor_positions,
             'slsteps': self.go_to_laser_steps,
             'smsteps': self.go_to_monochromator_steps,
+            'sgsteps': self.go_to_grating_steps,
             'recmot': self.record_motors,
             'calhome': self.recalibrate_home,
             'home': self.home_motor,
             'homeall': self.home_all_motors,
             'homelaser': self.home_laser,
             'homemono': self.home_monochromator,
+            'homegratings': self.home_gratings,
             'testhoming': self.test_homing,
             # acquisition commands
             'scanmin': self.set_scan_min,
@@ -750,7 +753,7 @@ class Microscope(Instrument):
         return "Home all motors not implemented yet"
 
     @ui_callable
-    def home_laser(self):
+    def home_laser(self, move_to_calibrated_position=True):
         """
         Home the laser motors.
         
@@ -760,6 +763,9 @@ class Microscope(Instrument):
         for motor_label in self.action_groups['laser_wavelength'].keys():
             response = self.home_motor(motor_label)
             print(f"Homing motor {motor_label}: {response}")
+        
+        if move_to_calibrated_position:
+            self.go_to_laser_wavelength(800)
         return response
     
     @ui_callable
@@ -771,6 +777,19 @@ class Microscope(Instrument):
         str: The response from the controller after homing the monochromator motors.
         """
         for motor_label in self.action_groups['monochromator_wavelength'].keys():
+            response = self.motion_control.home_motor(motor_label)
+            print(f"Homing motor {motor_label}: {response}")
+        return response
+    
+    @ui_callable
+    def home_gratings(self):
+        """
+        Home the grating motors.
+        
+        Returns:
+        str: The response from the controller after homing the grating motors.
+        """
+        for motor_label in self.action_groups['grating_wavelength'].keys():
             response = self.motion_control.home_motor(motor_label)
             print(f"Homing motor {motor_label}: {response}")
         return response
@@ -872,6 +891,7 @@ class Microscope(Instrument):
 
         # Initialize components
         self.calculate_laser_wavelength()
+        self.calculate_grating_wavelength()
         self.calculate_monochromator_wavelength()
         self.calculate_spectrometer_wavelength()
         self.report_status(initialise=True)
@@ -885,16 +905,16 @@ class Microscope(Instrument):
         if initialise is False:
             # recalculate all parameters
             self.laser_steps = self.get_laser_motor_positions()
-            self.monochromator_steps = self.get_monochromator_motor_positions()
+            self.grating_steps = self.get_grating_motor_positions()
             self.get_spectrometer_position()
 
 
         report = {
             'laser': self.calculate_laser_wavelength(self.laser_steps),
-            'monochromator': self.calculate_monochromator_wavelength(self.monochromator_steps),
+            'grating': self.calculate_grating_wavelength(self.grating_steps),
             'TRIAX lambda': self.calculate_spectrometer_wavelength(self.spectrometer_position),
             'laser motor positions': self.laser_steps,
-            'monochromator motor positions': self.monochromator_steps,
+            'grating motor positions': self.grating_steps,
             'laser wavenumber': self.current_laser_wavenumber,
             'monochromator wavenumber': self.current_monochromator_wavenumber,
             # 'Raman wavelength': self.current_raman_wavelength,
@@ -987,11 +1007,7 @@ class Microscope(Instrument):
         if motor.lower() not in self.ldr_scan_dict.keys():
             print("Invalid motor. Must be one of: ", self.ldr_scan_dict.keys())
             return
-        
-        if safety is True:
-            self.detector_safety = True
-        else:
-            self.detector_safety = False
+
 
         calibrationDict = {'data_type': 'autocal'}
 
@@ -1001,7 +1017,7 @@ class Microscope(Instrument):
 
         resolution = float(resolution)
 
-        initial_grating = copy(self.monochromator_steps)
+        initial_grating = copy(self.grating_steps)
         initial_laser = copy(self.laser_steps)
 
         wavelengths = np.arange(*wavelength_range, resolution)
@@ -1018,7 +1034,7 @@ class Microscope(Instrument):
         
         for wl in wavelengths:
             self.go_to_laser_wavelength(wl)
-            self.go_to_monochromator_wavelength(wl)
+            self.go_to_grating_wavelength(wl)
             scan_data = self.run_ldr0_scan(motor)
             # Apply the conversion to ensure the data is serializable
             calibrationDict[float(wl)] = scan_data
@@ -1034,7 +1050,7 @@ class Microscope(Instrument):
         # self.open_pinhole_shutter()
         print("Returning to initial position")
         self.go_to_laser_steps(initial_laser)
-        self.go_to_monochromator_steps(initial_grating)
+        self.go_to_grating_steps(initial_grating)
 
     @ui_callable
     def go_to_laser_steps(self, target_positions):
@@ -1115,6 +1131,10 @@ class Microscope(Instrument):
         Returns:
         list: List of [position, LDR value] pairs
         """
+        # Check if the motor is valid
+        if motor not in self.motion_control.motor_map:
+            print("Invalid motor. Must be one of:", list(self.motion_control.motor_map.keys()))
+
         if motor not in self.ldr_scan_dict.keys():
             print("Invalid motor. Must be one of:", list(self.ldr_scan_dict.keys()))
             return
@@ -1126,18 +1146,9 @@ class Microscope(Instrument):
             resolution = self.ldr_scan_dict[motor]['resolution']
 
         # Get the current position of the specified motor
-        if motor.startswith('l'):
-            motor_positions = self.get_laser_motor_positions()
-        elif motor.startswith('g'):
-            motor_positions = self.get_monochromator_motor_positions()
-        else:
-            print(f"Unknown motor type: {motor}")
-            return []
-            
-        if motor not in motor_positions:
-            print(f"Motor {motor} not found in current positions")
-            return []
-            
+        motor_dict = self.motion_control.generate_motor_dict([motor])
+        motor_positions = self.motion_control.get_motor_positions(motor_dict)
+         
         current_pos = motor_positions[motor]
         scan_data = []
         scan_points = np.arange(current_pos - search_length, current_pos + search_length, resolution)
@@ -1292,6 +1303,7 @@ class Microscope(Instrument):
         '''Get the current positions of the laser motors.'''
         return self.motion_control.get_motor_positions(self.action_groups['laser_wavelength'])
     
+    
     @ui_callable
     def get_monochromator_motor_positions(self):
         '''Get the current positions of the grating motors.'''
@@ -1308,14 +1320,12 @@ class Microscope(Instrument):
         """
         # First move the laser
         self.go_to_laser_wavelength(wavelength)
+        self.go_to_grating_wavelength(wavelength) # move all grating motors
         
         # Then handle the monochromator
         if shift is True:
             # Maintain the current Raman shift by calculating new monochromator position
             self.go_to_wavenumber(self.current_shift)
-        else:
-            # Set monochromator to the same wavelength as the laser
-            self.go_to_monochromator_wavelength(wavelength)
 
         # Finally, move the spectrometer
         self.go_to_spectrometer_wavelength(wavelength)
@@ -1408,7 +1418,7 @@ class Microscope(Instrument):
 
         # Calculate target motor positions from the provided wavelength
         target_laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
-        target_mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
+        target_mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['grating_wavelength'])
 
 
         # write current position to motors
@@ -1593,6 +1603,81 @@ class Microscope(Instrument):
         print("New monochromator wavelength: ", next(iter(self.monochromator_wavelengths.values())))
         
         return True
+    
+    @ui_callable
+    def go_to_grating_wavelength(self, wavelength):
+        """
+        Move all gratings (first and second tunable filters) to the specified wavelength.
+        
+        Parameters:
+        wavelength (float): Target wavelength in nm
+        
+        Returns:
+        bool: True if successful, False otherwise
+        """
+        # Validate the wavelength is within allowed range
+        wavelength = self.check_grating_wavelength(wavelength)
+        if wavelength is False:
+            return False
+        
+        # Safety: close shutter during movement
+        self.close_mono_shutter()
+        
+        # Get target positions from calibration service
+        target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
+        
+        # Move to target positions
+        self.go_to_grating_steps(target_positions)
+        # self.laser_safety_check()
+        self.open_mono_shutter()
+        
+        # Report primary wavelength
+        print("New grating wavelength: ", next(iter(self.grating_wavelengths.values())))
+        
+        return True
+
+    def check_grating_wavelength(self, wavelength):
+        '''Checks the validity of the entered value for grating wavelength.'''
+        wavelength = string_to_float(wavelength)
+
+        if not self.check_hard_limits(wavelength, self.hard_limits['grating_wavelength']):
+            print('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(*self.hard_limits['grating_wavelength']))
+            return False
+        
+        return wavelength
+    
+    @ui_callable
+    def go_to_grating_steps(self, target_positions):
+        '''
+        Moves the grating motors to the specified positions in steps.
+        
+        Parameters:
+        target_positions (dict): Dictionary of motor names to target positions {'g1': 1000, 'g2': 2000}
+        '''
+        # Get current positions
+        current_positions = self.get_grating_motor_positions()
+        
+        # Calculate steps to move
+        motor_steps = {}
+        for motor, target in target_positions.items():
+            if motor in current_positions:
+                steps = target - current_positions[motor]
+                if steps != 0:
+                    # Get the Arduino motor ID from motor_map
+                    motor_id = self.motor_map.get(motor)
+                    if motor_id:
+                        motor_steps[motor_id] = steps
+        
+        # Move motors if needed
+        if motor_steps:
+            self.motion_control.move_motors(motor_steps)
+            self.motion_control.backlash_correction(motor_steps)
+            self.motion_control.confirm_motor_positions(target_positions)
+            
+            # Update grating wavelength
+            self.calculate_grating_wavelength()
+            print("Moved to grating steps: ", self.grating_steps)
+
     def check_monochromator_wavelength(self, wavelength):
         wavelength = string_to_float(wavelength)
         if not self.check_hard_limits(wavelength, self.hard_limits['monochromator_wavelength']):
@@ -1659,6 +1744,30 @@ class Microscope(Instrument):
       
         return self
 
+    def calculate_grating_wavelength(self, current_pos=None):
+        """
+        Calculate all grating wavelengths from motor positions.
+        
+        Parameters:
+        current_pos (dict, optional): Current motor positions. If None, gets current positions.
+        
+        Returns:
+        dict: Dictionary of motor names to calculated wavelengths {'g1': 800.0, 'g2': 800.5}
+        """
+        if current_pos is None:
+            current_pos = self.get_grating_motor_positions()
+
+        self.grating_steps = current_pos
+        
+        # Calculate wavelengths for each motor using calibration functions
+        self.grating_wavelengths = self.calibrations.steps_to_wl(current_pos)
+        
+        return self.grating_wavelengths
+
+    def get_grating_motor_positions(self):
+        '''Get the current positions of all grating motors.'''
+        return self.motion_control.get_motor_positions(self.action_groups['grating_wavelength'])
+
     @ui_callable
     def close_mono_shutter(self):
         self.controller.close_mono_shutter()
@@ -1708,10 +1817,14 @@ class Microscope(Instrument):
         '''Get the current monochromator wavelength in nm.'''
         return self.calculate_monochromator_wavelength()
     
+    def get_grating_wavelength(self):
+        '''Get all the current grating wavelengths in nm.'''
+        return self.calculate_grating_wavelength()
+    
     def get_all_current_positions(self):
         '''Get the current positions of all motors and calculate the corresponding wavelengths.'''
         laser_positions = self.calculate_laser_wavelength()
-        monochromator_positions = self.calculate_monochromator_wavelength()
+        monochromator_positions = self.calculate_grating_wavelength()
         spectrometer_position = self.calculate_spectrometer_wavelength()
 
         return (laser_positions, monochromator_positions, spectrometer_position)
@@ -1727,19 +1840,19 @@ class Microscope(Instrument):
     
     def report_all_current_positions(self):
         '''Formats and prints the current positions of the microscope.'''
-        print("---Laser---")
+        print("---Steps---")
         for motor, position in self.laser_steps.items():
             print(f'{motor}: {position} steps')
-        for motor, position in self.monochromator_steps.items():
+        for motor, position in self.grating_steps.items():
             print(f'{motor}: {position} steps')
 
-        print('---Monochromator---')
+        print('---Wavelengths---')
         for motor, wavelength in self.laser_wavelengths.items():
             if wavelength is None:
                 print(f'{motor}: None')
                 continue
             print(f'{motor}: {round(wavelength, 2)} nm')
-        for motor, wavelength in self.monochromator_wavelengths.items():
+        for motor, wavelength in self.grating_wavelengths.items():
             if wavelength is None:
                 print(f'{motor}: None')
                 continue
