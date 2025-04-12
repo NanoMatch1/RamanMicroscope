@@ -1507,8 +1507,9 @@ if __name__ == '__main__':
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
 
-    coefficients = calibration.calibrate_motor_axis('l1')
+    coefficients = calibration.calibrate_motor_axis('l3', poly_order=1)
     calibration.save_all_calibrations()
+    breakpoint()
     
     calibration.load_motor_recordings(filename='laser_motor_recordings.json')
     calibration.sort_flattened_data_by_wavelength()

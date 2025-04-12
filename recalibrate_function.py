@@ -40,7 +40,7 @@ def regenerate_polynomial_with_shift(coefficients, correction, num_points=100, d
     return {
         'original': {
             'x': x,
-            'y': y,
+            'y': y, 
             'coeff': coefficients
         },
         'corrected': {

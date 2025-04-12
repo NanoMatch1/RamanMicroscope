@@ -9,11 +9,11 @@
       "resolution": 25
     },
     "l3": {
-      "range": 5000,
-      "resolution": 500
+      "range": 10000,
+      "resolution": 1000
     },
     "g1": {
-      "range": 150,
+      "range": 100,
       "resolution": 5
     },
     "g2": {
@@ -37,13 +37,17 @@
     "monochromator_wavelength": [
       500,
       1300
+    ],
+    "grating_wavelength": [
+      500,
+      1300
     ]
   },
   "home_positions": {
     "1A": 0,
-    "1X": -110749,
-    "1Y": -14104,
-    "1Z": -40306,
+    "1X": -111933,
+    "1Y": -11700,
+    "1Z": -33497,
     "2A": 0,
     "2X": 0,
     "2Y": 0,
@@ -51,7 +55,7 @@
     "3A": -15047,
     "3X": -17054,
     "3Y": -17723,
-    "3Z": -13056,
+    "3Z": -12973,
     "4A": 0,
     "4X": 0,
     "4Y": 0,
@@ -69,9 +73,13 @@
       "l2": "1Y",
       "l3": "1Z"
     },
-    "monochromator_wavelength": {
+    "grating_wavelength": {
       "g1": "3Z",
       "g2": "3A",
+      "g3": "3X",
+      "g4": "3Y"
+    },
+    "monochromator_wavelength": {
       "g3": "3X",
       "g4": "3Y"
     },

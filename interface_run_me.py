@@ -342,11 +342,16 @@ class Interface:
 
 if __name__ == '__main__':
     interface = Interface(simulate=False, com_port='COM10', debug_skip=[
-        #'camera',
+        'camera',
         'laser', 
-        #'TRIAX'
+        'TRIAX'
         ])
     cli(interface)
 
 
     # laser home (at zero steps) is currently 800nm
+
+# l1: -43 steps
+# l2: 155 steps
+# l3: 467 steps
+# g1: 16 steps

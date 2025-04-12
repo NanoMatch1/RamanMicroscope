@@ -167,10 +167,11 @@ class AutoCalibration:
         }
 
         self.excluded = exclude
-        self.data_mask_dict = {'l1': (710, 880), 'l2': (710, 880), 'g1': (710, 880), 'g2': (710, 880), 'g3': (710, 880), 'g4': (710, 880)}
+        self.data_mask_dict = {'l1': (710, 880), 'l2': (710, 880), 'l3':(710,880), 'g1': (710, 880), 'g2': (710, 880), 'g3': (710, 880), 'g4': (710, 880)}
         self.motor_calibrations = {
             'l1': (self.l1_to_wavelength, self.wavelength_to_l1),
             'l2': (self.l2_to_wavelength, self.wavelength_to_l2),
+            'l3': (self.l2_to_wavelength, self.wavelength_to_l2),
             'g1': (self.g1_to_wavelength, self.wavelength_to_g1),
             'g2': (self.g2_to_wavelength, self.wavelength_to_g2),
             'g3': (self.g2_to_wavelength, self.wavelength_to_g2),
@@ -270,7 +271,7 @@ class AutoCalibration:
     def _extract_peak_positions(self, file, motor_label, manual=False, **kwargs):
         smoothing = self.kwargs.get('smoothing', 3)
         dataSet = asp.DataSet(dataDir, fileList=[file])
-        data_mask = self.data_mask_dict[motor_label]
+        data_mask = kwargs.get('data_mask', self.data_mask_dict.get(motor_label))
 
         fileObj = dataSet.dataDict.get(file)
         dataSet.dataDict = fileObj.data
@@ -1168,7 +1169,7 @@ dataDir = os.path.join(scriptDir, 'autocalibration')
 
 autocal = AutoCalibration(showplots=True, smoothing=1)
 # autocal.autocalibrate_all(manual=False)
-autocal.autocalibrate_motor_axis('g1', manual=True, poly_order=2, load=False, linked=True) # linked applies scalar calculation of g2-4 from g1
+autocal.autocalibrate_motor_axis('g1', manual=True, poly_order=2, load=False, linked=True, data_mask=(750,850)) # linked applies scalar calculation of g2-4 from g1 
 breakpoint()
 
 # TODO: create unit tests, create metric for quality assessment at a glance
