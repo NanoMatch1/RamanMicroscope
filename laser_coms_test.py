@@ -41,6 +41,8 @@ class MillenniaLaser(Instrument):
             'getdiode': self.get_diode_status,
             'enable': self.enable_laser,
             'status': self.get_status,
+            'shutterstatus': self.get_shutter_status,
+            'getpowerset' : self.get_power_setpoint,
         }
 
         self.connect()
@@ -67,54 +69,114 @@ class MillenniaLaser(Instrument):
 
     @ui_callable
     def get_status(self):
-        '''Returns the current status of the laser. This is a simple command to check if the laser is on or off.'''
-        diode_power = self.get_diode_status()
-        diode_power = [float(x[:-2]) for x in diode_power]
-
-        power_setpoint = self.get_power()
-
-        if diode_power[0] > 10 or diode_power[1] > 10:
-            self.status = "ON"
-            print("Laser is ON at {}.".format(power_setpoint))
-        elif diode_power[0] < 10 and diode_power[1] < 10:
-            warmup = self.get_warmup_status()
-            if self.status == "ON":
-                print("Laser is ON at {}.".format(power_setpoint))
-            if warmup == "100%":
-                self.status = "OFF"
-                print("Laser is OFF.")
-            else:
-                self.status = "WARMUP"
-                print("Laser is warming up: {}.".format(warmup))
-            print("Laser is OFF.")
+        print("Laser Status: {}".format(self.status))
         return self.status
+
+    @ui_callable
+    def get_shutter_status(self):
+        '''Returns the current status of the shutter. This is a simple command to check if the shutter is open or closed.'''
+        response = self.send_command('?SHUTTER')
+        if response == "1":
+            print("Shutter is OPEN.")
+        elif response == "0":
+            print("Shutter is CLOSED.")
+        else:
+            print("Unknown shutter status.")
+        return response
+
+    @ui_callable
+    def laser_diagnosis(self):
+        '''Runs through a series of checks to determine the status of the laser. This includes checking the power setpoint, actual power, and diode status.'''
+        print("Running laser diagnostics...")
+
+        def check_status():
+
+            diode_power = self.get_diode_status()
+            diode_power = [float(x[:-2]) for x in diode_power]
+            power_setpoint = self.get_power_setpoint()
+            power_actual = self.get_power()
+            warmup = self.get_warmup_status()
+
+            print("Current status: {}".format(self.status))
+            print("Warmup: {}".format(warmup))
+            print("Power setpoint: {}, Power actual: {}".format(power_setpoint, power_actual))
+            print("Diode power: {}".format(diode_power))
+            return diode_power, power_setpoint, power_actual, warmup
+        
+        def cycle_power_setpoint():
+            if power_actual < power_setpoint*0.8:
+                print("Power not yet stabilised.")
+            print("Cycling setpoint...")
+
+            self.set_power(0.05)
+            time.sleep(2)
+            self.set_power(power_setpoint)
+            time.sleep(5)
+            power_actual = self.get_power()
+
+            if power_actual < power_setpoint*0.8:
+                print("Power not stabilised after cycling setpoint. Inspect laser manually.")
+                return False
+            else:
+                print("Power stabilised after cycling setpoint.")
+                self.status = "ON"
+                print("Laser is ON at {}.".format(power_setpoint))
+                return True
+
+        diode_power, power_setpoint, power_actual, warmup = check_status()
+        if warmup != 100:
+            print("Laser is warming up. Please wait.")
+            return False
+        
+        cycle_power_setpoint()
+
+        print("Laser diagnostics complete. All checks passed. If any issues persist, please inspect the laser manually.")
+        print("Remember to cycle the shutter - it sometimes gets stuck.")
+
+    @ui_callable
+    def cycle_shutter(self):
+        '''Cycles the shutter to ensure it is functioning properly. This is a simple command to open and close the shutter.'''
+        self.close_shutter()
+        time.sleep(1)
+        self.open_shutter()
+        print("Shutter cycled.")
+        return True
 
     @ui_callable
     def enable_laser(self):
         '''Handles the turning on of the laser, from warmup to on state. The final step is to open the shutter.'''
 
         warmup = self.get_warmup_status()
+        power = self.get_power()
+        
+        if power >= 3.5:
+            print("Laser is already ON at {} watts. Change power with 'setpower' command.".format(power))
+            return True
+
         if self.status == "ON":
             power = self.get_power()
-            power = float(power[:-1])
-            if power >= 3.5:
-                print("Laser is already ON at {} watts. Change power with 'setpower' command.".format(power))
-            else:
-                self.set_power(4.0)
-                print("Laser is now ON at 4.0 watts. Open the shutter to pump the tunable cavity (NIR laser).")
+            print("Laser is ON at {} watts. Ramping to 4.0 Watts".format(power))
+            self.close_shutter()
+            self.set_power(4.0)
+            print("Laser is now ON at 4.0 watts. Open the shutter to pump the tunable cavity (NIR laser).")
             return True
         
-        if warmup == "100%":
+        elif warmup == 100:
             response = self.send_command('ON')
             self.set_power(0.05)
             self.status = "ON"
             print("Laser is now ON in low-power mode (not lasing). Return in 2 minutes to increase power.")
             return True
         
-        else:
-            warmup = self.send_command('ON')
+        elif 0 < warmup < 100:
             self.status = "WARMUP"
+            print("Laser is warming up at {}%. Please wait...".format(warmup))
+            return False
+
+        elif warmup == 0:
             print(f"In standby mode. Beginning warmup: {warmup}")
+            self.send_command('ON')
+            self.status = "WARMUP"
             return False
         
     def disconnect(self):
@@ -136,7 +198,7 @@ class MillenniaLaser(Instrument):
     @ui_callable
     def turn_on(self):
         warmup = self.get_warmup_status()
-        if warmup == "100%":
+        if warmup == 100:
             response = self.send_command('ON')
             self.status = "ON"
             print("Laser is now ON.")
@@ -187,7 +249,7 @@ class MillenniaLaser(Instrument):
     @ui_callable
     def get_warmup_status(self):
         response = self.send_command('?WARMUP%')
-        return response
+        return float(response[:-1])
 
     @ui_callable
     def open_shutter(self):
@@ -225,6 +287,7 @@ while True:
         command = input("Enter command (or 'exit' to quit): ").strip()
         if command.lower() == 'exit':   
             break
+        command = command.strip()
         coms = command.split(' ')
         if coms[0] in assess_commands:
             if len(coms) > 1:
