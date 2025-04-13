@@ -2613,10 +2613,32 @@ class MillenniaLaser(Instrument):
             'status': self.get_status,
             'shutterstatus': self.get_shutter_status,
             'getpowerset' : self.get_power_setpoint,
+            'cycleshutter': self.cycle_shutter,
+            'diagnosis': self.laser_diagnosis,
+            'connect': self.connect,
         }
 
+    def initialise(self):
+        '''Initialise the laser and establish a connection.'''
+        if self.simulate:
+            print("Simulated connection.")
+            return
         self.connect()
+        setpoint = self.get_power_setpoint()
+        current_power = self.get_power()
+        warmup = self.get_warmup_status()
 
+        print("Laser initialised.")
+        print("Current power setpoint: {}W".format(setpoint))
+        print("Current power: {}W".format(current_power))
+        print("Warmup status: {}%".format(warmup))
+
+        if warmup == 0:
+            self.enable_laser()
+
+        return setpoint, current_power, warmup
+
+    @ui_callable
     def connect(self):
         if self.simulate:
             print("Simulated connection.")
@@ -2671,10 +2693,21 @@ class MillenniaLaser(Instrument):
             print("Warmup: {}".format(warmup))
             print("Power setpoint: {}, Power actual: {}".format(power_setpoint, power_actual))
             print("Diode power: {}".format(diode_power))
-            return diode_power, power_setpoint, power_actual, warmup
+
+            return {
+                'amps': diode_power,
+                'setpoint': power_setpoint, 
+                'power': power_actual,
+                'warmup': warmup
+            }
         
-        def cycle_power_setpoint():
-            if power_actual < power_setpoint*0.8:
+        def cycle_power_setpoint(diag_dict):
+
+            power_actual = diag_dict['power']
+            power_setpoint = diag_dict['setpoint']
+            warmup = diag_dict['warmup']
+            
+            if power_actual < power_setpoint * 0.8:
                 print("Power not yet stabilised.")
             print("Cycling setpoint...")
 
@@ -2684,7 +2717,7 @@ class MillenniaLaser(Instrument):
             time.sleep(5)
             power_actual = self.get_power()
 
-            if power_actual < power_setpoint*0.8:
+            if power_actual < power_setpoint * 0.8:
                 print("Power not stabilised after cycling setpoint. Inspect laser manually.")
                 return False
             else:
@@ -2693,12 +2726,12 @@ class MillenniaLaser(Instrument):
                 print("Laser is ON at {}.".format(power_setpoint))
                 return True
 
-        diode_power, power_setpoint, power_actual, warmup = check_status()
-        if warmup != 100:
+        diag_dict = check_status()
+        if diag_dict['warmup'] != 100:
             print("Laser is warming up. Please wait.")
             return False
         
-        cycle_power_setpoint()
+        cycle_power_setpoint(diag_dict)
 
         print("Laser diagnostics complete. All checks passed. If any issues persist, please inspect the laser manually.")
         print("Remember to cycle the shutter - it sometimes gets stuck.")
@@ -2790,6 +2823,9 @@ class MillenniaLaser(Instrument):
     @ui_callable
     def turn_off(self):
         response = self.send_command('OFF')
+        self.status = "OFF"
+        self.close_shutter()
+        print("Laser is now OFF.")
         return response
 
     @ui_callable
@@ -2813,7 +2849,7 @@ class MillenniaLaser(Instrument):
     @ui_callable
     def get_power_setpoint(self):
         response = self.send_command('?PSET')
-        print(f"Power setpoint: {response}")
+        # print(f"Power setpoint: {response}")
         return float(response[:-1])
 
     @ui_callable
@@ -2837,7 +2873,7 @@ class MillenniaLaser(Instrument):
         return response
 
     def __str__(self):
-        return f"MillenniaLaser(port={self.port})"
+        return f"Millennia Laser"
 
     def __call__(self, command: str, *args, **kwargs):
         if command not in self.command_functions:

@@ -43,6 +43,8 @@ class MillenniaLaser(Instrument):
             'status': self.get_status,
             'shutterstatus': self.get_shutter_status,
             'getpowerset' : self.get_power_setpoint,
+            'cycleshutter': self.cycle_shutter,
+            'diagnosis': self.laser_diagnosis,
         }
 
         self.connect()
