@@ -2610,6 +2610,55 @@ class Monochromator(Instrument):
 #         '''Get the laser power.'''
 #         print("Getting the laser power.")
 
+class StageControl(Instrument):
+    '''Handles functions and generating of commands for the controller.'''
+    def __init__(self, interface, controller=None, simulate=False):
+        super().__init__()
+        self.interface = interface
+        self.controller = controller or interface.controller
+        self.simulate = simulate
+        self.command_functions = {
+            'movestage': self.move_stage,
+            'homestage': self.home_stage
+        }
+
+        self._integrity_checker()
+        
+    def initialise(self):
+        """Initialize the stage controller"""
+        print("Stage controller initialized")
+        return "Stage controller initialized"
+
+    def __str__(self):
+        return "Stage Control"
+
+    def __call__(self, command: str, *args, **kwargs):
+        if command not in self.command_functions:
+            raise ValueError(f"Unknown stage command: '{command}'")
+        return self.command_functions[command](*args, **kwargs)
+    
+    @ui_callable
+    def move_x(self, distance):
+        '''Moves the stage in the x direction by the specified distance in micro meters.'''
+        print("Moving stage X {} microns".format(distance))
+        
+        
+
+    @ui_callable
+    def move_y(self, distance):
+        '''Moves the stage in the y direction by the specified distance in micro meters.'''
+        pass
+
+    @ui_callable
+    def move_stage(self, motor_dict):
+        '''Sends the move command to the motion controller.'''
+
+        print("Moving the stage.")
+
+    @ui_callable
+    def home_stage(self):
+        print("Homing the stage.")
+
 class MillenniaLaser(Instrument):
     def __init__(self, interface, port='COM13', baudrate=9600, simulate=False):
         super().__init__()
