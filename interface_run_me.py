@@ -183,7 +183,7 @@ class Interface:
                 self.spectrometer = Triax(self, simulate=False)
                 self.spectrometer.initialise()
                 print("Successfully connected to real TRIAX spectrometer")
-                self._generate_command_map()
+                self.command_map = self._generate_command_map()
             except Exception as e:
                 print(f"Failed to connect to real TRIAX: {e}")
                 # Fallback to simulation
@@ -206,7 +206,7 @@ class Interface:
                 print("Successfully connected to real camera")
                 self.debug_skip.remove('camera')
                 self.microscope.camera = self.camera  # Update the microscope's camera reference
-                self._generate_command_map()
+                self.command_map = self._generate_command_map()
             except Exception as e:
                 print(f"Failed to connect to real camera: {e}")
                 # Fallback to simulation

@@ -166,7 +166,7 @@ class MotionControl:
     @ui_callable
     def home_motor(self, motor_label):
         """
-        Home the specified motor, then moves it to the calibrated zero position (for v1.0, this is 799.4 nm)
+        Home the specified motor, then writes the position as the home position. Then moves to zero to release from limit switch.
         
         Parameters:
         motor_label (str): The label of the motor to home, e.g., '1X', '2Y', etc.
@@ -181,7 +181,9 @@ class MotionControl:
         print(response[0])
         home_pos = int(response[0].split(' ')[-1])
         expected_home = self.home_positions.get(motor_id, None)
-        self.move_motors({motor_label: -expected_home}, backlash=False)
+        self.write_motor_positions({motor_label: expected_home})  # Write the expected motor position to the controller (set home position)
+        print("Moving to zero position to release from limit switch...")
+        self.move_motors({motor_label: -expected_home}, backlash=False) # Move to zero to release from limit switch
 
         return home_pos
 
@@ -555,6 +557,8 @@ class Microscope(Instrument):
             'A': 0
         }
 
+        self.instrument_state = {}
+
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
@@ -641,7 +645,7 @@ class Microscope(Instrument):
         self.current_shift = 0
         self.current_wavenumber = None
 
-        self.detector_safety = True
+        self.detector_safety = False
 
         self.acquire_mode = 'spectrum'
 
@@ -655,6 +659,17 @@ class Microscope(Instrument):
         if command not in self.command_functions:
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
+    
+    def save_instrument_state(self, motor_positions):
+        '''Saves the state of the microscope and motors to a config, in case of reboot or crash.'''
+        save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
+        if os.path.exists(save_state_path):
+            with open(save_state_path, 'r') as f:
+                current_data = json.load(f)
+        else:
+            current_data = {}
+        
+        
     
     def load_config_file(self):
         if os.path.exists(self.config_path):
@@ -764,12 +779,12 @@ class Microscope(Instrument):
             response = self.home_motor(motor_label)
             print(f"Homing motor {motor_label}: {response}")
         
-        if move_to_calibrated_position:
-            self.go_to_laser_wavelength(800)
+        # if move_to_calibrated_position:
+        #     self.go_to_laser_wavelength(800)
         return response
     
     @ui_callable
-    def home_monochromator(self):
+    def home_monochromator(self, move_to_calibrated_position=True):
         """
         Home the monochromator motors.
         
@@ -779,10 +794,13 @@ class Microscope(Instrument):
         for motor_label in self.action_groups['monochromator_wavelength'].keys():
             response = self.motion_control.home_motor(motor_label)
             print(f"Homing motor {motor_label}: {response}")
+
+        # if move_to_calibrated_position:
+        #     self.go_to_laser_wavelength(800)
         return response
     
     @ui_callable
-    def home_gratings(self):
+    def home_gratings(self, move_to_calibrated_position=True):
         """
         Home the grating motors.
         
@@ -792,6 +810,9 @@ class Microscope(Instrument):
         for motor_label in self.action_groups['grating_wavelength'].keys():
             response = self.motion_control.home_motor(motor_label)
             print(f"Homing motor {motor_label}: {response}")
+
+        # if move_to_calibrated_position:
+        #     self.go_to_laser_wavelength(800)
         return response
 
     @ui_callable
@@ -2766,9 +2787,10 @@ class MillenniaLaser(Instrument):
         
         elif warmup == 100:
             response = self.send_command('ON')
+            print("Laser is now ON")
             self.set_power(0.05)
             self.status = "ON"
-            print("Laser is now ON in low-power mode (not lasing). Return in 2 minutes to increase power.")
+            print("Low-power mode (not lasing). Return in 2 minutes to increase power.")
             return True
         
         elif 0 < warmup < 100:
@@ -2839,6 +2861,7 @@ class MillenniaLaser(Instrument):
             raise ValueError("Power must be between 0 and 6 Watts.")
         
         response = self.send_command('P:{}'.format(power_watts))
+        print("Power set to {} Watts.".format(power_watts))
         return response
 
     @ui_callable
