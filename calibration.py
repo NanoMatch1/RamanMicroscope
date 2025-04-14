@@ -98,7 +98,7 @@ class Calibration:
     def __init__(self):
         self.scriptDir = os.path.dirname(os.path.abspath(__file__))
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
-        self.generate_calibrations()
+        # self.generate_calibrations()
     
     def _load_calibrations(self):
         """
@@ -107,6 +107,17 @@ class Calibration:
         with open(os.path.join(self.scriptDir, 'calibration', 'calibrations_main.json'), 'r') as f:
             calibrations = json.load(f)
             print('Calibrations loaded from file')
+
+        calibrations.update(self.load_triax_calibration())
+        return calibrations
+    
+    def load_triax_calibration(self):
+        """
+        Load the triax calibration data from the triax_calibration.json file.
+        """
+        with open(os.path.join(self.scriptDir, 'calibration', 'triax_calibrations.json'), 'r') as f:
+            calibrations = json.load(f)
+            print('Triax calibrations loaded from file')
         return calibrations
 
     def generate_calibrations(self, report=False):
@@ -137,7 +148,32 @@ class Calibration:
                 self.__setattr__(name, np.poly1d(calib) * -1)
 
         print('Inverted calibrations successfully.')
+
+    def load_master_calibration(self, microsteps=32):
+        with open(os.path.join(self.scriptDir, 'calibration', 'master_calibration_microsteps_{}.json'.format(microsteps)), 'r') as f:
+            calibrations = json.load(f)
+            print('Master calibrations at {} microsteps loaded from file'.format(microsteps))
+
+        # calibrations.update(self.load_triax_calibration())
+        return calibrations
+    
+    def generate_master_calibration(self, microsteps=32):
+        master_calibration = self.load_master_calibration(microsteps)
+
+        for action_group, dataset in master_calibration.items():
+            print("---> Loading {} calibrations".format(action_group))
+            for name, calib in dataset.items():
+                if len(calib) == 7:
+                    print("Loading {} as poly_sin".format(name))
+                    self.__setattr__(name, PolySinModulation(*calib))
+                if len(calib) == 6:
+                    print("Loading {} as poly_sin".format(name))
+                    self.__setattr__(name, LinSinModulation(*calib))
+                else:
+                    print("Loading {} as poly1d".format(name))
+                    self.__setattr__(name, np.poly1d(calib))
         
+        print("Master calibrations successfully built.")
 
     def wl_to_steps(self, wavelength, action_group):
         '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''
@@ -176,10 +212,6 @@ class Calibration:
 
         return wl_dict
     
-    def ammend_triax_calibration(self):
-        '''Simple correction of triax position'''
-        pass
-
     def ammend_calibrations(self, report=True):
         '''If an autocalibration has been performed, this function will update the current calibrations with the new data. Loads individual files'''
         json_files = [f for f in os.listdir(self.calibrationDir) if f.endswith('autocal.json')]
@@ -218,6 +250,46 @@ class Calibration:
             for key, value in report_dict.items():
                 print(f'{key} updated as {value}')
         print('Calibrations updated with autocalibration data')
+        print('-'*20)
+
+    def update_monochromator_calibrations(self, report=True):
+        '''Updates g3 and g4 calibrations using the final monochromator calibration'''
+
+        try:
+            with open(os.path.join(self.calibrationDir, 'monochromator_calibrations.json'), 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print('No monochromator calibration data found.')
+            return
+        except Exception as e:
+            print(f'Error loading monochromator calibration data: {e}')
+            return
+
+        report_dict = {}
+        
+        for name, calib in data.items():
+            #TODO: refactor the generation code into a function
+
+            if len(calib) == 7:
+                # print("Loading {} as poly_sin".format(name))
+                report_dict[name] ='poly_sin'
+                self.all_calibrations[name] = calib
+                self.__setattr__(name, PolySinModulation(*calib))
+            elif len(calib) == 6:
+                # print("Loading {} as lin_sin".format(name))
+                report_dict[name] = 'lin_sin'
+                self.all_calibrations[name] = calib
+                self.__setattr__(name, LinSinModulation(*calib))
+            else:
+                # print("Loading {} as poly1d".format(name))
+                report_dict[name] = 'poly1d'
+                self.all_calibrations[name] = calib
+                self.__setattr__(name, np.poly1d(calib))
+
+        if report:
+            for key, value in report_dict.items():
+                print(f'{key} updated as {value}')
+        print('Monochromator calibration added.')
         print('-'*20)
 
 

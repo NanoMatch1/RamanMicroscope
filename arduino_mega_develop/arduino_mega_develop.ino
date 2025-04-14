@@ -93,7 +93,7 @@ AccelStepper* steppers[] = {
 int backoffSteps[] = {
   300, 5000, 500, 6000,  // module 1
   300, 300, 300, 300,  // module 2
-  3000, 3000, 3000, 3000,  // module 3
+  500, 500, 500, 500,  // module 3
   300, 300, 100, 300   // module 4 — Y motor has smaller range
 };
 
@@ -101,7 +101,7 @@ int backoffSteps[] = {
 int homeFastSpeed[] = {
   300, 2500, 500, 2500,  // module 1
   1000, 1000, 1000, 1000,  // module 2
-  1000, 1000, 1000, 1000,  // module 3
+  250, 250, 250, 250,  // module 3
   300, 300, 300, 300   // module 4 — Y motor has smaller range
 };
 
@@ -109,7 +109,7 @@ int homeFastSpeed[] = {
 int homeSlowSpeed[] = {
   300, 250, 100, 300,  // module 1
   300, 300, 300, 300,  // module 2
-  300, 300, 300, 300,  // module 3
+  50, 50, 50, 50,  // module 3
   300, 300, 300, 300   // module 4 — Y motor has smaller range
 };
 

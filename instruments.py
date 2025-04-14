@@ -669,7 +669,7 @@ class Microscope(Instrument):
         else:
             current_data = {}
         
-        
+    
     
     def load_config_file(self):
         if os.path.exists(self.config_path):
@@ -872,7 +872,7 @@ class Microscope(Instrument):
         '''Records the current motor positions to a file.'''
 
         laser_motor_positions = self.get_laser_motor_positions()
-        monochromator_motor_positions = self.get_monochromator_motor_positions()
+        grating_motor_positions = self.get_grating_motor_positions()
         try:
             triax_position = self.get_spectrometer_position()
         except Exception as e:
@@ -888,7 +888,7 @@ class Microscope(Instrument):
             current_data = {}
 
 
-        data = {'laser_positions':laser_motor_positions, 'monochromator_positions':monochromator_motor_positions, 'triax_positions':triax_position,'wavelength':float(extra)}
+        data = {'laser_positions':laser_motor_positions, 'grating_positions':grating_motor_positions, 'triax_positions':triax_position,'wavelength':float(extra)}
 
         current_data[f'{len(current_data)}'] = data
         # dump the data to a json file
@@ -908,7 +908,13 @@ class Microscope(Instrument):
         # Use the injected calibration service
         self.calibrations = self.calibration_service
         # Update calibrations with auto-calibration data if available
-        self.calibrations.ammend_calibrations()
+        # self.calibrations.ammend_calibrations()
+        # finally, update with the monochromator calibrations
+        # self.calibrations.update_monochromator_calibrations()
+
+        # TODO: Remove unnecessary calibrations later
+        # One calibration to rule them all
+        self.calibrations.generate_master_calibration(microsteps=32)
 
         # Initialize components
         self.calculate_laser_wavelength()
