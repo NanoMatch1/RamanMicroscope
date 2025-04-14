@@ -18,6 +18,42 @@
 
 #include <AccelStepper.h>
 
+const int stepPinA1 = 22;
+const int dirPinA1 = 23;
+const int stepPinX1 = 24;
+const int dirPinX1 = 25;
+const int stepPinY1 = 26;
+const int dirPinY1 = 27;
+const int stepPinZ1 = 28;
+const int dirPinZ1 = 29;
+
+const int stepPinA2 = 30;
+const int dirPinA2 = 31;
+const int stepPinX2 = 32;
+const int dirPinX2 = 33;
+const int stepPinY2 = 34;
+const int dirPinY2 = 35;
+const int stepPinZ2 = 36;
+const int dirPinZ2 = 37;
+
+const int stepPinA3 = 38;
+const int dirPinA3 = 39;
+const int stepPinX3 = 40;
+const int dirPinX3 = 41;
+const int stepPinY3 = 42;
+const int dirPinY3 = 43;
+const int stepPinZ3 = 44;
+const int dirPinZ3 = 45;
+
+const int stepPinA4 = 46;
+const int dirPinA4 = 47;
+const int stepPinX4 = 48;
+const int dirPinX4 = 49;
+const int stepPinY4 = 50;
+const int dirPinY4 = 51;
+const int stepPinZ4 = 52;
+const int dirPinZ4 = 53;
+
 AccelStepper stepperA1(AccelStepper::DRIVER, 22, 23);
 AccelStepper stepperX1(AccelStepper::DRIVER, 24, 25);
 AccelStepper stepperY1(AccelStepper::DRIVER, 26, 27);
@@ -77,12 +113,49 @@ int homeSlowSpeed[] = {
   300, 300, 300, 300   // module 4 — Y motor has smaller range
 };
 
-
-
-
-
 void setup() {
   Serial.begin(9600);
+
+  delay(50);
+  
+  pinMode(stepPinA1, INPUT);
+  pinMode(stepPinX1, INPUT);
+  pinMode(stepPinY1, INPUT);
+  pinMode(stepPinZ1, INPUT);
+  pinMode(dirPinA1, INPUT);
+  pinMode(dirPinX1, INPUT);
+  pinMode(dirPinY1, INPUT);
+  pinMode(dirPinZ1, INPUT);
+
+  pinMode(stepPinA2, INPUT);
+  pinMode(stepPinX2, INPUT);
+  pinMode(stepPinY2, INPUT);
+  pinMode(stepPinZ2, INPUT);
+  pinMode(dirPinA2, INPUT);
+  pinMode(dirPinX2, INPUT);
+  pinMode(dirPinY2, INPUT);
+  pinMode(dirPinZ2, INPUT);
+
+  pinMode(stepPinA3, INPUT);
+  pinMode(stepPinX3, INPUT);
+  pinMode(stepPinY3, INPUT);
+  pinMode(stepPinZ3, INPUT);
+  pinMode(dirPinA3, INPUT);
+  pinMode(dirPinX3, INPUT);
+  pinMode(dirPinY3, INPUT);
+  pinMode(dirPinZ3, INPUT);
+
+  pinMode(stepPinA4, INPUT);
+  pinMode(stepPinX4, INPUT);
+  pinMode(stepPinY4, INPUT);
+  pinMode(stepPinZ4, INPUT);
+  pinMode(dirPinA4, INPUT);
+  pinMode(dirPinX4, INPUT);
+  pinMode(dirPinY4, INPUT);
+  pinMode(dirPinZ4, INPUT);
+  
+  
+
   for (int i = 0; i < 16; i++) {
     steppers[i]->setMaxSpeed(5000);
     steppers[i]->setAcceleration(5000);
@@ -102,6 +175,46 @@ void setup() {
   pinMode(gShutPin, OUTPUT);
   digitalWrite(gShutPin, LOW);
   pinMode(homingLimitPin, INPUT_PULLUP); // Assuming active-low switch
+
+  delay(500);
+
+  pinMode(stepPinA1, OUTPUT);
+  pinMode(stepPinX1, OUTPUT);
+  pinMode(stepPinY1, OUTPUT);
+  pinMode(stepPinZ1, OUTPUT);
+  pinMode(dirPinA1, OUTPUT);
+  pinMode(dirPinX1, OUTPUT);
+  pinMode(dirPinY1, OUTPUT);
+  pinMode(dirPinZ1, OUTPUT);
+
+  pinMode(stepPinA2, OUTPUT);
+  pinMode(stepPinX2, OUTPUT);
+  pinMode(stepPinY2, OUTPUT);
+  pinMode(stepPinZ2, OUTPUT);
+  pinMode(dirPinA2, OUTPUT);
+  pinMode(dirPinX2, OUTPUT);
+  pinMode(dirPinY2, OUTPUT);
+  pinMode(dirPinZ2, OUTPUT);
+
+  pinMode(stepPinA3, OUTPUT);
+  pinMode(stepPinX3, OUTPUT);
+  pinMode(stepPinY3, OUTPUT);
+  pinMode(stepPinZ3, OUTPUT);
+  pinMode(dirPinA3, OUTPUT);
+  pinMode(dirPinX3, OUTPUT);
+  pinMode(dirPinY3, OUTPUT);
+  pinMode(dirPinZ3, OUTPUT);
+
+  pinMode(stepPinA4, OUTPUT);
+  pinMode(stepPinX4, OUTPUT);
+  pinMode(stepPinY4, OUTPUT);
+  pinMode(stepPinZ4, OUTPUT);
+  pinMode(dirPinA4, OUTPUT);
+  pinMode(dirPinX4, OUTPUT);
+  pinMode(dirPinY4, OUTPUT);
+  pinMode(dirPinZ4, OUTPUT);
+
+  delay(50);
 
   Serial.print("Arduino controller ready to receive commands");
   Serial.println("#CF");
@@ -177,7 +290,7 @@ void homeMotor(char module, char motor) {
   // Fast approach
   m->setMaxSpeed(fastSpeed);
   // m->setAcceleration(fastSpeed);
-  m->move(-150000);
+  m->move(-200000);
 
   tStart = millis();
   while (digitalRead(homingLimitPin) == HIGH) {
@@ -368,7 +481,7 @@ void setPositions(String cmdContent) {
     if (token.length() < 3) continue;
     char module = token.charAt(0);
     char motor = token.charAt(1);
-    int pos = token.substring(2).toInt();
+    long pos = token.substring(2).toInt();
     int idx = getStepperIndex(module, motor);
     if (idx >= 0 && idx < 16) {
       steppers[idx]->setCurrentPosition(pos);
