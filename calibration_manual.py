@@ -759,6 +759,40 @@ class Calibration:
                 'poly': poly_inv,
             }
         }
+    
+    def triax_calibration_low_res(self, poly_order=2):
+        """Calibrate the TRIAX motor axis against wavelength using polynomial fit."""
+        self.calibrate_motor_axis('triax', poly_order=poly_order, show=False)
+        breakpoint()
+
+        pass
+
+    def monochromator_calibration(self, poly_order=2, show=False):
+        """Final monochromator calibration to overlay on the grating axis. Required due to misalignment of G1 and G2 wrt the monochromator."""
+        
+        g3_coefficients = self.calibrate_motor_axis('g3', poly_order=poly_order, show=show)
+        g4_coefficients = self.calibrate_motor_axis('g4', poly_order=poly_order, show=show)
+
+        self.save_monochromator_calibrations()
+
+    def save_triax_calibrations(self):
+        """Save the TRIAX calibration coefficients to a JSON file."""
+        triax_calibrations = {key:value for key, value in self.calibrations.items() if 'triax' in key}
+
+        with open(os.path.join(self.calibrationDir, 'triax_calibrations.json'), 'w') as f:
+            json.dump(triax_calibrations, f)
+
+        print("TRIAX calibration data saved successfully.")
+
+
+    def save_monochromator_calibrations(self, keys=['g3', 'g4']):
+        """Save the monochromator calibration coefficients to a JSON file."""
+        monochromator_calibrations = {key:value for key, value in self.calibrations.items() if any(k in key for k in keys)}
+
+        with open(os.path.join(self.calibrationDir, 'monochromator_calibrations.json'), 'w') as f:
+            json.dump(monochromator_calibrations, f)
+
+        print("Monochromator calibration data saved successfully.")
 
         
     def wavelength_to_l1(self, l1_steps, poly_order=2, mode=None, show=False):
@@ -1507,9 +1541,13 @@ if __name__ == '__main__':
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
 
-    coefficients = calibration.calibrate_motor_axis('l3', poly_order=1)
-    calibration.save_all_calibrations()
+    # coefficients = calibration.calibrate_motor_axis('g1', poly_order=1)
+    # coefficients = calibration.monochromator_calibration()
+    # coefficients = calibration.calibrate_motor_axis('triax')
+    calibration.save_triax_calibrations()
     breakpoint()
+    
+    calibration.save_all_calibrations()
     
     calibration.load_motor_recordings(filename='laser_motor_recordings.json')
     calibration.sort_flattened_data_by_wavelength()
