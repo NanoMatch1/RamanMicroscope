@@ -97,7 +97,15 @@ class AcquisitionParameters:
         self.wavelength_parameters = config.get('wavelength_parameters', self.wavelength_parameters)
         self.polarization_parameters = config.get('polarization_parameters', self.polarization_parameters)
 
-    def construct_scan_sequence(self, microscope):
+
+
+        # Example of constructing a scan sequence
+        # This is just a placeholder and should be replaced with actual logic
+
+    def save_spectrum(self, step, spectrum):
+        print("saving spectrum...")
+
+    def generate_scan_sequence(self, microscope):
         """
         Construct the scan sequence from microscope methods based on the parameters set in the this class object.
         
@@ -112,28 +120,42 @@ class AcquisitionParameters:
         So motion is the first to change.
         """
 
-        # Construct the scan sequence based on the parameters
-        sequence = {}
+        seqeunce = []
 
-        wavelengths = np.arange(
+        # Get the parameters
+        wavelength_list = np.arange(
             self.wavelength_parameters['start_wavelength'],
             self.wavelength_parameters['end_wavelength'],
             self.wavelength_parameters['resolution']
         )
 
-        polarizations = np.arange(
+        polarization_list = np.arange(
             self.polarization_parameters['input']['start_angle'],
             self.polarization_parameters['input']['end_angle'],
             self.polarization_parameters['input']['resolution']
         )
 
-        motion_sequence
+        x_positions = np.arange(
+            self.motion_parameters['start_position']['x'],
+            self.motion_parameters['end_position']['x'],
+            self.motion_parameters['resolution']['x']
+        )
 
-        # Example of constructing a scan sequence
-        # This is just a placeholder and should be replaced with actual logic
+        y_positions = np.arange(
+            self.motion_parameters['start_position']['y'],
+            self.motion_parameters['end_position']['y'],
+            self.motion_parameters['resolution']['y']
+        )
 
-    def save_spectrum(self, step, spectrum):
-        print("saving spectrum...")
+        z_fixed = self.motion_parameters['start_position']['z'] # fixed for now
+        # Create the sequence
+
+        for wavelength in wavelength_list:
+            for pol in polarization_list:
+                for y in y_positions:
+                    for x in x_positions:
+                        seqeunce.append([x, y, z_fixed, wavelength, pol])
+
 
 
     def acquire_scan(self, microscope, cancel_event, status_callback, progress_callback):
