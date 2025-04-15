@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from functools import wraps
 
 from calibration import Calibration, LdrScan
+from acquisitioncontrol import AcquisitionParameters, AcquisitionGUI
 
 def simulate(expected_value=None, function_handler=None):
     """
@@ -81,235 +82,6 @@ class MotorPositions:
     y: int
     z: int
     a: int
-
-class AcquisitionParameters:
-    def __init__(self):
-        self.general_parameters = {
-            'acquisition_time': 1000.0,
-            'filename': 'default',
-            'raman_shift': 0.0,
-            'laser_power': 4.5,
-        }
-
-        self.motion_parameters = {
-            'start_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            'end_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            'resolution': {'x': 1.0, 'y': 1.0, 'z': 1.0}
-        }
-
-        self.wavelength_parameters = {
-            'start_wavelength': 0.0,
-            'end_wavelength': 0.0,
-            'resolution': 1.0
-        }
-
-        self.polarization_parameters = {
-            'input': {'start_angle': 0.0, 'end_angle': 0.0, 'resolution': 1.0},
-            'output': {'start_angle': 0.0, 'end_angle': 0.0, 'resolution': 1.0}
-        }
-
-    def prompt_for_cli_parameters(self):
-        print("\n--- CLI Parameter Entry ---")
-        self._prompt_section(self.general_parameters, "General Parameters")
-        self._prompt_nested_section(self.motion_parameters, "Motion Parameters")
-        self._prompt_section(self.wavelength_parameters, "Wavelength Parameters")
-        self._prompt_nested_section(self.polarization_parameters, "Polarization Parameters")
-
-    def _prompt_section(self, param_dict, section_name):
-        print(f"\n{section_name}:")
-        for key, default in param_dict.items():
-            while True:
-                user_input = input(f"  {key} (default: {default}): ")
-                if user_input == "":
-                    break
-                try:
-                    if isinstance(default, float):
-                        param_dict[key] = float(user_input)
-                    elif isinstance(default, int):
-                        param_dict[key] = int(user_input)
-                    else:
-                        param_dict[key] = user_input
-                    break
-                except ValueError:
-                    print(f"Invalid input for {key}. Expected type {type(default).__name__}.")
-
-    def _prompt_nested_section(self, nested_dict, section_name):
-        print(f"\n{section_name}:")
-        for subgroup, subdict in nested_dict.items():
-            print(f"  {subgroup.capitalize()}:")
-            for key, default in subdict.items():
-                while True:
-                    user_input = input(f"    {key} (default: {default}): ")
-                    if user_input == "":
-                        break
-                    try:
-                        if isinstance(default, float):
-                            nested_dict[subgroup][key] = float(user_input)
-                        elif isinstance(default, int):
-                            nested_dict[subgroup][key] = int(user_input)
-                        else:
-                            nested_dict[subgroup][key] = user_input
-                        break
-                    except ValueError:
-                        print(f"Invalid input for {key}. Expected type {type(default).__name__}.")
-
-    def save_config(self, directory, filename="acquisition_config.json"):
-        config = {
-            'general_parameters': self.general_parameters,
-            'motion_parameters': self.motion_parameters,
-            'wavelength_parameters': self.wavelength_parameters,
-            'polarization_parameters': self.polarization_parameters,
-        }
-        os.makedirs(directory, exist_ok=True)
-        filepath = os.path.join(directory, filename)
-        with open(filepath, 'w') as f:
-            json.dump(config, f, indent=2)
-
-    def load_config(self, filepath):
-        with open(filepath, 'r') as f:
-            config = json.load(f)
-        self.general_parameters = config.get('general_parameters', self.general_parameters)
-        self.motion_parameters = config.get('motion_parameters', self.motion_parameters)
-        self.wavelength_parameters = config.get('wavelength_parameters', self.wavelength_parameters)
-        self.polarization_parameters = config.get('polarization_parameters', self.polarization_parameters)
-
-    def acquire_scan(self, microscope, cancel_event):
-        """
-        Acquire a scan based on the parameters set in the object.
-        
-        Parameters:
-        microscope (Microscope): The microscope object to use for acquisition.
-        cancel_event (threading.Event): Event to signal cancellation.
-        """
-        # Acquire scan logic goes here
-        scan_sequence = self.construct_scan_sequence(microscope)
-
-        for step, operations in scan_sequence.items():
-            if cancel_event.is_set():
-                print("Scan cancelled. Cleaning up...")
-                # microscope.shutdown()  # if needed
-                return
-
-            print(f"Running step: {step}")
-            for operation in operations:
-                function, args, kwargs = operation
-                # print(f"Executing {function.__name__} with args: {args}")
-                
-                # Check if the function is UI-callable and call it
-                if hasattr(function, 'is_ui_process_callable') and function.is_ui_process_callable:
-                    function(*args, **kwargs)
-                else:
-                    print(f"Function {function.__name__} is not UI-callable. Skipping.")
-                    continue
-
-        
-            spectrum = microscope.acquire()
-            self.save_spectrum(step, spectrum)
-
-        print("Scan complete.")
-
-        pass
-
-
-class AcquisitionGUI:
-    def __init__(self, root, acquisition_params):
-        self.root = root
-        self.root.title("Acquisition Parameter Setup")
-        self.params = acquisition_params
-        self.entries = {}
-        self.scan_mode_enabled = tk.BooleanVar()
-        self.build_gui()
-
-    def build_gui(self):
-        notebook = ttk.Notebook(self.root)
-
-        self.general_frame = ttk.Frame(notebook)
-        self.motion_frame = ttk.Frame(notebook)
-        self.wavelength_frame = ttk.Frame(notebook)
-        self.polarization_frame = ttk.Frame(notebook)
-
-        notebook.add(self.general_frame, text="General")
-        notebook.add(self.motion_frame, text="Motion")
-        notebook.add(self.wavelength_frame, text="Wavelength")
-        notebook.add(self.polarization_frame, text="Polarization")
-        notebook.pack(expand=1, fill="both")
-
-        self.build_section(self.general_frame, self.params.general_parameters, section="general")
-        self.build_nested_section(self.motion_frame, self.params.motion_parameters, section="motion")
-        self.build_section(self.wavelength_frame, self.params.wavelength_parameters, section="wavelength")
-        self.build_nested_section(self.polarization_frame, self.params.polarization_parameters, section="polarization")
-
-        tk.Checkbutton(self.root, text="Enable Scan Mode", variable=self.scan_mode_enabled, command=self.toggle_scan_mode).pack(pady=5)
-        self.status_label = tk.Label(self.root, text="", fg="red")
-        self.status_label.pack()
-
-        self.single_button = tk.Button(self.root, text="Start Single Acquisition", command=self.start_single_acquisition)
-        self.single_button.pack(pady=5)
-
-        self.scan_button = tk.Button(self.root, text="Start Scan Acquisition", command=self.start_scan_acquisition)
-        self.scan_button.pack(pady=5)
-        self.scan_button.config(state="disabled")
-
-    def build_section(self, frame, parameters, section):
-        for key, value in parameters.items():
-            row = ttk.Frame(frame)
-            row.pack(fill='x', pady=2)
-            ttk.Label(row, text=key).pack(side='left')
-            var = tk.StringVar(value=str(value))
-            entry = ttk.Entry(row, textvariable=var)
-            entry.pack(side='right', expand=True, fill='x')
-            self.entries[f"{section}.{key}"] = (var, type(value))
-
-    def build_nested_section(self, frame, nested_params, section):
-        for subgroup, params in nested_params.items():
-            label = ttk.LabelFrame(frame, text=subgroup.capitalize())
-            label.pack(fill='x', pady=5, padx=5)
-            self.build_section(label, params, f"{section}.{subgroup}")
-
-    def toggle_scan_mode(self):
-        if self.scan_mode_enabled.get():
-            self.scan_button.config(state="normal")
-            self.status_label.config(text="Scan mode enabled")
-        else:
-            self.scan_button.config(state="disabled")
-            self.status_label.config(text="")
-
-    def validate_and_update_parameters(self):
-        for key, (var, expected_type) in self.entries.items():
-            val = var.get()
-            try:
-                if expected_type == float:
-                    converted = float(val)
-                elif expected_type == int:
-                    converted = int(val)
-                else:
-                    converted = val
-
-                section, subkey = key.split(".", 1)
-                keys = subkey.split(".")
-                target = getattr(self.params, f"{section}_parameters")
-                for k in keys[:-1]:
-                    target = target[k]
-                target[keys[-1]] = converted
-
-            except ValueError:
-                self.status_label.config(text=f"Invalid type for {key}: expected {expected_type.__name__}")
-                return False
-        self.status_label.config(text="")
-        return True
-
-    def start_single_acquisition(self):
-        if self.validate_and_update_parameters():
-            print("Starting single acquisition with parameters:")
-            print(self.params.general_parameters)
-
-    def start_scan_acquisition(self):
-        if self.validate_and_update_parameters():
-            print("Starting scan acquisition with parameters:")
-            print(self.params.motion_parameters)
-            print(self.params.wavelength_parameters)
-            print(self.params.polarization_parameters)
-
 
 
 class MotionControl:
@@ -479,10 +251,11 @@ class MotionControl:
                 print(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
             return False
         
-    def get_motor_positions(self, motor_dict):
+    def get_motor_positions(self, motor_dict, report=True):
         '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
         motors = [motor_dict[i] for i in motor_dict.keys()]
-        print("Getting motor positions {}".format(motors))
+        if report:
+            print("Getting motor positions {}".format(motors))
         response = self.controller.get_motor_positions(motors)
         pos_dict = self._parse_motor_positions(response)
         labelled_dict = self._return_labelled_positions(pos_dict, motor_dict)
@@ -725,14 +498,8 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
 
-        self.stage_positions = {
-            'X': 0,
-            'Y': 0,
-            'Z': 0,
-            'A': 0
-        }
-
         self.instrument_state = {}
+        self.autosave = True
 
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
@@ -766,6 +533,7 @@ class Microscope(Instrument):
             'invertcal': self.invert_calibrations,
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
+            'allmotors': self.get_all_motor_positions,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
             'report': self.report_status,
             'writemotors': self.write_motor_positions,
@@ -797,6 +565,7 @@ class Microscope(Instrument):
             'filename': self.set_filename,
             'ramanshift': self.set_raman_shift,
             'laserpower': self.set_laser_power,
+            'runscan': self.run_scan_thread,
 
             'mshut': self.close_mono_shutter,
             'mopen': self.open_mono_shutter,
@@ -835,11 +604,15 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
-    def save_instrument_state(self, motor_positions):
+    def save_instrument_state(self):
         '''Saves the state of the microscope and motors to a config, in case of reboot or crash. Uses motor labels as keys.'''
-        motor_positions = {
-            motor: position for motor, position in motor_positions.items() if motor in self.motor_map
-        }
+        if self.autosave == False:
+            return
+        
+        self.controller.report = False
+        motor_positions = self.get_all_motor_positions(report=False)
+        self.controller.report = True
+
         save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
         
         with open(save_state_path, 'w') as f:
@@ -853,9 +626,11 @@ class Microscope(Instrument):
                 motor_positions = json.load(f)
             print('Instrument state loaded from file')
             self.write_motor_positions(motor_dict=motor_positions)
-            self.get_all_current_positions()
+            self.get_all_current_wavelengths()
         else:
-            raise FileNotFoundError(f"Instrument state file not found at {save_state_path}")
+            print('Instrument state file not found. Saving current state.')
+            self.save_instrument_state()
+            # raise FileNotFoundError(f"Instrument state file not found at {save_state_path}")
     
     def load_config_file(self):
         if os.path.exists(self.config_path):
@@ -1105,10 +880,10 @@ class Microscope(Instrument):
         # load the previous known state of the instrument from file
         self.load_instrument_state()
 
-        # self.calculate_laser_wavelength()
-        # self.calculate_grating_wavelength()
-        # self.calculate_monochromator_wavelength()
-        # self.calculate_spectrometer_wavelength()
+        self.calculate_laser_wavelength()
+        self.calculate_grating_wavelength()
+        self.calculate_monochromator_wavelength()
+        self.calculate_spectrometer_wavelength()
         self.report_status(initialise=True)
         
         return 'Microscope initialised'
@@ -1413,10 +1188,6 @@ class Microscope(Instrument):
         '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
         wavelength_sample = next(iter(self.monochromator_wavelengths.values()))
         return 10_000_000/wavelength_sample
-
-    @property
-    def spectrometer_position(self):
-        return self.interface.spectrometer.spectrometer_position
 
 
     @ui_callable
@@ -1966,7 +1737,7 @@ class Microscope(Instrument):
         # Calculate wavelengths for each motor using calibration functions
         self.monochromator_wavelengths = self.calibrations.steps_to_wl(current_pos)
       
-        return self
+        return self.monochromator_wavelengths
 
     def calculate_grating_wavelength(self, current_pos=None):
         """
@@ -2022,7 +1793,7 @@ class Microscope(Instrument):
 
     @ui_callable
     def where_am_i(self):
-        self.get_all_current_positions()
+        self.get_all_current_wavelengths()
         self.report_all_current_positions()
 
     @ui_callable
@@ -2045,13 +1816,19 @@ class Microscope(Instrument):
         '''Get all the current grating wavelengths in nm.'''
         return self.calculate_grating_wavelength()
     
-    def get_all_current_positions(self):
+    @ui_callable
+    def get_all_motor_positions(self, report=False):
+        '''Get the current positions of all motors in the motor_map'''
+        excluded_motors = ['triax']
+        current_positions = self.motion_control.get_motor_positions({key: value for key, value in self.motor_map.items() if key not in excluded_motors}, report=report)
+        return current_positions
+    
+    def get_all_current_wavelengths(self):
         '''Get the current positions of all motors and calculate the corresponding wavelengths.'''
         laser_positions = self.calculate_laser_wavelength()
         grating_positions = self.calculate_grating_wavelength()
         monochromator_positions = self.calculate_monochromator_wavelength()
         spectrometer_position = self.calculate_spectrometer_wavelength()
-
         return (laser_positions, grating_positions, monochromator_positions, spectrometer_position)
     
     def calculate_spectrometer_wavelength(self, steps=None):
@@ -2105,14 +1882,13 @@ class Microscope(Instrument):
             current_pos = self.get_laser_motor_positions()
 
         self.laser_steps = current_pos
-
+        
                
         # Calculate wavelengths for each motor using calibration functions
         self.laser_wavelengths = self.calibrations.steps_to_wl(current_pos)
 
         return self.laser_wavelengths
 
-    @ui_callable
     def go_to_wavenumber(self, wavenumber):
         """
         Move monochromator to achieve a specific Raman shift relative to the laser wavelength.
