@@ -131,6 +131,7 @@ class AcquisitionParameters:
         So motion is the first to change.
         """
 
+
         sequence = []
 
         # Get the parameters
@@ -165,7 +166,7 @@ class AcquisitionParameters:
             for pol in polarization_list:
                 for y in y_positions:
                     for x in x_positions:
-                        pos = [x, y, z_val, wl, pol]
+                        pos = [x, y, z_val, pol, wl]
                         entry = [val if val != prev[i] else None for i, val in enumerate(pos)]
                         sequence.append(entry)
                         prev = pos  # Update previous
@@ -173,6 +174,16 @@ class AcquisitionParameters:
         return sequence
 
     def acquire_scan(self, microscope, cancel_event, status_callback, progress_callback):
+
+        command_heirarchy = [
+            microscope.move_x,
+            microscope.move_y,
+            microscope.move_z,
+            microscope.go_to_polarization,
+            microscope.go_to_wavelength_all,
+
+        ]
+
         sequence = [f"Step {i+1}" for i in range(10)]  # placeholder scan sequence
         total = len(sequence)
         start_time = time.time()

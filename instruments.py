@@ -945,7 +945,58 @@ class Microscope(Instrument):
         else:
             print("No scan to cancel")
  
+    # @ui_callable
+    # def move_stage(self, XZY):
+    #     '''Moves the microcsope sample stage in the X, Y and Z directions, by travel distance in micrometers.'''
+    #     if isinstance(XZY, str):
+    #         try:
+    #             XZY = [float(i) for i in XZY.split(',')]
+    #         except ValueError:
+    #             print('Invalid input format. Use "x,y,z"')
+    #             return
+    #     elif not isinstance(XZY, list):
+    #         print('Invalid input format. Use "x,y,z"')
+    #         return
+    
+    #     try:
+    #         XZY = [float(i) for i in XZY]
+    #     except ValueError:
+    #         print('Invalid input format. Use "x,y,z"')
+    #         return
+        
+    #     x_target = XZY[0]
+    #     y_target = XZY[1]
+    #     z_target = XZY[2]
 
+    #     self.current_stage_position_in_microns
+
+
+        # current_stage_steps = self.get_motor_positions(self.action_groups['stage'])
+
+        # target_steps = self.calibrations.stage_to_steps(XZY)
+        # steps_to_move = {motor: target_steps[motor] - current_stage_steps[motor] for motor in target_steps.keys()}
+
+        # steps_to_move = {key:value for key, value in steps_to_move.items() if value != 0}
+        # self.motion_control.move_motors(steps_to_move)        
+
+        # self.stage_positions_in_microns = 
+        # print(f'Moving X:{} )
+
+    @ui_callable
+    def go_to_polarization_in(self, angle):
+        '''Moves the polarizer to the specified angle.'''
+        print("Not implemented yet")
+        return
+        self.motion_control.move_motors({'p_in': angle})
+        print('Polarizer moved to {} degrees'.format(angle))
+
+    @ui_callable
+    def go_to_polarization_out(self, angle):
+        '''Moves the polarizer to the specified angle.'''
+        print("Not implemented yet")
+        return
+        self.motion_control.move_motors({'p_out': angle})
+        print('Polarizer moved to {} degrees'.format(angle))
 
     @ui_callable
     def move_x(self, travel_distance):
