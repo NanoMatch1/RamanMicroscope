@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 import json
 import os
 import threading
+import time
 
 from instruments import Microscope
 from interface_run_me import Interface
@@ -215,7 +216,7 @@ def open_acquisition_CLI():
 def open_acquisition_GUI():
     def run_gui():
         root = tk.Tk()
-        params = AcquisitionParameters(Microscope(Interface()))
+        params = AcquisitionParameters(Microscope(Interface(simulate=True)))
         app = AcquisitionGUI(root, params)
         root.mainloop()
 
@@ -231,4 +232,6 @@ if __name__ == '__main__':
     # app = AcquisitionGUI(root, params)
     # root.mainloop()
     open_acquisition_GUI()
-    open_acquisition_CLI()
+    while True:
+        time.sleep(10)
+    # open_acquisition_CLI()

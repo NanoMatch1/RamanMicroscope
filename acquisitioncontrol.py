@@ -132,29 +132,43 @@ class AcquisitionParameters:
         So motion is the first to change.
         """
 
+        def generate_array(start, end, resolution):
+            if resolution == 0:
+                return np.array([start])
+            if start == end:
+                return np.array([start])
+            
+            try:
+                ary = np.arange(start, end, resolution)
+            except Exception as e:
+                print(f"Error generating array: {e}")
+                ary = np.array([start])
+                ary = None
+
+            return ary
 
         sequence = []
 
         # Get the parameters
-        wavelength_list = np.arange(
+        wavelength_list = generate_array(
             self.wavelength_parameters['start_wavelength'],
             self.wavelength_parameters['end_wavelength'],
             self.wavelength_parameters['resolution']
         )
 
-        polarization_list = np.arange(
+        polarization_list = generate_array(
             self.polarization_parameters['input']['start_angle'],
             self.polarization_parameters['input']['end_angle'],
             self.polarization_parameters['input']['resolution']
         )
 
-        x_positions = np.arange(
+        x_positions = generate_array(
             self.motion_parameters['start_position']['x'],
             self.motion_parameters['end_position']['x'],
             self.motion_parameters['resolution']['x']
         )
 
-        y_positions = np.arange(
+        y_positions = generate_array(
             self.motion_parameters['start_position']['y'],
             self.motion_parameters['end_position']['y'],
             self.motion_parameters['resolution']['y']
@@ -162,6 +176,7 @@ class AcquisitionParameters:
 
         z_val = self.motion_parameters['start_position']['z'] # fixed for now
         # Create the sequence
+        prev = [None] * 5  # Initialize previous values for all parameters
 
         for wl in wavelength_list:
             for pol in polarization_list:
@@ -174,9 +189,9 @@ class AcquisitionParameters:
 
         return sequence
 
-    def acquire_scan(self, microscope, cancel_event, status_callback, progress_callback):
+    def acquire_scan(self, cancel_event, status_callback, progress_callback):
 
-        microscope = microscope
+        microscope = self.microscope
 
         command_heirarchy = [
             microscope.move_x,
@@ -361,7 +376,7 @@ class AcquisitionGUI:
             self.start_time = time.time()
             self.scan_thread = threading.Thread(
                 target=self.params.acquire_scan,
-                args=(MockMicroscope(), self.cancel_event, self.update_status, self.update_progress)
+                args=(self.cancel_event, self.update_status, self.update_progress)
             )
             self.scan_thread.start()
             self.root.after(500, self.poll_scan_thread)

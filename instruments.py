@@ -504,6 +504,10 @@ class Microscope(Instrument):
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
+        self.stage_positions_microns = {
+            'X': 0, 'Y': 0, 'Z': 0, 'A': 0
+        }
+
         # self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
         # self.hard_limits = self.config.get("hard_limits", {})
         # self.action_groups = self.config.get("action_groups", {})
@@ -981,7 +985,7 @@ class Microscope(Instrument):
         # steps_to_move = {key:value for key, value in steps_to_move.items() if value != 0}
         # self.motion_control.move_motors(steps_to_move)        
 
-        # self.stage_positions_in_microns = 
+        # self.stage_positions_microns_in_microns = 
         # print(f'Moving X:{} )
 
     @ui_callable
@@ -1004,35 +1008,35 @@ class Microscope(Instrument):
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'X': travel_distance})
-        self.stage_positions['X'] += travel_distance
+        self.stage_positions_microns['X'] += travel_distance
         print('X stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
         '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Y': travel_distance})
-        self.stage_positions['Y'] += travel_distance
+        self.stage_positions_microns['Y'] += travel_distance
         print('Y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
         '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Z': travel_distance})
-        self.stage_positions['Z'] += travel_distance
+        self.stage_positions_microns['Z'] += travel_distance
         print('Z stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_microscope_mode(self, travel_distance):
         '''Moves the microcsope sample stage in the microscope mode, by travel distance in micrometers.'''
         self.motion_control.move_motors({'mode': travel_distance})
-        self.stage_positions['mode'] += travel_distance
+        self.stage_positions_microns['mode'] += travel_distance
 
     @ui_callable
     def set_stage_home(self):
         '''Sets the current stage position as the home position.'''
         self.motion_control.set_stage_home()
-        for key in self.stage_positions.keys():
-            self.stage_positions[key] = 0
+        for key in self.stage_positions_microns.keys():
+            self.stage_positions_microns[key] = 0
         print('Stage home set to current position')
 
     def enter_focus_mode(self):
