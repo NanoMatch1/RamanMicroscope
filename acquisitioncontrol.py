@@ -1,8 +1,10 @@
+import time
 import os
 import json
 import tkinter as tk
-from tkinter import ttk, messagebox
 import threading
+import numpy as np
+from tkinter import ttk, messagebox
 
 class AcquisitionParameters:
     def __init__(self):
@@ -16,7 +18,7 @@ class AcquisitionParameters:
         self.motion_parameters = {
             'start_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'end_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            'resolution': {'x': 1.0, 'y': 1.0, 'z': 1.0}
+            'resolution': {'x': 0.0, 'y': 0.0, 'z': 0.0}
         }
 
         self.wavelength_parameters = {
@@ -95,38 +97,60 @@ class AcquisitionParameters:
         self.wavelength_parameters = config.get('wavelength_parameters', self.wavelength_parameters)
         self.polarization_parameters = config.get('polarization_parameters', self.polarization_parameters)
 
-    def acquire_scan(self, microscope, cancel_event):
+    def construct_scan_sequence(self, microscope):
         """
-        Acquire a scan based on the parameters set in the object.
+        Construct the scan sequence from microscope methods based on the parameters set in the this class object.
         
         Parameters:
-        microscope (Microscope): The microscope object to use for acquisition.
-        cancel_event (threading.Event): Event to signal cancellation.
-        """
-        # Acquire scan logic goes here
-        scan_sequence = self.construct_scan_sequence(microscope)
-
-        for step, operations in scan_sequence.items():
-            if cancel_event.is_set():
-                print("Scan cancelled. Cleaning up...")
-                # microscope.shutdown()  # if needed
-                return
-
-            print(f"Running step: {step}")
-            for operation in operations:
-                function, args, kwargs = operation
-                # print(f"Executing {function.__name__} with args: {args}")
-                
-                # Check if the function is UI-callable and call it
-                if hasattr(function, 'is_ui_process_callable') and function.is_ui_process_callable:
-                    function(*args, **kwargs)
-                else:
-                    print(f"Function {function.__name__} is not UI-callable. Skipping.")
-                    continue
-
+        microscope (Microscope): The microscope object.
         
+        Current heirarchy of the scan sequence is based on timing efficiency and stability of each mode. Higher numbers on the heirachy change first. Currently:
+        1. Wavelength
+        2. Polarization
+        3. Motion
+        
+        So motion is the first to change.
+        """
+
+        # Construct the scan sequence based on the parameters
+        sequence = {}
+
+        wavelengths = np.arange(
+            self.wavelength_parameters['start_wavelength'],
+            self.wavelength_parameters['end_wavelength'],
+            self.wavelength_parameters['resolution']
+        )
+
+        polarizations = np.arange(
+            self.polarization_parameters['input']['start_angle'],
+            self.polarization_parameters['input']['end_angle'],
+            self.polarization_parameters['input']['resolution']
+        )
+
+        motion_sequence
+
+        # Example of constructing a scan sequence
+        # This is just a placeholder and should be replaced with actual logic
+
+    def save_spectrum(self, step, spectrum):
+        print("saving spectrum...")
+
+
+    def acquire_scan(self, microscope, cancel_event, status_callback, progress_callback):
+        sequence = [f"Step {i+1}" for i in range(10)]  # placeholder scan sequence
+        total = len(sequence)
+        start_time = time.time()
+        for i, step in enumerate(sequence):
+            if cancel_event.is_set():
+                status_callback("Scan cancelled.")
+                return
+            status_callback(f"Running {step}...")
+            progress_callback(i + 1, total, start_time)
+            microscope.move_to(step)
             spectrum = microscope.acquire()
             self.save_spectrum(step, spectrum)
+        status_callback("Scan complete.")
+        progress_callback(total, total, start_time)
 
         print("Scan complete.")
 
@@ -140,6 +164,9 @@ class AcquisitionGUI:
         self.params = acquisition_params
         self.entries = {}
         self.scan_mode_enabled = tk.BooleanVar()
+        self.cancel_event = threading.Event()
+        self.scan_thread = None
+        self.start_time = None
         self.build_gui()
 
     def build_gui(self):
@@ -171,6 +198,19 @@ class AcquisitionGUI:
         self.scan_button = tk.Button(self.root, text="Start Scan Acquisition", command=self.start_scan_acquisition)
         self.scan_button.pack(pady=5)
         self.scan_button.config(state="disabled")
+
+        self.scan_status = tk.Label(self.root, text="Idle", fg="blue")
+        self.scan_status.pack(pady=5)
+
+        self.progress_bar = tk.Label(self.root, text="[                    ]", font=("Courier", 10))
+        self.progress_bar.pack(pady=2)
+        self.elapsed_label = tk.Label(self.root, text="Elapsed: 0.0s")
+        self.elapsed_label.pack(pady=2)
+
+        self.cancel_button = tk.Button(self.root, text="Cancel Scan", command=self.cancel_scan)
+        self.cancel_button.pack(pady=5)
+        self.cancel_button.config(state="disabled")
+
 
     def build_section(self, frame, parameters, section):
         for key, value in parameters.items():
@@ -227,8 +267,45 @@ class AcquisitionGUI:
 
     def start_scan_acquisition(self):
         if self.validate_and_update_parameters():
-            print("Starting scan acquisition with parameters:")
-            print(self.params.motion_parameters)
-            print(self.params.wavelength_parameters)
-            print(self.params.polarization_parameters)
+            self.cancel_event.clear()
+            self.scan_button.config(state="disabled")
+            self.cancel_button.config(state="normal")
+            self.scan_status.config(text="Scan started...")
+            self.start_time = time.time()
+            self.scan_thread = threading.Thread(
+                target=self.params.acquire_scan,
+                args=(MockMicroscope(), self.cancel_event, self.update_status, self.update_progress)
+            )
+            self.scan_thread.start()
+            self.root.after(500, self.poll_scan_thread)
 
+    def poll_scan_thread(self):
+        if self.scan_thread and self.scan_thread.is_alive():
+            self.root.after(500, self.poll_scan_thread)
+        else:
+            self.scan_button.config(state="normal")
+            self.cancel_button.config(state="disabled")
+
+    def cancel_scan(self):
+        self.cancel_event.set()
+        self.update_status("Cancelling scan...")
+    
+    def update_status(self, message):
+        self.scan_status.config(text=message)
+
+    def update_progress(self, current, total, start_time):
+        bar_length = 20
+        filled_length = int(bar_length * current // total)
+        bar = '[' + '#' * filled_length + ' ' * (bar_length - filled_length) + ']'
+        self.progress_bar.config(text=bar)
+        elapsed = time.time() - start_time
+        self.elapsed_label.config(text=f"Elapsed: {elapsed:.1f}s")
+
+
+class MockMicroscope:
+    def move_to(self, step):
+        import time
+        time.sleep(0.5)
+
+    def acquire(self):
+        return [0] * 1000  # dummy spectrum

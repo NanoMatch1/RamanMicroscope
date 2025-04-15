@@ -566,6 +566,7 @@ class Microscope(Instrument):
             'ramanshift': self.set_raman_shift,
             'laserpower': self.set_laser_power,
             'runscan': self.run_scan_thread,
+            'cancel': self.cancel_scan,
 
             'mshut': self.close_mono_shutter,
             'mopen': self.open_mono_shutter,
@@ -927,13 +928,23 @@ class Microscope(Instrument):
     @ui_callable
     def run_scan_thread(self):
         '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionParameters class.'''
-        cancel_event = threading.Event()
+        self.cancel_event = threading.Event()
 
-        scan_thread = threading.Thread(target=self.acquisition_parameters.acquire_scan, args=(self, cancel_event))
-        scan_thread.start()
-        return scan_thread
+        self.scan_thread = threading.Thread(target=self.acquisition_parameters.acquire_scan, args=(self, self.cancel_event))
+        self.scan_thread.start()
+        return self.scan_thread
 
 
+    @ui_callable
+    def cancel_scan(self):
+        '''Cancels the current scan.'''
+        if hasattr(self, 'scan_thread'):
+            self.cancel_event.set()
+            self.scan_thread.join()
+            print("Scan cancelled")
+        else:
+            print("No scan to cancel")
+ 
 
 
     @ui_callable
