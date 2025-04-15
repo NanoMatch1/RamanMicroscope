@@ -173,6 +173,43 @@ class AcquisitionParameters:
         self.wavelength_parameters = config.get('wavelength_parameters', self.wavelength_parameters)
         self.polarization_parameters = config.get('polarization_parameters', self.polarization_parameters)
 
+    def acquire_scan(self, microscope, cancel_event):
+        """
+        Acquire a scan based on the parameters set in the object.
+        
+        Parameters:
+        microscope (Microscope): The microscope object to use for acquisition.
+        cancel_event (threading.Event): Event to signal cancellation.
+        """
+        # Acquire scan logic goes here
+        scan_sequence = self.construct_scan_sequence(microscope)
+
+        for step, operations in scan_sequence.items():
+            if cancel_event.is_set():
+                print("Scan cancelled. Cleaning up...")
+                # microscope.shutdown()  # if needed
+                return
+
+            print(f"Running step: {step}")
+            for operation in operations:
+                function, args, kwargs = operation
+                # print(f"Executing {function.__name__} with args: {args}")
+                
+                # Check if the function is UI-callable and call it
+                if hasattr(function, 'is_ui_process_callable') and function.is_ui_process_callable:
+                    function(*args, **kwargs)
+                else:
+                    print(f"Function {function.__name__} is not UI-callable. Skipping.")
+                    continue
+
+        
+            spectrum = microscope.acquire()
+            self.save_spectrum(step, spectrum)
+
+        print("Scan complete.")
+
+        pass
+
 
 class AcquisitionGUI:
     def __init__(self, root, acquisition_params):
@@ -710,7 +747,7 @@ class Microscope(Instrument):
             self.motor_map.update(group)
 
         # acquisition parameters
-        self.acquisition_parameters = AcquitisionParameters()
+        self.acquisition_parameters = AcquisitionParameters()
 
         # Motion control
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
@@ -727,7 +764,6 @@ class Microscope(Instrument):
             'reference': self.reference_calibration_from_wavelength,
             'referencetriax': self.reference_calibration_from_triax,
             'invertcal': self.invert_calibrations,
-            'shift': self.go_to_wavenumber,
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
@@ -757,10 +793,11 @@ class Microscope(Instrument):
             'homegratings': self.home_gratings,
             'testhoming': self.test_homing,
             # acquisition commands
-            'scanmin': self.set_scan_min,
-            'scanmax': self.set_scan_max,
-            'scanres': self.set_scan_resolution,
             'acqtime': self.set_acquisition_time,
+            'filename': self.set_filename,
+            'ramanshift': self.set_raman_shift,
+            'laserpower': self.set_laser_power,
+
             'mshut': self.close_mono_shutter,
             'mopen': self.open_mono_shutter,
             # 'isrun': self.motion_control.wait_for_motors,
@@ -799,15 +836,26 @@ class Microscope(Instrument):
         return self.command_functions[command](*args, **kwargs)
     
     def save_instrument_state(self, motor_positions):
-        '''Saves the state of the microscope and motors to a config, in case of reboot or crash.'''
+        '''Saves the state of the microscope and motors to a config, in case of reboot or crash. Uses motor labels as keys.'''
+        motor_positions = {
+            motor: position for motor, position in motor_positions.items() if motor in self.motor_map
+        }
+        save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
+        
+        with open(save_state_path, 'w') as f:
+            json.dump(motor_positions, f, indent=2)
+
+    def load_instrument_state(self):
+        '''Loads the state of the microscope and motors from a config, in case of reboot or crash.'''
         save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
         if os.path.exists(save_state_path):
             with open(save_state_path, 'r') as f:
-                current_data = json.load(f)
+                motor_positions = json.load(f)
+            print('Instrument state loaded from file')
+            self.write_motor_positions(motor_dict=motor_positions)
+            self.get_all_current_positions()
         else:
-            current_data = {}
-        
-    
+            raise FileNotFoundError(f"Instrument state file not found at {save_state_path}")
     
     def load_config_file(self):
         if os.path.exists(self.config_path):
@@ -1054,11 +1102,13 @@ class Microscope(Instrument):
         # One calibration to rule them all
         self.calibrations.generate_master_calibration(microsteps=32)
 
-        # Initialize components
-        self.calculate_laser_wavelength()
-        self.calculate_grating_wavelength()
-        self.calculate_monochromator_wavelength()
-        self.calculate_spectrometer_wavelength()
+        # load the previous known state of the instrument from file
+        self.load_instrument_state()
+
+        # self.calculate_laser_wavelength()
+        # self.calculate_grating_wavelength()
+        # self.calculate_monochromator_wavelength()
+        # self.calculate_spectrometer_wavelength()
         self.report_status(initialise=True)
         
         return 'Microscope initialised'
@@ -1071,6 +1121,9 @@ class Microscope(Instrument):
             # recalculate all parameters
             self.laser_steps = self.get_laser_motor_positions()
             self.grating_steps = self.get_grating_motor_positions()
+            self.monochromator_steps = self.get_monochromator_motor_positions()
+            self.monochromator_wavelengths = self.calculate_monochromator_wavelength()
+
             self.get_spectrometer_position()
 
 
@@ -1095,6 +1148,16 @@ class Microscope(Instrument):
         print('-'*20)
 
     #? Stage control commands
+
+    @ui_callable
+    def run_scan_thread(self):
+        '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionParameters class.'''
+        cancel_event = threading.Event()
+
+        scan_thread = threading.Thread(target=self.acquisition_parameters.acquire_scan, args=(self, cancel_event))
+        scan_thread.start()
+        return scan_thread
+
 
 
 
@@ -1355,17 +1418,6 @@ class Microscope(Instrument):
     def spectrometer_position(self):
         return self.interface.spectrometer.spectrometer_position
 
-    @ui_callable
-    def set_scan_min(self, value):
-        self.acquisition_parameters.scan_min = value
-    
-    @ui_callable
-    def set_scan_max(self, value):
-        self.acquisition_parameters.scan_max = value
-
-    @ui_callable
-    def set_scan_resolution(self, value):
-        self.acquisition_parameters.scan_resolution = value
 
     @ui_callable
     def set_acq_spectrum_mode(self):
@@ -1388,8 +1440,23 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_acquisition_time(self, value):
-        self.acquisition_parameters.acq_time = value
+        self.acquisition_parameters.general_parameters['acquisition_time'] = value
         self.camera.set_acqtime(value)
+
+    @ui_callable
+    def set_filename(self, filename):
+        self.acquisition_parameters.general_parameters['filename'] = filename
+
+    @ui_callable
+    def set_laser_power(self, value):
+        self.interface.laser.set_power(value)
+        self.acquisition_parameters.general_parameters['laser_power'] = value
+
+    @ui_callable
+    def set_raman_shift(self, value):
+        self.current_shift = value
+        self.go_to_wavenumber(value)
+        self.acquisition_parameters.general_parameters['raman_shift'] = value
 
     @ui_callable
     def set_camera_binning(self, value):
@@ -1981,16 +2048,18 @@ class Microscope(Instrument):
     def get_all_current_positions(self):
         '''Get the current positions of all motors and calculate the corresponding wavelengths.'''
         laser_positions = self.calculate_laser_wavelength()
-        monochromator_positions = self.calculate_grating_wavelength()
+        grating_positions = self.calculate_grating_wavelength()
+        monochromator_positions = self.calculate_monochromator_wavelength()
         spectrometer_position = self.calculate_spectrometer_wavelength()
 
-        return (laser_positions, monochromator_positions, spectrometer_position)
+        return (laser_positions, grating_positions, monochromator_positions, spectrometer_position)
     
     def calculate_spectrometer_wavelength(self, steps=None):
         '''Uses calibration to calculate wavelength from reported position. For spectrometers that report wavelength, this is a pass-through.'''
         if steps is None:
-            steps = self.interface.spectrometer.get_spectrometer_position()
-
+            self.spectrometer_position = self.interface.spectrometer.get_spectrometer_position()
+        else:
+            self.spectrometer_position = steps
 
         self.spectrometer_wavelength = self.calibrations.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
         return self.spectrometer_wavelength
@@ -2080,6 +2149,7 @@ class Microscope(Instrument):
         self.current_shift = wavenumber
         
         print(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
+        return True
 
     def acquire_spectrum(self, overwrite=False, save=True):
         '''Acquires a single spectrum and saves it in the saved_data directory.'''
