@@ -83,10 +83,47 @@ class MotorPositions:
 class AcquitisionParameters:
     '''Holds the acquisition parameters for the microscope, and is passed to acquisition methods to perform actions.'''
     def __init__(self):
-        self.scan_min = 0
-        self.scan_max = 0
-        self.scan_resolution = 0
-        self.acq_time = 0
+        self.acquisition_time = 1000 # ms
+
+        self.motion_parameters = {
+            'start_position': {
+                'x': 0,
+                'y': 0,
+                'z': 0,
+            },
+            'end_position': {
+                'x': 0,
+                'y': 0,
+                'z': 0,
+            },
+            'resolution': {
+                'x': 1,
+                'y': 1,
+                'z': 1,
+            }
+        }
+
+        self.wavelength_parameters = {
+            'start_wavelength': 0,
+            'end_wavelength': 0,
+            'resolution': 5
+        }
+
+        self.polarization_parameters = {
+            'input': {
+                'start_angle': 0,
+                'end_angle': 0,
+                'resolution': 5
+            },
+            'output': {
+                'start_angle': 0,
+                'end_angle': 0,
+                'resolution': 5
+            }
+        }
+
+    
+
 
     @property
     def scan_min(self):
@@ -1285,7 +1322,12 @@ class Microscope(Instrument):
 
         return image_data
     
+    def prepare_dataset_acquisition(self):
+        '''Prepares the dataset acquisition by setting the parameters.'''
+        self.acquisition_parameters.prepare_acquisition()
     
+    def acquire_dataset(self):
+        '''Prepares and executes a multidimensional dataset acquisition.'''
     
     @ui_callable
     def start_continuous_acquisition(self):
@@ -2947,3 +2989,4 @@ class MillenniaLaser(Instrument):
 
     def __del__(self):
         self.disconnect()
+
