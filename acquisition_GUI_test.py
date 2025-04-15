@@ -4,6 +4,9 @@ import json
 import os
 import threading
 
+from instruments import Microscope
+from interface_run_me import Interface
+
 # class AcquisitionParameters:
 #     def __init__(self):
 #         self.general_parameters = {
@@ -212,7 +215,7 @@ def open_acquisition_CLI():
 def open_acquisition_GUI():
     def run_gui():
         root = tk.Tk()
-        params = AcquisitionParameters()
+        params = AcquisitionParameters(Microscope(Interface()))
         app = AcquisitionGUI(root, params)
         root.mainloop()
 
