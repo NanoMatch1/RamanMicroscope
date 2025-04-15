@@ -560,6 +560,8 @@ class Microscope(Instrument):
             'homemono': self.home_monochromator,
             'homegratings': self.home_gratings,
             'testhoming': self.test_homing,
+            'polin': self.go_to_polarization_in,
+            'polout': self.go_to_polarization_out,
             # acquisition commands
             'acqtime': self.set_acquisition_time,
             'filename': self.set_filename,

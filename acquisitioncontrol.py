@@ -7,7 +7,8 @@ import numpy as np
 from tkinter import ttk, messagebox
 
 class AcquisitionParameters:
-    def __init__(self):
+    def __init__(self, microscope=None):
+        self.microscope = microscope
         self.general_parameters = {
             'acquisition_time': 1000.0,
             'filename': 'default',
@@ -116,7 +117,7 @@ class AcquisitionParameters:
     def save_spectrum(self, step, spectrum):
         print("saving spectrum...")
 
-    def generate_scan_sequence(self, microscope):
+    def generate_scan_sequence(self):
         """
         Construct the scan sequence from microscope methods based on the parameters set in the this class object.
         
@@ -175,27 +176,27 @@ class AcquisitionParameters:
 
     def acquire_scan(self, microscope, cancel_event, status_callback, progress_callback):
 
+        microscope = microscope
+
         command_heirarchy = [
             microscope.move_x,
             microscope.move_y,
             microscope.move_z,
-            microscope.go_to_polarization,
+            microscope.go_to_polarization_in,
             microscope.go_to_wavelength_all,
-
         ]
 
-        sequence = [f"Step {i+1}" for i in range(10)]  # placeholder scan sequence
+        sequence = self.generate_scan_sequence()
         total = len(sequence)
         start_time = time.time()
 
-        predicted_time = (total * self.general_parameters['acquisition_time'] / 1000.0) *1.2 # 20% overhead
-        print(f"Predicted time: {predicted_time:.2f} seconds")
+        predicted_time = ((total * self.general_parameters['acquisition_time'] / 1000.0)/3600) * 1.2 # 20% overhead
+        print(f"Predicted time: {predicted_time:.2f} hours")
 
         acquisition_time = self.general_parameters['acquisition_time']
         raman_shift = self.general_parameters['raman_shift']
         laser_power = self.general_parameters['laser_power']
         filename = self.general_parameters['filename']
-
 
         for i, step in enumerate(sequence):
             if cancel_event.is_set():
@@ -204,15 +205,17 @@ class AcquisitionParameters:
             status_callback(f"Running step {i}: {step}")
             progress_callback(i + 1, total, start_time)
 
-            microscope.move_to(step)
+            # perform commands in heirarchy
+            for command, change in zip(command_heirarchy, step):
+                if change is not None:
+                    command(change)
+
             spectrum = microscope.acquire()
             self.save_spectrum(step, spectrum)
         status_callback("Scan complete.")
         progress_callback(total, total, start_time)
 
         print("Scan complete.")
-
-        pass
 
 
 class AcquisitionGUI:
