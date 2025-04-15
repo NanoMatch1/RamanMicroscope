@@ -84,8 +84,8 @@
       "g4": "3Y"
     },
     "polarization": {
-      "in": "4X",
-      "out": "4Y"
+      "p_in": "4X",
+      "p_out": "4Y"
     },
     "triax": {
       "triax": "triax"

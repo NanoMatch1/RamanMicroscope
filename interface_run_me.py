@@ -40,6 +40,7 @@ def cli(instrument):
             
         result = instrument._command_handler(command)
         print(result)
+        instrument.microscope.save_instrument_state()
 
 class Interface:
 
