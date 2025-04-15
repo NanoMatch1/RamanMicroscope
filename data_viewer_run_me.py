@@ -320,6 +320,7 @@ class LiveDataPlotter:
                         if self.data_mode == "Image":
                             self.update_image(self.data)
                         else:
+                            breakpoint()
                             spectrum = self.frame_to_spectrum()
                             self.update_plot(spectrum)
                 except PermissionError:
