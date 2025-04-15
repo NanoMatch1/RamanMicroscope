@@ -958,6 +958,8 @@ class Microscope(Instrument):
 
     #? Stage control commands
 
+
+
     @ui_callable
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
@@ -1267,38 +1269,23 @@ class Microscope(Instrument):
         self.interface.debug_skip.append('camera')
 
     @ui_callable
-    def acquire_one_frame(self):
-        '''Acquires a single frame from the camera.'''
-        return self.camera.safe_acquisition()
+    def acquire_one_frame(self, filename=None, frame_index=0):
+        if filename is None:
+            filename = 'default'.format(frame_index)
+            
+        image_data = self.camera.safe_acquisition(export=False)
+        wavelength_axis = self.wavelength_axis
+        metadata = self.construct_metadata()
+        frame_index = self.current_frame_index
+        out_path = os.path.join(self.raw_data_dir, f"{filename}_{frame_index:06}.npz")
+        np.savez_compressed(out_path,
+                            image=image_data,
+                            wavelength=wavelength_axis,
+                            metadata=json.dumps(metadata))
+
+        return image_data
     
-    # def frame_to_spectrum(frame, bin_x=1):
-    #     """
-    #     Converts a 2D image frame into a 1D spectrum.
-        
-    #     - Bins pixels along the x-axis (`bin_x` adjacent pixels are averaged).
-    #     - Sums all remaining pixels in the y-axis.
-
-    #     :param frame: 2D numpy array representing the image.
-    #     :param bin_x: Number of pixels to bin along the x-dimension.
-    #     :return: 1D numpy array representing the spectrum.
-    #     """
-    #     if frame.ndim != 2:
-    #         raise ValueError("Input frame must be a 2D numpy array.")
-
-    #     height, width = frame.shape
-
-    #     # Ensure bin_x is within valid range
-    #     if bin_x < 1 or bin_x > width:
-    #         raise ValueError(f"Invalid bin_x value: {bin_x}. Must be between 1 and {width}.")
-
-    #     # Step 1: Bin along X (average adjacent pixels)
-    #     new_width = width // bin_x  # Number of new columns after binning
-    #     frame_binned_x = frame[:, :new_width * bin_x].reshape(height, new_width, bin_x).sum(axis=2)
-
-    #     # Step 2: Sum along Y to create a 1D spectrum
-    #     spectrum = frame_binned_x.sum(axis=0)
-
-    #     return spectrum
+    
     
     @ui_callable
     def start_continuous_acquisition(self):

@@ -407,7 +407,7 @@ class TucamCamera:
             print(f"Failed to set binning. Error code: {status}")
 
 
-    def safe_acquisition(self, target_temp=-5):
+    def safe_acquisition(self, target_temp=-5, **kwargs):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
@@ -417,7 +417,7 @@ class TucamCamera:
 
             if temp.value < target_temp:
                 print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
-                data = self.acquire_one_frame()
+                data = self.acquire_one_frame(**kwargs)
                 return data
             else:
                 print(f"Camera too hot ({temp.value}°C). Waiting...")
