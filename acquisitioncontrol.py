@@ -32,6 +32,17 @@ class AcquisitionParameters:
             'output': {'start_angle': 0.0, 'end_angle': 0.0, 'resolution': 1.0}
         }
 
+    def estimate_scan_duration(self):
+        x_range = (self.motion_parameters['end_position']['x'] - self.motion_parameters['start_position']['x']) / self.motion_parameters['resolution']['x']
+        y_range = (self.motion_parameters['end_position']['y'] - self.motion_parameters['start_position']['y']) / self.motion_parameters['resolution']['y']
+        p_range = (self.polarization_parameters['input']['end_angle'] - self.polarization_parameters['input']['start_angle']) / self.polarization_parameters['input']['resolution']
+        w_range = (self.wavelength_parameters['end_wavelength'] - self.wavelength_parameters['start_wavelength']) / self.wavelength_parameters['resolution']
+
+        n_steps = max(1, int(x_range + 1)) * max(1, int(y_range + 1)) * max(1, int(p_range + 1)) * max(1, int(w_range + 1))
+        time_per = self.general_parameters['acquisition_time'] / 1000.0
+        return n_steps * time_per * 1.2
+
+
     def prompt_for_cli_parameters(self):
         print("\n--- CLI Parameter Entry ---")
         self._prompt_section(self.general_parameters, "General Parameters")
@@ -120,7 +131,7 @@ class AcquisitionParameters:
         So motion is the first to change.
         """
 
-        seqeunce = []
+        sequence = []
 
         # Get the parameters
         wavelength_list = np.arange(
@@ -147,27 +158,41 @@ class AcquisitionParameters:
             self.motion_parameters['resolution']['y']
         )
 
-        z_fixed = self.motion_parameters['start_position']['z'] # fixed for now
+        z_val = self.motion_parameters['start_position']['z'] # fixed for now
         # Create the sequence
 
-        for wavelength in wavelength_list:
+        for wl in wavelength_list:
             for pol in polarization_list:
                 for y in y_positions:
                     for x in x_positions:
-                        seqeunce.append([x, y, z_fixed, wavelength, pol])
+                        pos = [x, y, z_val, wl, pol]
+                        entry = [val if val != prev[i] else None for i, val in enumerate(pos)]
+                        sequence.append(entry)
+                        prev = pos  # Update previous
 
-
+        return sequence
 
     def acquire_scan(self, microscope, cancel_event, status_callback, progress_callback):
         sequence = [f"Step {i+1}" for i in range(10)]  # placeholder scan sequence
         total = len(sequence)
         start_time = time.time()
+
+        predicted_time = (total * self.general_parameters['acquisition_time'] / 1000.0) *1.2 # 20% overhead
+        print(f"Predicted time: {predicted_time:.2f} seconds")
+
+        acquisition_time = self.general_parameters['acquisition_time']
+        raman_shift = self.general_parameters['raman_shift']
+        laser_power = self.general_parameters['laser_power']
+        filename = self.general_parameters['filename']
+
+
         for i, step in enumerate(sequence):
             if cancel_event.is_set():
                 status_callback("Scan cancelled.")
                 return
-            status_callback(f"Running {step}...")
+            status_callback(f"Running step {i}: {step}")
             progress_callback(i + 1, total, start_time)
+
             microscope.move_to(step)
             spectrum = microscope.acquire()
             self.save_spectrum(step, spectrum)
@@ -228,6 +253,9 @@ class AcquisitionGUI:
         self.progress_bar.pack(pady=2)
         self.elapsed_label = tk.Label(self.root, text="Elapsed: 0.0s")
         self.elapsed_label.pack(pady=2)
+        self.estimate_label = tk.Label(self.root, text="Estimated scan time: 0.0s")
+        self.estimate_label.pack(pady=2)
+
 
         self.cancel_button = tk.Button(self.root, text="Cancel Scan", command=self.cancel_scan)
         self.cancel_button.pack(pady=5)
@@ -258,6 +286,28 @@ class AcquisitionGUI:
             self.scan_button.config(state="disabled")
             self.status_label.config(text="")
 
+    def live_update_param(self, key, value, expected_type, section):
+        try:
+            if expected_type == float:
+                value = float(value)
+            elif expected_type == int:
+                value = int(value)
+            subkeys = key.split(".")
+            target = getattr(self.params, f"{section}_parameters")
+            for sub in subkeys[:-1]:
+                target = target[sub]
+            target[subkeys[-1]] = value
+            self.update_scan_estimate()
+        except ValueError:
+            pass
+
+    def update_scan_estimate(self):
+        try:
+            duration = self.params.estimate_scan_duration()
+            self.estimate_label.config(text=f"Estimated scan time: {duration:.1f}s")
+        except Exception:
+            self.estimate_label.config(text="Estimated scan time: error")
+
     def validate_and_update_parameters(self):
         for key, (var, expected_type) in self.entries.items():
             val = var.get()
@@ -275,6 +325,7 @@ class AcquisitionGUI:
                 for k in keys[:-1]:
                     target = target[k]
                 target[keys[-1]] = converted
+                self.update_scan_estimate()
 
             except ValueError:
                 self.status_label.config(text=f"Invalid type for {key}: expected {expected_type.__name__}")
