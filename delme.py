@@ -48,13 +48,40 @@ def generate_raster_positions(bounds, resolutions, scan_axes=('X', 'Y'), fixed_v
 
     return positions
 
+def raster_position_generator(bounds, resolutions, scan_axes=('X', 'Y'), fixed_values=None):
+    """
+    Generator that yields [X, Y, Z] positions one at a time.
 
-rasterlist = generate_raster_positions(
+    Parameters:
+        bounds (dict): Axis keys with (min, max) tuples.
+        resolutions (dict): Axis keys with step sizes.
+        scan_axes (tuple): Axes that change, in order of fastest to slowest.
+        fixed_values (dict): Axis keys with fixed values (for non-scanning axes).
+    """
+    all_axes = ['X', 'Y', 'Z']
+    fixed_values = fixed_values or {}
+
+    coords = {}
+    for axis in scan_axes:
+        start, end = bounds[axis]
+        step = resolutions[axis]
+        coords[axis] = np.arange(start, end + step/2, step)
+
+    for point in product(*(coords[ax] for ax in scan_axes)):
+        pos = {axis: fixed_values.get(axis, None) for axis in all_axes}
+        for i, axis in enumerate(scan_axes):
+            pos[axis] = point[i]
+        yield [pos[axis] if pos[axis] is not None else 0.0 for axis in all_axes]
+
+# rasterlist = generate_raster_positions(
+gen = raster_position_generator(
     bounds={'X': (0, 100), 'Y': (100, 200), 'Z': (200, 300)},
     resolutions={'X': 1, 'Y': 1, 'Z': 1},
     scan_axes=('Y', 'X'),
     fixed_values={'Z': 0}
 )
 
-print(rasterlist)
+# print(rasterlist)
+for pos in gen:
+    print(pos)
 breakpoint()
