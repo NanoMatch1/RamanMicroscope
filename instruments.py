@@ -2660,54 +2660,84 @@ class Monochromator(Instrument):
 #         '''Get the laser power.'''
 #         print("Getting the laser power.")
 
-class StageControl(Instrument):
-    '''Handles functions and generating of commands for the controller.'''
-    def __init__(self, interface, controller=None, simulate=False):
-        super().__init__()
-        self.interface = interface
-        self.controller = controller or interface.controller
-        self.simulate = simulate
-        self.command_functions = {
-            'movestage': self.move_stage,
-            'homestage': self.home_stage
-        }
+# class StageControl(Instrument):
+#     '''Handles functions and generating of commands for the controller.'''
+#     def __init__(self, interface, controller=None, simulate=False):
+#         super().__init__()
+#         self.interface = interface
+#         self.controller = controller or interface.controller
+#         self.simulate = simulate
+#         self.command_functions = {
+#             'movestage': self.move_stage,
+#             'homestage': self.home_stage
+#         }
 
-        self._integrity_checker()
+#         self._integrity_checker()
         
-    def initialise(self):
-        """Initialize the stage controller"""
-        print("Stage controller initialized")
-        return "Stage controller initialized"
+#     def initialise(self):
+#         """Initialize the stage controller"""
+#         print("Stage controller initialized")
+#         return "Stage controller initialized"
 
-    def __str__(self):
-        return "Stage Control"
+#     def __str__(self):
+#         return "Stage Control"
 
-    def __call__(self, command: str, *args, **kwargs):
-        if command not in self.command_functions:
-            raise ValueError(f"Unknown stage command: '{command}'")
-        return self.command_functions[command](*args, **kwargs)
+#     def __call__(self, command: str, *args, **kwargs):
+#         if command not in self.command_functions:
+#             raise ValueError(f"Unknown stage command: '{command}'")
+#         return self.command_functions[command](*args, **kwargs)
     
-    @ui_callable
-    def move_x(self, distance):
-        '''Moves the stage in the x direction by the specified distance in micro meters.'''
-        print("Moving stage X {} microns".format(distance))
+#     @ui_callable
+#     def move_stage(self, motor_positions:str):
+#         '''Moves the stage to the specified position.'''
+#         # print("Moving the stage to the specified position.")
+#         motor_dict = {}
+
+#         # example = 'x300 y200'
+#         motor_dict = {}
+#         for motor in motor_positions.split(' '):
+#             try:
+#                 name = motor[0]
+#                 position = int(motor[1:])
+#             except Exception as e:
+#                 print(f"Error parsing motor position: {e}")
+#                 continue
+#             if name not in self.motor_map:
+#                 print(f"Unknown motor name: {name}")
+#                 continue
+#             if name in motor_dict:
+#                 print(f"Duplicate motor name: {name}")
+#                 continue
+            
+#             if position != 0:
+#                 motor_dict[name] = position
+            
+#         motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items() if motor in self.motor_map}
+
+#         self.controller.move_stage(motor_id_dict)
+            
+    
+#     @ui_callable
+#     def move_x(self, distance):
+#         '''Moves the stage in the x direction by the specified distance in micro meters.'''
+#         print("Moving stage X {} microns".format(distance))
         
         
 
-    @ui_callable
-    def move_y(self, distance):
-        '''Moves the stage in the y direction by the specified distance in micro meters.'''
-        pass
+#     @ui_callable
+#     def move_y(self, distance):
+#         '''Moves the stage in the y direction by the specified distance in micro meters.'''
+#         pass
 
-    @ui_callable
-    def move_stage(self, motor_dict):
-        '''Sends the move command to the motion controller.'''
+#     @ui_callable
+#     def move_stage(self, motor_dict):
+#         '''Sends the move command to the motion controller.'''
 
-        print("Moving the stage.")
+#         print("Moving the stage.")
 
-    @ui_callable
-    def home_stage(self):
-        print("Homing the stage.")
+#     @ui_callable
+#     def home_stage(self):
+#         print("Homing the stage.")
 
 class MillenniaLaser(Instrument):
     def __init__(self, interface, port='COM13', baudrate=9600, simulate=False):
