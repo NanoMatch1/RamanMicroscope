@@ -175,6 +175,16 @@ class Calibration:
         
         print("Master calibrations successfully built.")
 
+    def identify_microscope_mode(self, action_group):
+        '''Identify if the microscope is in RamanMode or ImageMode based on the position of motor 2A (beamsplitters).'''
+        if action_group['mode'] > 1000:
+            self.mode = 'imagemode'
+        else:
+            self.mode = 'ramanmode'
+        print(f'Microscope mode identified as {self.mode}')
+
+        return self.mode
+
     def wl_to_steps(self, wavelength, action_group):
         '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''
         steps_dict = {}
