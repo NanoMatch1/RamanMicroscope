@@ -182,7 +182,7 @@ class AcquisitionParameters:
             for pol in polarization_list:
                 for y in y_positions:
                     for x in x_positions:
-                        pos = [x, y, z_val, pol, wl]
+                        pos = [(x, y, z_val), pol, wl]
                         entry = [val if val != prev[i] else None for i, val in enumerate(pos)]
                         sequence.append(entry)
                         prev = pos  # Update previous
@@ -194,9 +194,7 @@ class AcquisitionParameters:
         microscope = self.microscope
 
         command_heirarchy = [
-            microscope.move_x,
-            microscope.move_y,
-            microscope.move_z,
+            microscope.move_stage,
             microscope.go_to_polarization_in,
             microscope.go_to_wavelength_all,
         ]
@@ -404,10 +402,4 @@ class AcquisitionGUI:
         self.elapsed_label.config(text=f"Elapsed: {elapsed:.1f}s")
 
 
-class MockMicroscope:
-    def move_to(self, step):
-        import time
-        time.sleep(0.5)
-
-    def acquire(self):
-        return [0] * 1000  # dummy spectrum
+# 
