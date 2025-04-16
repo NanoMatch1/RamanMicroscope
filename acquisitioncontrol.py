@@ -52,18 +52,18 @@ class AcquisitionControl:
         
     def update_stage_positions(self):
         self.stage_positions = {
-            'X': self.microscope.stage_position_microns['X'],
-            'Y': self.microscope.stage_position_microns['Y'],
-            'Z': self.microscope.stage_position_microns['Z']
+            'X': self.microscope.stage_positions_microns['X'],
+            'Y': self.microscope.stage_positions_microns['Y'],
+            'Z': self.microscope.stage_positions_microns['Z']
         }
         self._current_parameters['sample_position'] = self.stage_positions
         
     @property
     def current_stage_coordinates(self):
         current_coords = [
-            self.microscope.stage_position_microns['X'], 
-            self.microscope.stage_position_microns['Y'], 
-            self.microscope.stage_position_microns['Z']
+            self.microscope.stage_positions_microns['X'], 
+            self.microscope.stage_positions_microns['Y'], 
+            self.microscope.stage_positions_microns['Z']
             ]
         
         self._current_parameters['sample_position'] = {
@@ -77,7 +77,7 @@ class AcquisitionControl:
     def get_all_current_parameters(self):
         detector_temp = self.microscope.get_detector_temperature()
         self.set_current_parameters({'detector_temperature': detector_temp})
-        # self.set_current_parameters({'sample_position': {key:value for key, value in self.microscope.stage_position_microns.items if key in self.sample_position.keys()}})
+        # self.set_current_parameters({'sample_position': {key:value for key, value in self.microscope.stage_positions_microns.items if key in self.sample_position.keys()}})
         self._current_parameters.update(self.general_parameters)
         return self._current_parameters
     
@@ -193,9 +193,7 @@ class AcquisitionControl:
 
         print("Acquisition Control configuration loaded successfully.")
 
-    def calculate_relative_motion(self, target_positions):
-
-        current_positions = self.current_stage_coordinates
+    def calculate_relative_motion(self, current_positions, target_positions):
 
         relative_motion = [target_positions[0] - current_positions[0], target_positions[1] - current_positions[1], target_positions[2] - current_positions[2]]
 
@@ -234,17 +232,26 @@ class AcquisitionControl:
         )
         z_val = self.motion_parameters['start_position']['Z']
 
-        prev = [self.current_position] * 3
+        prev = [self.current_stage_coordinates, None, None]
         for wl in wavelength_list:
             for pol in polarization_list:
                 for y in y_positions:
                     for x in x_positions:
-                        relative_motion = self.calculate_relative_motion([x, y, z_val])
-                        current = [relative_motion, pol, wl]
+                        # current_positions = self.current_stage_coordinates
+                        target_positions = [x, y, z_val]
+                        # relative_motion = self.calculate_relative_motion(current_positions, target_positions)
+                        current = [target_positions, pol, wl]
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
+                        breakpoint()
         return sequence
+    
+    def move_stage_absolute(self, new_coordinates):
+        '''Moves the microcsope sample stage to the specified absolute position in micrometers. Used by the acquisition control to move the stage to the next position in a scan.'''
+        
+        current_positions = self.current_stage_coordinates
+        target_moves = [new_coordinates[0] - current_positions[0], new_coordinates[1] - current_positions[1], new_coordinates[2] - current_positions[2]]
     
     def prepare_acquisition_params(self):
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
@@ -253,7 +260,7 @@ class AcquisitionControl:
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
 
         command_hierarchy = [
-            self.microscope.move_stage,
+            self.microscope.move_stage_absolute,
             self.microscope.go_to_polarization_in,
             self.microscope.go_to_wavelength_all,
         ]
