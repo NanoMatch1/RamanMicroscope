@@ -573,6 +573,7 @@ class Microscope(Instrument):
             'laserpower': self.set_laser_power,
             'runscan': self.run_scan_thread,
             'cancel': self.cancel_scan,
+            'gui': self.open_acquisition_gui,
 
             'mshut': self.close_mono_shutter,
             'mopen': self.open_mono_shutter,
@@ -610,6 +611,29 @@ class Microscope(Instrument):
         if command not in self.command_functions:
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
+    
+    @ui_callable
+    def open_scan_gui(self):
+        def run_gui():
+            root = tk.Tk()
+            # Initialize with a MockMicroscope instance; swap for real microscope if needed.
+            params = AcquisitionParameters(microscope=self)
+            app = AcquisitionGUI(root, params)
+            root.mainloop()
+
+        gui_thread = threading.Thread(target=run_gui)
+        gui_thread.daemon = True  # Ensure GUI closes when main thread ends
+        gui_thread.start()
+
+    @ui_callable
+    def run_scan_thread(self):
+        '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionParameters class.'''
+        self.cancel_event = threading.Event()
+
+        self.scan_thread = threading.Thread(target=self.acquisition_parameters.acquire_scan, args=(self, self.cancel_event))
+        self.scan_thread.start()
+        return self.scan_thread
+
     
     def save_instrument_state(self):
         '''Saves the state of the microscope and motors to a config, in case of reboot or crash. Uses motor labels as keys.'''
@@ -931,14 +955,7 @@ class Microscope(Instrument):
 
     #? Stage control commands
 
-    @ui_callable
-    def run_scan_thread(self):
-        '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionParameters class.'''
-        self.cancel_event = threading.Event()
 
-        self.scan_thread = threading.Thread(target=self.acquisition_parameters.acquire_scan, args=(self, self.cancel_event))
-        self.scan_thread.start()
-        return self.scan_thread
 
 
     @ui_callable
