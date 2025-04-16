@@ -1021,6 +1021,8 @@ class Microscope(Instrument):
         # If command is a string
         if isinstance(command, str):
             result = {}
+            print(" Need to inplement calibration first. Retrurnign")
+            return
             # Split string by whitespace and iterate through each component
             for part in command.split():
                 # The first character represents the key, which we capitalize
@@ -1052,7 +1054,7 @@ class Microscope(Instrument):
             raise TypeError("Input must be either a string or a tuple/list of three floats.")
         
     def update_stage_positions(self, motion_dict):
-        '''Updates the stage positions dictionary with the new values from the motion command. Accepts relative motion commands.'''
+        '''Updates the stage positions dictionary with the new values from the motion command in MICRONS. Accepts relative motion commands.'''
         for key, value in motion_dict.items():
             if key in self.stage_positions_microns:
                 self.stage_positions_microns[key] += value
@@ -1061,19 +1063,14 @@ class Microscope(Instrument):
             
         self.acquisition_control.update_stage_positions()
         
-    def move_stage_absolute(self, target_coordinates):
-        '''Moves the microcsope sample stage to the specified absolute position in micrometers. Used by the acquisition control to move the stage to the next position in a scan.'''
-        current_positions = self.acquisition_control.current_stage_coordinates
-        target_steps_microns = 
+    def move_stage(self, motor_steps):
+        '''Moves the microcsope sample stage in steps in the X, Y and Z directions'''
 
-    def move_stage(self, motion_command):
-        '''Moves the microcsope sample stage in the X, Y and Z directions, by travel distance in micrometers.'''
-
-        motion_dict = self._parse_stage_motion_command(motion_command)
+        motion_dict = self._parse_stage_motion_command(motor_steps)
         self.motion_control.move_motors(motion_dict)
-        self.update_stage_positions(motion_dict)
+        # self.update_stage_positions(motion_dict)
 
-        print('Stage moved to {}'.format(self.acquisition_control.current_stage_coordinates))
+        # print('Stage moved to {}'.format(self.acquisition_control.current_stage_coordinates))
     
     @ui_callable
     def move_x(self, travel_distance):
@@ -1462,6 +1459,7 @@ class Microscope(Instrument):
         # Finally, move the spectrometer
         self.go_to_spectrometer_wavelength(wavelength)
         
+        print("Laser set at {} nm".format(self.laser_wavelengths['l1']))
         print(f"All components set to wavelength: {wavelength} nm")
         return True
     
@@ -2060,7 +2058,6 @@ class Microscope(Instrument):
         # Move monochromator to the calculated wavelength
         self.go_to_monochromator_wavelength(target_wavelength)
         self.current_shift = wavenumber
-        
         print(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
 

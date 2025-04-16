@@ -244,14 +244,32 @@ class AcquisitionControl:
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
-                        breakpoint()
         return sequence
     
     def move_stage_absolute(self, new_coordinates):
         '''Moves the microcsope sample stage to the specified absolute position in micrometers. Used by the acquisition control to move the stage to the next position in a scan.'''
         
         current_positions = self.current_stage_coordinates
-        target_moves = [new_coordinates[0] - current_positions[0], new_coordinates[1] - current_positions[1], new_coordinates[2] - current_positions[2]]
+        target_microns = [new-old for new, old in zip(new_coordinates, current_positions)]
+
+        micron_dict = {
+            'X': target_microns[0],
+            'Y': target_microns[1],
+            'Z': target_microns[2]
+        }
+
+        motor_dict = self.microscope.calibrations.microns_to_steps(micron_dict)
+        # self.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
+
+        # self.microscope.move_stage(motor_dict)
+        print("Sent Command {}".format(motor_dict))
+        print("Stage moved to ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
+
+        self.microscope.update_stage_positions(micron_dict)
+        self.update_stage_positions()
+
+        breakpoint()
+
     
     def prepare_acquisition_params(self):
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
@@ -260,7 +278,7 @@ class AcquisitionControl:
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
 
         command_hierarchy = [
-            self.microscope.move_stage_absolute,
+            self.move_stage_absolute,
             self.microscope.go_to_polarization_in,
             self.microscope.go_to_wavelength_all,
         ]
