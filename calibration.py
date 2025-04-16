@@ -99,6 +99,11 @@ class Calibration:
         self.scriptDir = os.path.dirname(os.path.abspath(__file__))
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         # self.generate_calibrations()
+
+        self.mode_change_steps = 5000 # number of steps required for change from raman to image mode
+        self.x_steps_per_micron = 100 # number of steps per micron for the x stage
+        self.y_steps_per_micron = 100 # number of steps per micron for the y stage
+        self.z_steps_per_micron = 100 # number of steps per micron for the z stage
     
     def _load_calibrations(self):
         """
@@ -184,6 +189,40 @@ class Calibration:
         print(f'Microscope mode identified as {self.mode}')
 
         return self.mode
+    
+    def micron_to_steps(self, action_group):
+        '''Convert microns to motor steps. Takes a dictionary of motors and their microns'''
+        steps_dict = {}
+
+        for motor in action_group.keys():
+            if motor == 'x':
+                steps_dict[motor] = round(action_group[motor] * self.x_steps_per_micron)
+            elif motor == 'y':
+                steps_dict[motor] = round(action_group[motor] * self.y_steps_per_micron)
+            elif motor == 'z':
+                steps_dict[motor] = round(action_group[motor] * self.z_steps_per_micron)
+            else:
+                print(f'{motor} not found in calibrations')
+                steps_dict[motor] = action_group[motor]
+
+        return steps_dict
+    
+    def steps_to_micron(self, action_group):
+        '''Convert motor steps to microns. Takes a dictionary of motors and their steps'''
+        micron_dict = {}
+
+        for motor in action_group.keys():
+            if motor == 'x':
+                micron_dict[motor] = action_group[motor] / self.x_steps_per_micron
+            elif motor == 'y':
+                micron_dict[motor] = action_group[motor] / self.y_steps_per_micron
+            elif motor == 'z':
+                micron_dict[motor] = action_group[motor] / self.z_steps_per_micron
+            else:
+                print(f'{motor} not found in calibrations')
+                micron_dict[motor] = action_group[motor]
+
+        return micron_dict
 
     def wl_to_steps(self, wavelength, action_group):
         '''Convert wavelength to motor steps. Takes a dictionary of motors and their wavelengths'''

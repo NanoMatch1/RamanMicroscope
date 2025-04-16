@@ -501,7 +501,7 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
 
-        self.microscope_mode = calibration_service.identify_microscope_mode() if calibration_service else None
+        self.microscope_mode = 'ramanmode'
 
         self.wavelength_axis = None
         self.instrument_state = {}
@@ -620,12 +620,19 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
+    @ui_callable
+    def go_to_image_mode(self):
+        '''Set the acquisition mode to image mode.'''
+        self.move_motors({'mode':self.calibration_service.mode_change_steps})
+        self.microscope_mode = 'imagemode'
+        print("Microscope set to image mode")
 
+    @ui_callable
     def go_to_raman_mode(self):
         '''Set the acquisition mode to Raman mode.'''
-        self.acquire_mode = 'raman'
-        print('Acquisition mode set to Raman')
-        return self.acquire_mode
+        self.move_motors({'mode':self.calibration_service.mode_change_steps})
+        self.microscope_mode = 'ramanmode'
+        print("Microscope set to Raman mode")
     
     @ui_callable
     def open_acquisition_gui(self):
@@ -935,6 +942,9 @@ class Microscope(Instrument):
 
         if initialise is False:
             # recalculate all parameters
+            all_motors = self.get_all_motor_positions()
+            self.microscope_mode = self.calibration_service.identify_microscope_mode({all_motors})
+
             self.laser_steps = self.get_laser_motor_positions()
             self.grating_steps = self.get_grating_motor_positions()
             self.monochromator_steps = self.get_monochromator_motor_positions()
@@ -954,6 +964,7 @@ class Microscope(Instrument):
             # 'Raman wavelength': self.current_raman_wavelength,
             'Raman shift': self.current_shift,
             # 'pinhole': self.pinhole
+            'Microscope mode': self.microscope_mode,
         }
         
 
@@ -1050,6 +1061,10 @@ class Microscope(Instrument):
             
         self.acquisition_control.update_stage_positions()
         
+    def move_stage_absolute(self, target_coordinates):
+        '''Moves the microcsope sample stage to the specified absolute position in micrometers. Used by the acquisition control to move the stage to the next position in a scan.'''
+        current_positions = self.acquisition_control.current_stage_coordinates
+        target_steps_microns = 
 
     def move_stage(self, motion_command):
         '''Moves the microcsope sample stage in the X, Y and Z directions, by travel distance in micrometers.'''
