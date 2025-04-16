@@ -112,7 +112,7 @@ class TucamCamera:
         self.is_running = False
 
         self.command_functions = {
-            "acquire": self.safe_acquisition,
+            "safeacquire": self.safe_acquisition,
             "acqnow": self.acquire_one_frame,
             "transient": self.acquire_transient,
             "run": self.start_continuous_acquisition,
@@ -407,7 +407,7 @@ class TucamCamera:
             print(f"Failed to set binning. Error code: {status}")
 
 
-    def safe_acquisition(self, target_temp=-5, **kwargs):
+    def safe_acquisition(self, target_temp=-5, export=True, **kwargs):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
@@ -417,7 +417,7 @@ class TucamCamera:
 
             if temp.value < target_temp:
                 print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
-                data = self.acquire_one_frame(**kwargs)
+                data = self.acquire_one_frame(export=export, **kwargs)
                 return data
             else:
                 print(f"Camera too hot ({temp.value}°C). Waiting...")
@@ -444,6 +444,7 @@ class TucamCamera:
         """
         acquire a single frame
         """
+        breakpoint()
         if self.simulate:
             # Generate a simulated frame based on current settings
             width = self._sim_roi[2] if hasattr(self, '_sim_roi') else 2048

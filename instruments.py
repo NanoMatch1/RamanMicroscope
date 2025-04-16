@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from functools import wraps
 
 from calibration import Calibration, LdrScan
-from acquisitioncontrol import AcquisitionParameters, AcquisitionGUI
+from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
 
 def simulate(expected_value=None, function_handler=None):
     """
@@ -520,7 +520,7 @@ class Microscope(Instrument):
             self.motor_map.update(group)
 
         # acquisition parameters
-        self.acquisition_parameters = AcquisitionParameters(self)
+        self.self.acquisition_control = AcquisitionControl(self)
 
         # Motion control
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
@@ -620,17 +620,17 @@ class Microscope(Instrument):
     @ui_callable
     def open_acquisition_gui(self):
         root = tk.Tk()
-        params = self.acquisition_parameters
+        params = self.acquisition_control
         app = AcquisitionGUI(root, params)
         root.mainloop()
 
 
     @ui_callable
     def run_scan_thread(self):
-        '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionParameters class.'''
+        '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionControl class.'''
         self.cancel_event = threading.Event()
 
-        self.scan_thread = threading.Thread(target=self.acquisition_parameters.acquire_scan, args=(self, self.cancel_event))
+        self.scan_thread = threading.Thread(target=self.acquisition_control.acquire_scan, args=(self, self.cancel_event))
         self.scan_thread.start()
         return self.scan_thread
 
@@ -1021,7 +1021,7 @@ class Microscope(Instrument):
         self.motion_control.move_motors({'p_out': angle})
         print('Polarizer moved to {} degrees'.format(angle))
 
-    def _parse_stage_motion_command(command):
+    def _parse_stage_motion_command(self, command):
         """
         Accepts either:
         - A string such as 'x100 y200 z200', 'y21 z34', or 'y2 x5 z2'
@@ -1363,23 +1363,23 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_acquisition_time(self, value):
-        self.acquisition_parameters.general_parameters['acquisition_time'] = value
+        self.acquisition_control.general_parameters['acquisition_time'] = value
         self.camera.set_acqtime(value)
 
     @ui_callable
     def set_filename(self, filename):
-        self.acquisition_parameters.general_parameters['filename'] = filename
+        self.acquisition_control.general_parameters['filename'] = filename
 
     @ui_callable
     def set_laser_power(self, value):
         self.interface.laser.set_power(value)
-        self.acquisition_parameters.general_parameters['laser_power'] = value
+        self.acquisition_control.general_parameters['laser_power'] = value
 
     @ui_callable
     def set_raman_shift(self, value):
         self.current_shift = value
         self.go_to_wavenumber(value)
-        self.acquisition_parameters.general_parameters['raman_shift'] = value
+        self.acquisition_control.general_parameters['raman_shift'] = value
 
     @ui_callable
     def set_camera_binning(self, value):
@@ -1397,17 +1397,17 @@ class Microscope(Instrument):
         self.interface.debug_skip.append('camera')
 
     @ui_callable
-    def acquire_one_frame(self, filename=None, frame_index=0):
+    def acquire_one_frame(self, filename=None, scan_index=0):
         if filename is None:
-            filename = self.acquisition_parameters.general_parameters['filename']
+            filename = self.acquisition_control.general_parameters['filename']
             
         image_data = self.camera.safe_acquisition(export=False)
         wavelength_axis = self.wavelength_axis
         if self.wavelength_axis is None:
             wavelength_axis = np.arange(image_data.shape[1])
-        metadata = self.acquisition_parameters._construct_metadata()
-        frame_index = self.self.acquisition_parameters.general_parameters['frame_index'] # TODO: Reconstruct all calls to acquisition_params dicts as get_params functions
-        out_path = os.path.join(self.data_dir, filename, f"{filename}_{frame_index:06}.npz")
+        metadata = self.acquisition_control._construct_metadata()
+        scan_index = self.acquisition_control.general_parameters['scan_index'] # TODO: Reconstruct all calls to acquisition_params dicts as get_params functions
+        out_path = os.path.join(self.dataDir, filename, f"{filename}_{scan_index:06}.npz")
         
         if not os.path.exists(os.path.dirname(out_path)):
             os.makedirs(os.path.dirname(out_path))
@@ -1416,12 +1416,13 @@ class Microscope(Instrument):
                             image=image_data,
                             wavelength=wavelength_axis,
                             metadata=json.dumps(metadata))
+        
 
         return image_data
     
     def prepare_dataset_acquisition(self):
         '''Prepares the dataset acquisition by setting the parameters.'''
-        self.acquisition_parameters.prepare_acquisition()
+        self.acquisition_control.prepare_acquisition()
     
     def acquire_dataset(self):
         '''Prepares and executes a multidimensional dataset acquisition.'''
