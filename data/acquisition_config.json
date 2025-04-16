@@ -1,0 +1,44 @@
+{
+  "general_parameters": {
+    "acquisition_time": 1000.0,
+    "filename": "run-rest2",
+    "raman_shift": 0.0,
+    "laser_power": 4.5,
+    "scan_index": 0,
+    "scan_type": "None"
+  },
+  "motion_parameters": {
+    "start_position": {
+      "X": 0.0,
+      "Y": 0.0,
+      "Z": 0.0
+    },
+    "end_position": {
+      "X": 10.0,
+      "Y": 0.0,
+      "Z": 0.0
+    },
+    "resolution": {
+      "X": 1.0,
+      "Y": 0.0,
+      "Z": 0.0
+    }
+  },
+  "wavelength_parameters": {
+    "start_wavelength": 750.0,
+    "end_wavelength": 760.0,
+    "resolution": 5.0
+  },
+  "polarization_parameters": {
+    "input": {
+      "start_angle": 0.0,
+      "end_angle": 0.0,
+      "resolution": 1.0
+    },
+    "output": {
+      "start_angle": 0.0,
+      "end_angle": 0.0,
+      "resolution": 1.0
+    }
+  }
+}
