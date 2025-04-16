@@ -612,18 +612,14 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
+    
     @ui_callable
-    def open_scan_gui(self):
-        def run_gui():
-            root = tk.Tk()
-            # Initialize with a MockMicroscope instance; swap for real microscope if needed.
-            params = AcquisitionParameters(microscope=self)
-            app = AcquisitionGUI(root, params)
-            root.mainloop()
+    def open_acquisition_gui(self):
+        root = tk.Tk()
+        params = AcquisitionParameters(microscope=self)
+        app = AcquisitionGUI(root, params)
+        root.mainloop()
 
-        gui_thread = threading.Thread(target=run_gui)
-        gui_thread.daemon = True  # Ensure GUI closes when main thread ends
-        gui_thread.start()
 
     @ui_callable
     def run_scan_thread(self):
