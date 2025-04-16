@@ -501,6 +501,8 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
 
+        self.microscope_mode = calibration_service.identify_microscope_mode() if calibration_service else None
+
         self.wavelength_axis = None
         self.instrument_state = {}
         self.autosave = True
@@ -542,6 +544,8 @@ class Microscope(Instrument):
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
             'allmotors': self.get_all_motor_positions,
+            'ramanmode': self.go_to_raman_mode,
+            'imagemode': self.go_to_image_mode,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
             'report': self.report_status,
             'writemotors': self.write_motor_positions,
@@ -552,7 +556,7 @@ class Microscope(Instrument):
             'x': self.move_x,
             'y': self.move_y,
             'z': self.move_z,
-            'mode': self.move_microscope_mode,
+
             'stagehome': self.set_stage_home,
             # motor commands
             'laserpos': self.get_laser_motor_positions,
@@ -617,7 +621,11 @@ class Microscope(Instrument):
         return self.command_functions[command](*args, **kwargs)
     
 
-    
+    def go_to_raman_mode(self):
+        '''Set the acquisition mode to Raman mode.'''
+        self.acquire_mode = 'raman'
+        print('Acquisition mode set to Raman')
+        return self.acquire_mode
     
     @ui_callable
     def open_acquisition_gui(self):

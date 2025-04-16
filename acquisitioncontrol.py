@@ -195,7 +195,7 @@ class AcquisitionControl:
 
     def calculate_relative_motion(self, target_positions):
 
-        current_positions = [self.stage_positions['X'], self.stage_positions['Y'], self.stage_positions['Z']]
+        current_positions = self.current_stage_coordinates
 
         relative_motion = [target_positions[0] - current_positions[0], target_positions[1] - current_positions[1], target_positions[2] - current_positions[2]]
 
@@ -325,9 +325,6 @@ class AcquisitionControl:
     def current_position(self):
         return self._current_parameters['sample_position']
     
-    @property
-    def curent_stage_coordinates(self):
-        return self.
     
     
 
