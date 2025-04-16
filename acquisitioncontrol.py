@@ -5,7 +5,7 @@ import tkinter as tk
 import threading
 import numpy as np
 from tkinter import ttk, messagebox
-
+import sys
 
 class AcquisitionParameters:
     def __init__(self, microscope=None):
@@ -32,7 +32,6 @@ class AcquisitionParameters:
         }
 
     def estimate_scan_duration(self):
-        # Calculate the number of steps in each dimension.
         x_range = (self.motion_parameters['end_position']['x'] - self.motion_parameters['start_position']['x']) / self.motion_parameters['resolution']['x']
         y_range = (self.motion_parameters['end_position']['y'] - self.motion_parameters['start_position']['y']) / self.motion_parameters['resolution']['y']
         p_range = (self.polarization_parameters['input']['end_angle'] - self.polarization_parameters['input']['start_angle']) / self.polarization_parameters['input']['resolution']
@@ -101,12 +100,10 @@ class AcquisitionParameters:
         print("Saving spectrum...")
 
     def generate_scan_sequence(self):
-        """Constructs a scan sequence based on the current parameters."""
         def generate_array(start, end, resolution):
             if resolution == 0 or start == end:
                 return [start]
             try:
-                # Use np.arange, but ensure we have a list output.
                 return np.arange(start, end, resolution).tolist()
             except Exception as e:
                 print(f"Error generating array: {e}")
@@ -133,15 +130,14 @@ class AcquisitionParameters:
             self.motion_parameters['end_position']['y'],
             self.motion_parameters['resolution']['y']
         )
-        z_val = self.motion_parameters['start_position']['z']  # fixed
+        z_val = self.motion_parameters['start_position']['z']
 
-        prev = [None] * 3  # previous (position, pol, wavelength)
+        prev = [None] * 3
         for wl in wavelength_list:
             for pol in polarization_list:
                 for y in y_positions:
                     for x in x_positions:
                         current = [(x, y, z_val), pol, wl]
-                        # Only update if the value has changed
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
@@ -154,7 +150,6 @@ class AcquisitionParameters:
             microscope.go_to_polarization_in,
             microscope.go_to_wavelength_all,
         ]
-
         sequence = self.generate_scan_sequence()
         total_steps = len(sequence)
         start_time = time.time()
@@ -167,18 +162,14 @@ class AcquisitionParameters:
                 return
             status_callback(f"Running step {i}: {step}")
             progress_callback(i + 1, total_steps, start_time)
-
-            # Execute commands in order if a change is indicated
             for command, change in zip(command_hierarchy, step):
                 if change is not None:
                     command(change)
-
             spectrum = microscope.acquire()
             self.save_spectrum(step, spectrum)
         status_callback("Scan complete.")
         progress_callback(total_steps, total_steps, start_time)
         print("Scan complete.")
-
 
 class AcquisitionGUI:
     def __init__(self, root, acquisition_params):
@@ -194,7 +185,6 @@ class AcquisitionGUI:
 
     def build_gui(self):
         notebook = ttk.Notebook(self.root)
-
         self.general_frame = ttk.Frame(notebook)
         self.motion_frame = ttk.Frame(notebook)
         self.wavelength_frame = ttk.Frame(notebook)
@@ -236,6 +226,10 @@ class AcquisitionGUI:
         self.cancel_button = tk.Button(self.root, text="Cancel Scan", command=self.cancel_scan)
         self.cancel_button.pack(pady=5)
         self.cancel_button.config(state="disabled")
+        
+        # --- Quit Button ---
+        self.quit_button = tk.Button(self.root, text="Quit", command=self.quit_app)
+        self.quit_button.pack(pady=5)
 
     def build_section(self, frame, parameters, section):
         for key, value in parameters.items():
@@ -262,7 +256,6 @@ class AcquisitionGUI:
             self.status_label.config(text="")
 
     def validate_and_update_parameters(self):
-        """Extract parameters from the GUI entries and update the parameters object."""
         for key, (var, expected_type) in self.entries.items():
             val = var.get()
             try:
@@ -327,3 +320,9 @@ class AcquisitionGUI:
         self.progress_bar.config(text=bar)
         elapsed = time.time() - start_time
         self.elapsed_label.config(text=f"Elapsed: {elapsed:.1f}s")
+    
+    def quit_app(self):
+        """Cancel any running scan, close the GUI, and exit the application."""
+        self.cancel_event.set()  # Ensure that any scan thread is signalled to stop
+        self.root.destroy()
+        # sys.exit(0)  # End the application

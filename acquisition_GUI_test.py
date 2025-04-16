@@ -127,18 +127,11 @@ class MockMicroscope:
 
 
 def open_acquisition_GUI():
-    def run_gui():
-        root = tk.Tk()
-        # Initialize with a MockMicroscope instance; swap for real microscope if needed.
-        params = AcquisitionParameters(microscope=MockMicroscope())
-        app = AcquisitionGUI(root, params)
-        root.mainloop()
-
-    gui_thread = threading.Thread(target=run_gui)
-    gui_thread.daemon = True  # Ensure GUI closes when main thread ends
-    gui_thread.start()
+    root = tk.Tk()
+    params = AcquisitionParameters(microscope=MockMicroscope())
+    app = AcquisitionGUI(root, params)
+    root.mainloop()
 
 if __name__ == '__main__':
+    # Launch the GUI in the main thread to avoid issues with quitting and thread termination.
     open_acquisition_GUI()
-    while True:
-        time.sleep(10)
