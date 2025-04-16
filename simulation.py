@@ -179,7 +179,7 @@ class SimulatedCamera:
         
         return sim_frame
     
-    def acquire_one_frame(self, save_dir='data', export=True):
+    def acquire_one_frame(self, save_dir='data', export=True, **kwargs):
         """Acquire a single simulated frame"""
         width, height = self.roi[2], self.roi[3]
         data = self._generate_simulated_image(width, height)
@@ -196,17 +196,17 @@ class SimulatedCamera:
         
         if self.temperature < target_temp:
             print(f"Temperature stable ({self.temperature:.1f}°C). Acquiring frame...")
-            return self.acquire_one_frame()
+            return self.acquire_one_frame(**kwargs)
         else:
             print(f"Camera too hot ({self.temperature:.1f}°C). Waiting...")
             # Cool down in simulation
             self.temperature -= 1.0
             time.sleep(0.5)  # Shorter wait for simulation
-            return self.safe_acquisition(target_temp)
+            return self.safe_acquisition(target_temp, **kwargs)
     
-    def acquire_transient(self, save_dir='transient', export=True):
+    def acquire_transient(self, save_dir='transient', export=True, **kwargs):
         """Acquire a single frame for transient viewing"""
-        return self.acquire_one_frame(save_dir=save_dir, export=export)
+        return self.acquire_one_frame(save_dir=save_dir, export=export, **kwargs)
     
     def start_continuous_acquisition(self):
         """Start continuous acquisition in a separate thread"""

@@ -7,7 +7,7 @@ import numpy as np
 from tkinter import ttk, messagebox
 import sys
 
-class AcquisitionParameters:
+class AcquisitionControl:
     def __init__(self, microscope=None):
         self.microscope = microscope
         self.general_parameters = {
@@ -65,12 +65,13 @@ class AcquisitionParameters:
         detector_temp = self.microscope.get_detector_temperature()
         self.set_current_parameters({'detector_temperature': detector_temp})
         # self.set_current_parameters({'sample_position': {key:value for key, value in self.microscope.stage_position_microns.items if key in self.sample_position.keys()}})
-
-        return self._current_parameters.update(self.general_parameters)
+        self._current_parameters.update(self.general_parameters)
+        breakpoint()
+        return self._current_parameters
     
     def set_current_parameters(self, parameters):
         if not isinstance(parameters, dict):
-            raise ValueError("Error in AcquisitionParameters.set_current_parameters: Parameters should be a dictionary.")
+            raise ValueError("Error in AcquisitionControl.set_current_parameters: Parameters should be a dictionary.")
         for key, value in parameters.items():
             if key in self._current_parameters:
                 self._current_parameters[key] = value
