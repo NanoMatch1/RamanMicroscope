@@ -190,16 +190,16 @@ class Calibration:
 
         return self.mode
     
-    def micron_to_steps(self, action_group):
+    def microns_to_steps(self, action_group):
         '''Convert microns to motor steps. Takes a dictionary of motors and their microns'''
         steps_dict = {}
 
         for motor in action_group.keys():
-            if motor == 'x':
+            if motor == 'X':
                 steps_dict[motor] = round(action_group[motor] * self.x_steps_per_micron)
-            elif motor == 'y':
+            elif motor == 'Y':
                 steps_dict[motor] = round(action_group[motor] * self.y_steps_per_micron)
-            elif motor == 'z':
+            elif motor == 'Z':
                 steps_dict[motor] = round(action_group[motor] * self.z_steps_per_micron)
             else:
                 print(f'{motor} not found in calibrations')
@@ -207,7 +207,7 @@ class Calibration:
 
         return steps_dict
     
-    def steps_to_micron(self, action_group):
+    def steps_to_microns(self, action_group):
         '''Convert motor steps to microns. Takes a dictionary of motors and their steps'''
         micron_dict = {}
 
