@@ -48,25 +48,37 @@ class AcquisitionControl:
             'detector_temperature': 0.0
         }
 
+        self.load_config()
+        
+    def update_stage_positions(self):
+        self.stage_positions = {
+            'X': self.microscope.stage_position_microns['X'],
+            'Y': self.microscope.stage_position_microns['Y'],
+            'Z': self.microscope.stage_position_microns['Z']
+        }
+        self._current_parameters['sample_position'] = self.stage_positions
+        
     @property
-    def stage_positions(self):
-        return self._current_parameters['sample_position']
-    
-    @stage_positions.setter
-    def stage_positions(self, positions):
-        if not isinstance(positions, dict):
-            raise ValueError("Stage positions must be a dictionary.")
-        for key in positions:
-            if key not in self.stage_positions:
-                raise ValueError(f"Invalid stage position key: {key}")
-        self._current_parameters['sample_position'] = positions
+    def current_stage_coordinates(self):
+        current_coords = [
+            self.microscope.stage_position_microns['X'], 
+            self.microscope.stage_position_microns['Y'], 
+            self.microscope.stage_position_microns['Z']
+            ]
+        
+        self._current_parameters['sample_position'] = {
+            'X': current_coords[0], 
+            'Y': current_coords[1], 
+            'Z': current_coords[2]
+        }
+
+        return current_coords
 
     def get_all_current_parameters(self):
         detector_temp = self.microscope.get_detector_temperature()
         self.set_current_parameters({'detector_temperature': detector_temp})
         # self.set_current_parameters({'sample_position': {key:value for key, value in self.microscope.stage_position_microns.items if key in self.sample_position.keys()}})
         self._current_parameters.update(self.general_parameters)
-        breakpoint()
         return self._current_parameters
     
     def set_current_parameters(self, parameters):
@@ -96,6 +108,8 @@ class AcquisitionControl:
         metadata = self.get_all_current_parameters()
 
         return metadata
+    
+
 
     def estimate_scan_duration(self):
         x_range = (self.motion_parameters['end_position']['X'] - self.motion_parameters['start_position']['X']) / self.motion_parameters['resolution']['X']
@@ -142,28 +156,50 @@ class AcquisitionControl:
                     except ValueError:
                         print(f"Invalid input for {key}. Expected type {type(default).__name__}.")
 
-    def save_config(self, directory, filename="acquisition_config.json"):
+    def save_config(self, filename="acquisition_config.json"):
         config = {
             'general_parameters': self.general_parameters,
             'motion_parameters': self.motion_parameters,
             'wavelength_parameters': self.wavelength_parameters,
             'polarization_parameters': self.polarization_parameters,
         }
-        os.makedirs(directory, exist_ok=True)
-        filepath = os.path.join(directory, filename)
+
+        filepath = os.path.join(self.dataDir, filename)
         with open(filepath, 'w') as f:
             json.dump(config, f, indent=2)
 
-    def load_config(self, filepath):
-        with open(filepath, 'r') as f:
-            config = json.load(f)
+    def load_config(self, filename="acquisition_config.json"):
+
+        filepath = os.path.join(self.dataDir, filename)
+        if not os.path.exists(filepath):
+            print(f"Configuration file {filepath} not found.")
+            return
+
+        try:
+            with open(filepath, 'r') as f:
+                config = json.load(f)
+
+        except FileNotFoundError:
+            print("Acquisition Control configuration file not found. Using default parameters.")
+        except json.JSONDecodeError:
+            print("Error decoding JSON from Acquisition Control configuration file. Using default parameters.")
+        except Exception as e:
+            print(f"Unexpected error loading Acquisition Control configuration: {e}. Using default parameters.")
+
         self.general_parameters = config.get('general_parameters', self.general_parameters)
         self.motion_parameters = config.get('motion_parameters', self.motion_parameters)
         self.wavelength_parameters = config.get('wavelength_parameters', self.wavelength_parameters)
         self.polarization_parameters = config.get('polarization_parameters', self.polarization_parameters)
 
-    def save_spectrum(self, step, spectrum):
-        print("Saving spectrum...")
+        print("Acquisition Control configuration loaded successfully.")
+
+    def calculate_relative_motion(self, target_positions):
+
+        current_positions = [self.stage_positions['X'], self.stage_positions['Y'], self.stage_positions['Z']]
+
+        relative_motion = [target_positions[0] - current_positions[0], target_positions[1] - current_positions[1], target_positions[2] - current_positions[2]]
+
+        return relative_motion
 
     def generate_scan_sequence(self):
         def generate_array(start, end, resolution):
@@ -198,45 +234,102 @@ class AcquisitionControl:
         )
         z_val = self.motion_parameters['start_position']['Z']
 
-        prev = [None] * 3
+        prev = [self.current_position] * 3
         for wl in wavelength_list:
             for pol in polarization_list:
                 for y in y_positions:
                     for x in x_positions:
-                        current = [(x, y, z_val), pol, wl]
+                        relative_motion = self.calculate_relative_motion([x, y, z_val])
+                        current = [relative_motion, pol, wl]
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
         return sequence
+    
+    def prepare_acquisition_params(self):
+        self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
+        self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
-        microscope = self.microscope
+
         command_hierarchy = [
-            microscope.move_stage,
-            microscope.go_to_polarization_in,
-            microscope.go_to_wavelength_all,
+            self.microscope.move_stage,
+            self.microscope.go_to_polarization_in,
+            self.microscope.go_to_wavelength_all,
         ]
         sequence = self.generate_scan_sequence()
+        breakpoint()
         total_steps = len(sequence)
         start_time = time.time()
         predicted_time = ((total_steps * self.general_parameters['acquisition_time'] / 1000.0)/3600) * 1.2
         print(f"Predicted time: {predicted_time:.2f} hours")
 
-        for i, step in enumerate(sequence):
+        self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
+
+        for index, step in enumerate(sequence):
+            self.general_parameters['scan_index'] = index
             if cancel_event.is_set():
                 status_callback("Scan cancelled.")
                 return
-            status_callback(f"Running step {i}: {step}")
-            progress_callback(i + 1, total_steps, start_time)
+            status_callback(f"Running step {index}: {step}")
+            progress_callback(index + 1, total_steps, start_time)
             for command, change in zip(command_hierarchy, step):
                 if change is not None:
                     command(change)
             
-            spectrum = microscope.acquire_one_frame()
-            self.save_spectrum(step, spectrum)
+            image_data = self.microscope.acquire_one_frame(export=False)
+            if image_data is None:
+                status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
+                return
+            
+            self.save_spectrum(image_data, scan_index=index)
         status_callback("Scan complete.")
         progress_callback(total_steps, total_steps, start_time)
         print("Scan complete.")
+
+    def save_spectrum(self, image_data, scan_index=None):
+        if scan_index is None:
+            scan_index = self.general_parameters['scan_index']
+
+        wavelength_axis = self.wavelength_axis
+        if self.wavelength_axis is None:
+            wavelength_axis = np.arange(image_data.shape[1]) 
+
+        out_path = os.path.join(self.dataDir, self.filename, f"{self.filename}_{scan_index:06}.npz")
+        
+        if not os.path.exists(os.path.dirname(out_path)):
+            os.makedirs(os.path.dirname(out_path))
+
+        np.savez_compressed(out_path,
+                            image=image_data,
+                            wavelength=wavelength_axis,
+                            metadata=json.dumps(self.metadata))
+        
+    @property
+    def wavelength_axis(self):
+        return self.microscope.wavelength_axis
+    
+    @property
+    def filename(self):
+        return self.general_parameters['filename']
+    
+    @property
+    def metadata(self):
+        return self._construct_metadata()
+    
+    @property
+    def dataDir(self):
+        return self.microscope.dataDir
+    
+    @property
+    def current_position(self):
+        return self._current_parameters['sample_position']
+    
+    @property
+    def curent_stage_coordinates(self):
+        return self.
+    
+    
 
 class AcquisitionGUI:
     def __init__(self, root, acquisition_params):
@@ -338,6 +431,7 @@ class AcquisitionGUI:
                 return False
         self.status_label.config(text="")
         self.update_scan_estimate()
+        self.params.save_config()
         return True
 
     def update_scan_estimate(self):

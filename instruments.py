@@ -480,7 +480,9 @@ class Microscope(Instrument):
     implementation_info = [
         'Microscope implementation: v 0.1', 
         'Notes: Use "help" to see available commands. Note than unknown commands are attempted to be passed to the controller for interpretation. If the controller does not recognise the command, it will return an error.',
-        '"x", "y" and "z" single letter commands are resered for the stage control, and will call the motion control methods in microscope.'
+        '"x", "y" and "z" single letter commands are resered for the stage control, and will call the motion control methods in microscope.',
+        'Stage positions in microns are held by the microscope in the stage_positions_microns dictionary. Every move XYZ axis command will update the dictionary and call an AcquisitionControl.update_stage_positions to ensure the stage positions are in sync with the acquisition control, which needs them to calculate scan positions.',
+        
     
     ]
 
@@ -506,9 +508,9 @@ class Microscope(Instrument):
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
-        # self.stage_positions_microns = {
-        #     'X': 0, 'Y': 0, 'Z': 0, 'A': 0
-        # }
+        self.stage_positions_microns = {
+            'X': 0, 'Y': 0, 'Z': 0
+        }
 
         # self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
         # self.hard_limits = self.config.get("hard_limits", {})
@@ -520,7 +522,7 @@ class Microscope(Instrument):
             self.motor_map.update(group)
 
         # acquisition parameters
-        self.self.acquisition_control = AcquisitionControl(self)
+        self.acquisition_control = AcquisitionControl(self)
 
         # Motion control
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
@@ -968,42 +970,7 @@ class Microscope(Instrument):
         else:
             print("No scan to cancel")
  
-    # @ui_callable
-    # def move_stage(self, XZY):
-    #     '''Moves the microcsope sample stage in the X, Y and Z directions, by travel distance in micrometers.'''
-    #     if isinstance(XZY, str):
-    #         try:
-    #             XZY = [float(i) for i in XZY.split(',')]
-    #         except ValueError:
-    #             print('Invalid input format. Use "x,y,z"')
-    #             return
-    #     elif not isinstance(XZY, list):
-    #         print('Invalid input format. Use "x,y,z"')
-    #         return
-    
-    #     try:
-    #         XZY = [float(i) for i in XZY]
-    #     except ValueError:
-    #         print('Invalid input format. Use "x,y,z"')
-    #         return
-        
-    #     x_target = XZY[0]
-    #     y_target = XZY[1]
-    #     z_target = XZY[2]
 
-    #     self.current_stage_position_in_microns
-
-
-        # current_stage_steps = self.get_motor_positions(self.action_groups['stage'])
-
-        # target_steps = self.calibrations.stage_to_steps(XZY)
-        # steps_to_move = {motor: target_steps[motor] - current_stage_steps[motor] for motor in target_steps.keys()}
-
-        # steps_to_move = {key:value for key, value in steps_to_move.items() if value != 0}
-        # self.motion_control.move_motors(steps_to_move)        
-
-        # self.stage_positions_microns_in_microns = 
-        # print(f'Moving X:{} )
 
     @ui_callable
     def go_to_polarization_in(self, angle):
@@ -1064,35 +1031,33 @@ class Microscope(Instrument):
 
         else:
             raise TypeError("Input must be either a string or a tuple/list of three floats.")
-
+        
+    def update_stage_positions(self, motion_dict):
+        '''Updates the stage positions dictionary with the new values from the motion command. Accepts relative motion commands.'''
+        for key, value in motion_dict.items():
+            if key in self.stage_positions_microns:
+                self.stage_positions_microns[key] += value
+            else:
+                raise ValueError(f"Invalid stage position: {key}")
+            
+        self.acquisition_control.update_stage_positions()
+        
 
     def move_stage(self, motion_command):
         '''Moves the microcsope sample stage in the X, Y and Z directions, by travel distance in micrometers.'''
 
         motion_dict = self._parse_stage_motion_command(motion_command)
         self.motion_control.move_motors(motion_dict)
-        for key, value in motion_dict.items():
-            if key in self.stage_positions_microns:
-                self.stage_positions_microns[key] += value
+        self.update_stage_positions(motion_dict)
 
-    @property
-    def stage_positions_microns(self):
-        return self.acquisition_control.stage_positions
-    
-    @stage_positions_microns.setter
-    def stage_positions_microns(self, stage_dict):
-        if not isinstance(stage_dict, dict):
-            raise ValueError("Stage positions must be a dictionary")
-        for key in stage_dict.keys():
-            if key not in self.stage_positions_microns:
-                raise ValueError(f"Invalid stage position: {key}")
-        self.acquisition_control.stage_positions = stage_dict
+        print('Stage moved to {}'.format(self.acquisition_control.current_stage_coordinates))
     
     @ui_callable
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'X': travel_distance})
         self.stage_positions_microns['X'] += travel_distance
+        self.acquisition_control.update_stage_positions()
         print('X stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
@@ -1100,6 +1065,7 @@ class Microscope(Instrument):
         '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Y': travel_distance})
         self.stage_positions_microns['Y'] += travel_distance
+        self.acquisition_control.update_stage_positions()
         print('Y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
@@ -1107,13 +1073,8 @@ class Microscope(Instrument):
         '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Z': travel_distance})
         self.stage_positions_microns['Z'] += travel_distance
+        self.acquisition_control.update_stage_positions()
         print('Z stage moved by {} micrometers'.format(travel_distance))
-
-    @ui_callable
-    def move_microscope_mode(self, travel_distance):
-        '''Moves the microcsope sample stage in the microscope mode, by travel distance in micrometers.'''
-        self.motion_control.move_motors({'mode': travel_distance})
-        self.stage_positions_microns['mode'] += travel_distance
 
     @ui_callable
     def set_stage_home(self):
@@ -1121,13 +1082,22 @@ class Microscope(Instrument):
         self.motion_control.set_stage_home()
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
-        print('Stage home set to current position')
+        print('Stage home ({}) set to current position'.format(self.acquisition_control.current_stage_coordinates))
 
     def enter_focus_mode(self):
         '''Enters the mode for incrementally adjusting the microscope focus at the sample.'''
         print("Entering focus mode.\nType focus steps in microns.\nType 'exit' to exit focus mode.")
         while True:
             command = input()
+            if command == 'exit':
+                return
+            try:
+                command = float(command)
+                self.move_z(command)
+            except ValueError:
+                print("Invalid command. Type 'exit' to exit focus mode.")
+                continue
+
 
     #? camera commands
     @ui_callable
@@ -1397,27 +1367,12 @@ class Microscope(Instrument):
         self.interface.debug_skip.append('camera')
 
     @ui_callable
-    def acquire_one_frame(self, filename=None, scan_index=0):
+    def acquire_one_frame(self, filename=None, scan_index=0, export=True):
         if filename is None:
             filename = self.acquisition_control.general_parameters['filename']
-            
-        image_data = self.camera.safe_acquisition(export=False)
-        wavelength_axis = self.wavelength_axis
-        if self.wavelength_axis is None:
-            wavelength_axis = np.arange(image_data.shape[1])
-        metadata = self.acquisition_control._construct_metadata()
-        scan_index = self.acquisition_control.general_parameters['scan_index'] # TODO: Reconstruct all calls to acquisition_params dicts as get_params functions
-        out_path = os.path.join(self.dataDir, filename, f"{filename}_{scan_index:06}.npz")
-        
-        if not os.path.exists(os.path.dirname(out_path)):
-            os.makedirs(os.path.dirname(out_path))
 
-        np.savez_compressed(out_path,
-                            image=image_data,
-                            wavelength=wavelength_axis,
-                            metadata=json.dumps(metadata))
-        
-
+        image_data = self.camera.safe_acquisition(export=export)
+     
         return image_data
     
     def prepare_dataset_acquisition(self):

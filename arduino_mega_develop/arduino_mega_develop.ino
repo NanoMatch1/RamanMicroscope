@@ -165,8 +165,14 @@ void setup() {
   // stepperA1.setMaxSpeed(1000);
   // stepperA1.setAcceleration(1000);
 
-  stepperY4.setMaxSpeed(10000);
-  stepperY4.setAcceleration(10000);
+  stepperX4.setMaxSpeed(300);
+  stepperX4.setAcceleration(300);
+  stepperY4.setMaxSpeed(300);
+  stepperY4.setAcceleration(300);
+  stepperZ4.setMaxSpeed(300);
+  stepperZ4.setAcceleration(300);
+  stepperA4.setMaxSpeed(300);
+  stepperA4.setAcceleration(300);
   stepperY1.setMaxSpeed(1500);
   stepperY1.setAcceleration(1000);
   stepperX1.setMaxSpeed(3000);
