@@ -115,7 +115,10 @@ class SimulatedArduino:
 class SimulatedCamera:
     """Simulated camera for testing without hardware"""
     
-    def __init__(self, interface=None, report=False, simulate=True):
+    def __init__(self, interface=None, report=False, simulate=True, **kwargs):
+        self.simulate = simulate
+        self.report = report
+
         self.temperature = -5.0
         self.exposure = 500  # ms
         self.roi = (0, 0, 2048, 148)
@@ -186,7 +189,7 @@ class SimulatedCamera:
         
         return data
     
-    def safe_acquisition(self, target_temp=-5):
+    def safe_acquisition(self, target_temp=-5, **kwargs):
         """Simulate temperature checking and image acquisition"""
         # Randomly fluctuate temperature
         self.temperature += np.random.normal(0, 0.2)

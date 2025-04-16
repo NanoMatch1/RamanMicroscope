@@ -491,6 +491,7 @@ class Microscope(Instrument):
         super().__init__()
         self.interface = interface
         self.scriptDir = interface.scriptDir
+        self.dataDir = interface.dataDir
         self.autocalibrationDir = interface.autocalibrationDir
         self.controller = controller or interface.controller
         self.camera = camera or interface.camera
@@ -498,15 +499,16 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
 
+        self.wavelength_axis = None
         self.instrument_state = {}
         self.autosave = True
 
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
-        self.stage_positions_microns = {
-            'X': 0, 'Y': 0, 'Z': 0, 'A': 0
-        }
+        # self.stage_positions_microns = {
+        #     'X': 0, 'Y': 0, 'Z': 0, 'A': 0
+        # }
 
         # self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
         # self.hard_limits = self.config.get("hard_limits", {})
@@ -518,7 +520,7 @@ class Microscope(Instrument):
             self.motor_map.update(group)
 
         # acquisition parameters
-        self.acquisition_parameters = AcquisitionParameters()
+        self.acquisition_parameters = AcquisitionParameters(self)
 
         # Motion control
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
@@ -579,13 +581,13 @@ class Microscope(Instrument):
             'mopen': self.open_mono_shutter,
             # 'isrun': self.motion_control.wait_for_motors,
             # camera commands
-            'acq': self.acquire_one_frame,
+            'acquire': self.acquire_one_frame,
             'run': self.start_continuous_acquisition,
             'stop': self.stop_continuous_acquisition,
             'roi': self.set_roi,
             'setbin': self.set_camera_binning,
             'caminfo': self.camera_info,
-            'temp': self.get_camera_temperature,
+            'temp': self.get_detector_temperature,
             'refresh': self.refresh_camera,
             'camclose': self.close_camera,
             'camspec': self.set_acq_spectrum_mode,
@@ -612,11 +614,13 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
+
+    
     
     @ui_callable
     def open_acquisition_gui(self):
         root = tk.Tk()
-        params = AcquisitionParameters(microscope=self)
+        params = self.acquisition_parameters
         app = AcquisitionGUI(root, params)
         root.mainloop()
 
@@ -1017,6 +1021,73 @@ class Microscope(Instrument):
         self.motion_control.move_motors({'p_out': angle})
         print('Polarizer moved to {} degrees'.format(angle))
 
+    def _parse_stage_motion_command(command):
+        """
+        Accepts either:
+        - A string such as 'x100 y200 z200', 'y21 z34', or 'y2 x5 z2'
+        - A tuple of 3 floats
+        Returns a dictionary mapping keys "X", "Y", "Z" to their respective float values.
+        For string inputs, only keys present in the string are added.
+        For tuple inputs, assumes order is (X, Y, Z).
+        """
+        if isinstance(command, dict):
+            return command  # If command is already a dictionary, return it as is.
+        # If command is a string
+        if isinstance(command, str):
+            result = {}
+            # Split string by whitespace and iterate through each component
+            for part in command.split():
+                # The first character represents the key, which we capitalize
+                # and the rest is the numeric part.
+                if len(part) < 2:
+                    continue  # skip any malformed parts
+                key = part[0].upper()
+                try:
+                    value = float(part[1:])
+                    # Only add key if it is one of the expected options.
+                    if key in ['X', 'Y', 'Z']:
+                        result[key] = value
+                except ValueError:
+                    raise ValueError(f"Invalid numeric value in part: {part}")
+            return result
+
+        # If command is a tuple or list of length 3
+        elif isinstance(command, (tuple, list)):
+            if len(command) != 3:
+                raise ValueError("Tuple input must have exactly three numeric values.")
+            # Validate that each element is a float (or convertible to float)
+            try:
+                x, y, z = float(command[0]), float(command[1]), float(command[2])
+            except ValueError:
+                raise ValueError("All tuple elements must be numeric values.")
+            return {"X": x, "Y": y, "Z": z}
+
+        else:
+            raise TypeError("Input must be either a string or a tuple/list of three floats.")
+
+
+    def move_stage(self, motion_command):
+        '''Moves the microcsope sample stage in the X, Y and Z directions, by travel distance in micrometers.'''
+
+        motion_dict = self._parse_stage_motion_command(motion_command)
+        self.motion_control.move_motors(motion_dict)
+        for key, value in motion_dict.items():
+            if key in self.stage_positions_microns:
+                self.stage_positions_microns[key] += value
+
+    @property
+    def stage_positions_microns(self):
+        return self.acquisition_control.stage_positions
+    
+    @stage_positions_microns.setter
+    def stage_positions_microns(self, stage_dict):
+        if not isinstance(stage_dict, dict):
+            raise ValueError("Stage positions must be a dictionary")
+        for key in stage_dict.keys():
+            if key not in self.stage_positions_microns:
+                raise ValueError(f"Invalid stage position: {key}")
+        self.acquisition_control.stage_positions = stage_dict
+    
     @ui_callable
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
@@ -1328,13 +1399,19 @@ class Microscope(Instrument):
     @ui_callable
     def acquire_one_frame(self, filename=None, frame_index=0):
         if filename is None:
-            filename = 'default'.format(frame_index)
+            filename = self.acquisition_parameters.general_parameters['filename']
             
         image_data = self.camera.safe_acquisition(export=False)
         wavelength_axis = self.wavelength_axis
-        metadata = self.construct_metadata()
-        frame_index = self.current_frame_index
-        out_path = os.path.join(self.raw_data_dir, f"{filename}_{frame_index:06}.npz")
+        if self.wavelength_axis is None:
+            wavelength_axis = np.arange(image_data.shape[1])
+        metadata = self.acquisition_parameters._construct_metadata()
+        frame_index = self.self.acquisition_parameters.general_parameters['frame_index'] # TODO: Reconstruct all calls to acquisition_params dicts as get_params functions
+        out_path = os.path.join(self.data_dir, filename, f"{filename}_{frame_index:06}.npz")
+        
+        if not os.path.exists(os.path.dirname(out_path)):
+            os.makedirs(os.path.dirname(out_path))
+
         np.savez_compressed(out_path,
                             image=image_data,
                             wavelength=wavelength_axis,
@@ -1370,9 +1447,9 @@ class Microscope(Instrument):
         self.camera.camera_info()
 
     @ui_callable
-    def get_camera_temperature(self):
+    def get_detector_temperature(self):
         '''Returns the camera temperature.'''
-        return self.camera.check_camera_temperature()
+        return round(self.camera.check_camera_temperature(), 2)
 
     @ui_callable
     def get_laser_motor_positions(self):

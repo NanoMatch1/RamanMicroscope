@@ -15,11 +15,13 @@ class AcquisitionParameters:
             'filename': 'default',
             'raman_shift': 0.0,
             'laser_power': 4.5,
+            'scan_index': 0,
+            'scan_type': None,
         }
         self.motion_parameters = {
-            'start_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            'end_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            'resolution': {'x': 0.0, 'y': 0.0, 'z': 0.0}
+            'start_position': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
+            'end_position': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
+            'resolution': {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
         }
         self.wavelength_parameters = {
             'start_wavelength': 0.0,
@@ -31,9 +33,72 @@ class AcquisitionParameters:
             'output': {'start_angle': 0.0, 'end_angle': 0.0, 'resolution': 1.0}
         }
 
+        self._current_parameters = {
+            'sample_position': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
+            'laser_wavelength': 0.0,
+            'polarization_in_angle': 0.0,
+            'polarization_out_angle': 0.0,
+            'pump_laser_power': 0.0,
+            'monochromator_wavelength': 0.0,
+            'spectrometer_steps': 0.0,
+            'acquisition_time': 0.0,
+            'filename': 'default',
+            'scan_index': 0,
+            'scan_type': None,
+            'detector_temperature': 0.0
+        }
+
+    @property
+    def stage_positions(self):
+        return self._current_parameters['sample_position']
+    
+    @stage_positions.setter
+    def stage_positions(self, positions):
+        if not isinstance(positions, dict):
+            raise ValueError("Stage positions must be a dictionary.")
+        for key in positions:
+            if key not in self.stage_positions:
+                raise ValueError(f"Invalid stage position key: {key}")
+        self._current_parameters['sample_position'] = positions
+
+    def get_all_current_parameters(self):
+        detector_temp = self.microscope.get_detector_temperature()
+        self.set_current_parameters({'detector_temperature': detector_temp})
+        # self.set_current_parameters({'sample_position': {key:value for key, value in self.microscope.stage_position_microns.items if key in self.sample_position.keys()}})
+
+        return self._current_parameters.update(self.general_parameters)
+    
+    def set_current_parameters(self, parameters):
+        if not isinstance(parameters, dict):
+            raise ValueError("Error in AcquisitionParameters.set_current_parameters: Parameters should be a dictionary.")
+        for key, value in parameters.items():
+            if key in self._current_parameters:
+                self._current_parameters[key] = value
+            else:
+                raise ValueError(f"Invalid parameter: {key}")
+            
+    def _construct_metadata(self):
+        '''Constructs the dictionary of metadata to include in the saved file. This includes:
+        - Sample position (x, y, z) in microns
+        - laser wavelength in nm
+        - pump laser power in Watts
+        - monochromator wavelength in nm
+        - spectrometer steps position
+        - polarizaton in and out angles
+        - acquisition time in milliseconds
+        - filename
+        - scan index (if part of a scan, else 0)
+        - scan type (if part of a scan, else None)
+        - detector temperature in degrees Celsius
+
+        '''
+        metadata = self.get_all_current_parameters()
+
+        return metadata
+
     def estimate_scan_duration(self):
-        x_range = (self.motion_parameters['end_position']['x'] - self.motion_parameters['start_position']['x']) / self.motion_parameters['resolution']['x']
-        y_range = (self.motion_parameters['end_position']['y'] - self.motion_parameters['start_position']['y']) / self.motion_parameters['resolution']['y']
+        x_range = (self.motion_parameters['end_position']['X'] - self.motion_parameters['start_position']['X']) / self.motion_parameters['resolution']['X']
+        y_range = (self.motion_parameters['end_position']['Y'] - self.motion_parameters['start_position']['Y']) / self.motion_parameters['resolution']['Y']
         p_range = (self.polarization_parameters['input']['end_angle'] - self.polarization_parameters['input']['start_angle']) / self.polarization_parameters['input']['resolution']
         w_range = (self.wavelength_parameters['end_wavelength'] - self.wavelength_parameters['start_wavelength']) / self.wavelength_parameters['resolution']
 
@@ -121,16 +186,16 @@ class AcquisitionParameters:
             self.polarization_parameters['input']['resolution']
         )
         x_positions = generate_array(
-            self.motion_parameters['start_position']['x'],
-            self.motion_parameters['end_position']['x'],
-            self.motion_parameters['resolution']['x']
+            self.motion_parameters['start_position']['X'],
+            self.motion_parameters['end_position']['X'],
+            self.motion_parameters['resolution']['X']
         )
         y_positions = generate_array(
-            self.motion_parameters['start_position']['y'],
-            self.motion_parameters['end_position']['y'],
-            self.motion_parameters['resolution']['y']
+            self.motion_parameters['start_position']['Y'],
+            self.motion_parameters['end_position']['Y'],
+            self.motion_parameters['resolution']['Y']
         )
-        z_val = self.motion_parameters['start_position']['z']
+        z_val = self.motion_parameters['start_position']['Z']
 
         prev = [None] * 3
         for wl in wavelength_list:
@@ -165,7 +230,8 @@ class AcquisitionParameters:
             for command, change in zip(command_hierarchy, step):
                 if change is not None:
                     command(change)
-            spectrum = microscope.acquire()
+            
+            spectrum = microscope.acquire_one_frame()
             self.save_spectrum(step, spectrum)
         status_callback("Scan complete.")
         progress_callback(total_steps, total_steps, start_time)

@@ -152,7 +152,6 @@ class Interface:
 
         self.acq_time = 1
         self.centre_wavelength = 376886
-        self.filename = 'default'
         self.data = []
 
         self.flag_dict = { 
