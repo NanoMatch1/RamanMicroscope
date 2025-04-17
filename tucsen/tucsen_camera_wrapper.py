@@ -364,7 +364,7 @@ class TucamCamera:
         self.set_acqtime(self.acqtime)
         self.set_image_processing(0)
         self.set_resolution(1)
-        self.start_keep_camera_cooled()
+        # self.start_keep_camera_cooled()
         # self.set_denoise(0)
         self.set_image_and_gain()
         self.set_roi(self.roi_new)
@@ -484,7 +484,8 @@ class TucamCamera:
             data = self._generate_simulated_image(width, height)
             
             if export:
-                self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
+                # self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
+                self.interface.microscope.save_acquisition(data, filename='test', save_dir=os.path.join(self.script_dir, save_dir), overwrite=False)
                 time.sleep(0.001)
             
             return data
@@ -546,7 +547,8 @@ class TucamCamera:
                     if data is None:
                         print("Failed to acquire frame.")
                         break
-                    self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
+                    # self.export_data(data, 'transient_data', save_dir=self.transient_dir, wavelength_axis=self.interface.microscope.wavelength_axis, overwrite=True)
+                    self.interface.microscope.acquisition_control.save_spectrum(data, filename='transient_data')
                     time.sleep(0.001)
                 except Exception as e:
                     print(f"Acquisition error: {e}")
@@ -568,7 +570,7 @@ class TucamCamera:
         self.is_running = False
         self.deallocate_buffer_and_stop()
     
-    def check_camera_temperature(self, report=True):
+    def check_camera_temperature(self, report=False):
         """
         Checks and prints the current camera temperature.
         """

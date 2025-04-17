@@ -546,6 +546,7 @@ class Microscope(Instrument):
             'allmotors': self.get_all_motor_positions,
             'ramanmode': self.go_to_raman_mode,
             'imagemode': self.go_to_image_mode,
+            'wavelengthaxis': self.generate_wavelength_axis,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
             'report': self.report_status,
             'writemotors': self.write_motor_positions,
@@ -623,6 +624,12 @@ class Microscope(Instrument):
     @property
     def filename(self):
         return self.acquisition_control.filename
+    
+    @ui_callable
+    def generate_wavelength_axis(self):
+        spectrometer_wavelength = self.calculate_spectrometer_wavelength()['triax'] # TODO:change to getter
+        self.wavelength_axis = self.calibration_service.generate_wavelength_axis(spectrometer_wavelength)
+
     
     @ui_callable
     def go_to_image_mode(self):
@@ -852,6 +859,7 @@ class Microscope(Instrument):
         '''Connects to the spectrometer after already running.'''
         self.interface.connect_to_triax()
         print('Connected to TRIAX spectrometer')
+        self.generate_wavelength_axis()
 
     @ui_callable
     def connect_to_camera(self):
@@ -1391,14 +1399,37 @@ class Microscope(Instrument):
         self.interface.debug_skip.append('camera')
 
     @ui_callable
-    def acquire_one_frame(self, filename=None, scan_index=0, export=True):
+    def acquire_one_frame(self, filename=None, scan_index=0, export=False):
         if filename is None:
             filename = self.acquisition_control.general_parameters['filename']
 
         image_data = self.camera.safe_acquisition(export=export)
-     
+
+        if export:
+            self.acquisition_control.save_spectrum(image_data, wavelength_axis=self.wavelength_axis, save_dir='data', filename=filename, scan_index=scan_index)
+
         return image_data
     
+    # def save_acquisition(self, image_data, filename=None, save_folder=None, scan_index=0):
+        
+    #     if self.wavelength_axis is None:
+    #         self.wavelength_axis = np.arange(image_data.shape[1]) 
+
+    #     if not save_folder:
+    #         save_folder = self.dataDir
+    #     out_path = os.path.join(self.scriptDir, save_folder, self.filename, f"{self.filename}_{scan_index:06}.npz")
+
+    #     print(out_path)
+        
+    #     if not os.path.exists(os.path.dirname(out_path)):
+    #         os.makedirs(os.path.dirname(out_path))
+
+    #     np.savez_compressed(out_path,
+    #                         image=image_data,
+    #                         wavelength=self.wavelength_axis,
+    #                         metadata=json.dumps(self.acquisition_control.metadata))
+        
+
     def prepare_dataset_acquisition(self):
         '''Prepares the dataset acquisition by setting the parameters.'''
         self.acquisition_control.prepare_acquisition()
@@ -1473,6 +1504,7 @@ class Microscope(Instrument):
     def go_to_spectrometer_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
         self.interface.spectrometer.go_to_wavelength(wavelength)
+        self.generate_wavelength_axis()
 
     @ui_callable
     def reference_calibration_from_triax(self, steps=None, shift=True):

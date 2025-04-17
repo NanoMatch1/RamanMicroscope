@@ -180,6 +180,12 @@ class Calibration:
         
         print("Master calibrations successfully built.")
 
+    def generate_wavelength_axis(self, spectrometer_wavelength, array_length=2048):
+        pseudo_pixel = self.wl_to_pixel(spectrometer_wavelength)
+        pseudo_pixel_axis = np.linspace(pseudo_pixel - 50, pseudo_pixel + array_length - 50, array_length)
+        wavelength_axis = self.pixel_to_wl(pseudo_pixel_axis)
+        return wavelength_axis
+
     def identify_microscope_mode(self, action_group):
         '''Identify if the microscope is in RamanMode or ImageMode based on the position of motor 2A (beamsplitters).'''
         if action_group['mode'] > 1000:

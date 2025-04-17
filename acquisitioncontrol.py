@@ -312,15 +312,19 @@ class AcquisitionControl:
         progress_callback(total_steps, total_steps, start_time)
         print("Scan complete.")
 
-    def save_spectrum(self, image_data, scan_index=None):
-        if scan_index is None:
-            scan_index = self.general_parameters['scan_index']
+    def save_spectrum(self, image_data, **kwargs):
+                      # wavelength_axis=None, save_dir=None, filename=None, scan_index=None):
+        scan_index = kwargs.get('scan_index', self.general_parameters['scan_index'])
+        wavelength_axis = kwargs.get('wavelength_axis', self.microscope.wavelength_axis)
+        filename = kwargs.get('filename', self.general_parameters['filename'])  
+        save_dir = kwargs.get('save_dir', self.microscope.dataDir)
 
-        wavelength_axis = self.wavelength_axis
-        if self.wavelength_axis is None:
+        if wavelength_axis is None:
+            print("No wavelength axis provided defaulting to pixels.")
             wavelength_axis = np.arange(image_data.shape[1]) 
 
-        out_path = os.path.join(self.dataDir, self.filename, f"{self.filename}_{scan_index:06}.npz")
+
+        out_path = os.path.join(self.microscope.scriptDir, save_dir, filename, f"{filename}_{scan_index:06}.npz")
         
         if not os.path.exists(os.path.dirname(out_path)):
             os.makedirs(os.path.dirname(out_path))
