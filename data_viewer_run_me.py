@@ -4,6 +4,8 @@ import os
 import time
 import threading
 import tkinter as tk
+import zipfile
+
 import traceback
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -22,6 +24,7 @@ class LiveDataPlotter:
         self.data_mode = "Image"
         self.data_mode = "Spectrum"
         self.spectrum_roi = (50,1100)
+        self.plot_limits = (700,900)
 
         self.image_limits = (None, None)
 
@@ -246,6 +249,7 @@ class LiveDataPlotter:
         if self.autoscale_enabled:
             if self.roi:  # Use ROI for Y-scaling
                 min_x, max_x = self.roi
+
                 roi_data = dataY[min_x:max_x]
                 if roi_data.size > 0:
                     self.plot_limits = np.min(roi_data), np.max(roi_data)
@@ -308,35 +312,41 @@ class LiveDataPlotter:
 
         return spectrum_data
 
+
     def monitor_file(self):
         while True:
-            if self.updating:
+            if not self.updating:
+                time.sleep(0.1)
+                continue
+
+            if not os.path.exists(self.file_path):
+                time.sleep(0.1)
+                continue
+
+            # Try loading with retries
+            for attempt in range(5):
                 try:
-                    if os.path.exists(self.file_path):
-                        # Load data from the file
-                        try:
-                            npzfile = np.load(self.file_path, allow_pickle=True)
-                            self.data = npzfile['image']
-                            self.wavelength_axis = npzfile['wavelength']
-                            self.metadata = npzfile['metadata']
-                            if len(self.data.shape) == 3:
-                                self.data = self.data[:, :, 0]
-                        except Exception as e:
-                            print(f"Error loading data from file {self.file_path}: {e}")
-                            time.sleep(0.1)
-                            continue
+                    with np.load(self.file_path, allow_pickle=True) as npzfile:
+                        self.data = npzfile['image']
+                        self.wavelength_axis = npzfile['wavelength']
+                        self.metadata = npzfile['metadata']
+                    break
+                except (ValueError, EOFError, zipfile.BadZipFile) as e:
+                    # File was probably mid‑write, back off and retry
+                    print(f"Warning: could not load {self.file_path} (attempt {attempt+1}): {e}")
+                    time.sleep(0.1)
+            else:
+                # all retries failed, skip this cycle
+                continue
 
-                        if self.data_mode == "Image":
-                            self.update_image(self.data)
-                        else:
-                            spectrum = self.frame_to_spectrum(wavelength_axis=self.wavelength_axis)
-                            self.update_plot(spectrum)
-                except PermissionError:
-                    print(f"Permission denied to access file {self.file_path}.")
-                except Exception as e:
-                    print(f"Error processing file:\n{traceback.format_exc()}")
-            time.sleep(0.1)  # Wait before checking again
+            # … now update plot as before …
+            if self.data_mode == "Image":
+                self.update_image(self.data)
+            else:
+                spectrum = self.frame_to_spectrum(wavelength_axis=self.wavelength_axis)
+                self.update_plot(spectrum)
 
+            time.sleep(0.1)
 
     def start(self):
         # Start the Tkinter event loop
