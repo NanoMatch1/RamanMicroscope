@@ -35,7 +35,8 @@ class LiveDataPlotter:
         # Create a Matplotlib figure embedded in Tkinter
         self.fig, self.ax = plt.subplots()
         self.line, = self.ax.plot([], [], 'r-')  # Initialize an empty plot
-        self.ax.vlines([50], 0, 70000)
+        # self.ax.vlines([50], 0, 70000)
+        # breakpoint()
         
         self.cursor_label = tk.Label(self.root, text="X: --, Y: --, Intensity: --")
         self.cursor_label.pack(side=tk.BOTTOM)
@@ -111,8 +112,8 @@ class LiveDataPlotter:
         self._build_canvas()  # Rebuild the entire Matplotlib canvas
 
         if self.data_mode == "Spectrum":
-            spectrum = self.frame_to_spectrum()
-            self.ax.plot(np.arange(len(spectrum)), spectrum, 'r-')  # Plot 1D spectrum
+            spectrum = self.frame_to_spectrum(wavelength_axis=self.wavelength_axis)
+            self.ax.plot(spectrum[:, 0], spectrum[:, 1], 'r-')  # Plot 1D spectrum
         else:
             self.ax.imshow(self.data, cmap='plasma')  # Plot 2D image
         
@@ -235,23 +236,24 @@ class LiveDataPlotter:
     def update_plot(self, data):
         """ Updates the spectrum plot and ensures it redraws correctly. """
         self.ax.clear()  # Ensure old plot is removed
-        x_values = np.arange(len(data))
+        dataX = data[:, 0]
+        dataY = data[:, 1]
 
-        self.ax.plot(x_values, data, 'r-')  # Replot with new data
-        self.ax.vlines([50], 0, 70000)
+        self.ax.plot(dataX, dataY, 'r-')  # Replot with new data
+        self.ax.vlines(dataY[50], 0, 70000)
 
         # Autoscale handling
         if self.autoscale_enabled:
             if self.roi:  # Use ROI for Y-scaling
                 min_x, max_x = self.roi
-                roi_data = data[min_x:max_x]
+                roi_data = dataY[min_x:max_x]
                 if roi_data.size > 0:
                     self.plot_limits = np.min(roi_data), np.max(roi_data)
                     self.ax.set_ylim(*self.plot_limits)
         else:
             self.ax.set_ylim(*self.plot_limits)
 
-
+        self.ax.set_xlim(dataX[0], dataX[-1])  # Set X limits to full range of data
 
         self.canvas.draw()  # Force Matplotlib to redraw
 
@@ -283,9 +285,8 @@ class LiveDataPlotter:
         self.canvas.draw()
 
 
-    def frame_to_spectrum(self):
+    def frame_to_spectrum(self, wavelength_axis=None):
         """ Calculate spectrum by averaging the selected ROI in the image. """
-
         if self.spectrum_roi is None:
             y_start, y_end = 0, self.data.shape[0]  # Default to full height
         else:
@@ -300,6 +301,11 @@ class LiveDataPlotter:
         data_array = self.data[y_start:y_end, :]
         spectrum_data = np.mean(data_array, axis=0)
 
+        if wavelength_axis is None:
+            wavelength_axis = np.arange(len(spectrum_data))  # Default to pixel indices
+
+        spectrum_data = np.column_stack((wavelength_axis, spectrum_data))
+
         return spectrum_data
 
     def monitor_file(self):
@@ -309,19 +315,21 @@ class LiveDataPlotter:
                     if os.path.exists(self.file_path):
                         # Load data from the file
                         try:
-                            self.data = np.load(self.file_path)
+                            npzfile = np.load(self.file_path, allow_pickle=True)
+                            self.data = npzfile['image']
+                            self.wavelength_axis = npzfile['wavelength']
+                            self.metadata = npzfile['metadata']
                             if len(self.data.shape) == 3:
                                 self.data = self.data[:, :, 0]
                         except Exception as e:
                             print(f"Error loading data from file {self.file_path}: {e}")
-                            time.sleep(1)
+                            time.sleep(0.1)
                             continue
 
                         if self.data_mode == "Image":
                             self.update_image(self.data)
                         else:
-                            breakpoint()
-                            spectrum = self.frame_to_spectrum()
+                            spectrum = self.frame_to_spectrum(wavelength_axis=self.wavelength_axis)
                             self.update_plot(spectrum)
                 except PermissionError:
                     print(f"Permission denied to access file {self.file_path}.")
@@ -338,7 +346,9 @@ class LiveDataPlotter:
 if __name__ == "__main__":
     # Replace with your actual file path
     scriptDir = os.path.dirname(__file__)
-    file_path = os.path.join(scriptDir, 'transient', 'transient_data.npy')
+    dataDir = os.path.join(scriptDir, "data", "transient_data")
+    files = sorted([x for x in os.listdir(dataDir) if x.endswith(".npz")])
+    file_path = os.path.join(dataDir, files[-1])
 
     plotter = LiveDataPlotter(file_path, bin_centre=70, bin_width=10)
     plotter.start()
