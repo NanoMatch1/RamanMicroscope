@@ -15,13 +15,15 @@ from matplotlib.widgets import RectangleSelector
 class LiveDataPlotter:
     def __init__(self, image_name, wavelengths, dataDir, **kwargs):
         self.dataDir = dataDir
-        self.image_name = image_name
-        self.wavelength_name = wavelengths
+        self.image_file_path = os.path.join(self.dataDir, image_name)
+        self.wavelengths_file_path = os.path.join(self.dataDir, wavelengths)
         self.autoscale_enabled = True
         self.updating = True
         self.roi = None  # Region of Interest for autoscaling
         self.y_center_entry = kwargs.get('bin_center', 70)
         self.y_width_entry = kwargs.get('bin_width', 10)
+
+        self.wavelength_axis = None
 
         self.data_mode = "Image"
         self.data_mode = "Spectrum"
@@ -55,9 +57,12 @@ class LiveDataPlotter:
         # Create control buttons and entry fields
         self.create_controls()
 
-        # Start a background thread to monitor the file and update the plot
-        self.monitor_thread = threading.Thread(target=self.monitor_file, daemon=True)
-        self.monitor_thread.start()
+        # Start background threads to monitor the files and update the plot
+        self.monitor_image_thread = threading.Thread(target=self.monitor_image_file, daemon=True)
+        self.monitor_image_thread.start()
+
+        self.monitor_wavelength_thread = threading.Thread(target=self.monitor_wavelength_file, daemon=True)
+        self.monitor_wavelength_thread.start()
         
         
         self.apply_y_roi()
@@ -245,8 +250,16 @@ class LiveDataPlotter:
         dataY = data[:, 1]
 
         self.ax.plot(dataX, dataY, 'r-')  # Replot with new data
-        self.ax.vlines(dataY[50], 0, 70000)
+        # draw a marker line at the 50th pixel's wavelength
+        target_wl = dataX[50]
 
+        # Option A: use axvline (spans full y‑axis automatically)
+        self.ax.axvline(
+            target_wl,
+            color='blue',
+            linestyle='-',
+            linewidth=1
+        )
         # Autoscale handling
         if self.autoscale_enabled:
             if self.roi:  # Use ROI for Y-scaling
@@ -291,7 +304,7 @@ class LiveDataPlotter:
         self.canvas.draw()
 
 
-    def frame_to_spectrum(self, wavelength_axis=None):
+    def frame_to_spectrum(self):
         """ Calculate spectrum by averaging the selected ROI in the image. """
         if self.spectrum_roi is None:
             y_start, y_end = 0, self.data.shape[0]  # Default to full height
@@ -307,59 +320,63 @@ class LiveDataPlotter:
         data_array = self.data[y_start:y_end, :]
         spectrum_data = np.mean(data_array, axis=0)
 
-        if wavelength_axis is None:
-            wavelength_axis = np.arange(len(spectrum_data))  # Default to pixel indices
+        if self.wavelength_axis is None:
+            self.wavelength_axis = np.arange(len(spectrum_data))  # Default to pixel indices
 
-        spectrum_data = np.column_stack((wavelength_axis, spectrum_data))
+        spectrum_data = np.column_stack((self.wavelength_axis, spectrum_data))
 
         return spectrum_data
 
 
-    def monitor_file(self):
+    def monitor_image_file(self):
+
         while True:
-            if not self.updating:
-                time.sleep(0.1)
-                continue
-
-
-            if not os.path.exists(os.path.join(self.dataDir, self.image_name)) or not os.path.exists(os.path.join(self.dataDir, self.wavelength_name)):
-                print(f"Warning: {self.image_name} or {self.wavelength_name} not found in {self.dataDir}.")
-                time.sleep(0.1)
-                continue
-
-            # Try loading with retries
-            for attempt in range(5):
+            if self.updating:
                 try:
-                    # with np.load(self.file_path, allow_pickle=True) as npzfile:
-                    #     self.data = npzfile['image']
-                    #     self.wavelength_axis = npzfile['wavelength']
-                    #     self.metadata = npzfile['metadata']
-                    self.data = np.load(os.path.join(self.dataDir, self.image_name))
+                    if os.path.exists(self.image_file_path):
+                        # Load data from the file
+                        try:
+                            self.data = np.load(self.image_file_path)
+                            if len(self.data.shape) == 3:
+                                self.data = self.data[:, :, 0]
+                        except Exception as e:
+                            print(f"Error loading data from file {self.image_file_path}: {e}")
+                            time.sleep(1)
+                            continue
 
-                except (ValueError, EOFError, zipfile.BadZipFile) as e:
-                    # File was probably mid‑write, back off and retry
-                    print(f"Warning: could not load {self.image_name} (attempt {attempt+1}): {e}")
-                    time.sleep(0.1)
-                
+                        if self.data_mode == "Image":
+                            self.update_image(self.data)
+                        else:
+                            spectrum = self.frame_to_spectrum()
+                            self.update_plot(spectrum)
+                except PermissionError:
+                    print(f"Permission denied to access file {self.image_file_path}.")
+                except Exception as e:
+                    print(f"Error processing file:\n{traceback.format_exc()}")
+            time.sleep(0.1)  # Wait before checking again
+
+    def monitor_wavelength_file(self):
+        while True:
+            if self.updating:
                 try:
-                    self.wavelength_axis = np.load(os.path.join(self.dataDir, self.wavelength_name))
+                    if os.path.exists(self.wavelengths_file_path):
+                        # Load data from the file
+                        try:
+                            self.wavelength_axis = np.load(self.wavelengths_file_path)
+                        except Exception as e:
+                            print(f"Error loading wavelengths from file {self.wavelengths_file_path}: {e}")
+                            time.sleep(1)
+                            continue
 
-                except (ValueError, EOFError, zipfile.BadZipFile) as e:
-                    # File was probably mid‑write, back off and retry
-                    print(f"Warning: could not load {self.wavelength_name} (attempt {attempt+1}): {e}")
-                    time.sleep(0.1)
-            else:
-                # all retries failed, skip this cycle
-                continue
+                        if self.data_mode == "Spectrum":
+                            spectrum = self.frame_to_spectrum()
+                            self.update_plot(spectrum)
+                except PermissionError:
+                    print(f"Permission denied to access file {self.wavelengths_file_path}.")
+                except Exception as e:
+                    print(f"Error processing file:\n{traceback.format_exc()}")
+            time.sleep(0.1)  # Wait before checking again
 
-            # … now update plot as before …
-            if self.data_mode == "Image":
-                self.update_image(self.data)
-            else:
-                spectrum = self.frame_to_spectrum(wavelength_axis=self.wavelength_axis)
-                self.update_plot(spectrum)
-
-            time.sleep(0.1)
 
     def start(self):
         # Start the Tkinter event loop
@@ -375,6 +392,6 @@ if __name__ == "__main__":
     # files = sorted([x for x in os.listdir(dataDir) if x.endswith(".npz")])
     # file_path = os.path.join(dataDir, files[-1])
 
-    plotter = LiveDataPlotter(image_name, wavelengths, dataDir, bin_centre=70, bin_width=50)
+    plotter = LiveDataPlotter(image_name, wavelengths, dataDir, bin_centre=83, bin_width=30)
     plotter.start()
 
