@@ -4,6 +4,7 @@ import numpy as np
 import csv
 import json
 import scipy.optimize as opt
+from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 
@@ -1170,10 +1171,9 @@ class CameraCalibration:
     def calibrate_camera_axis(self, poly_order=2, load=False):
         """Automatically calibrate a motor axis based on peak fitting of a spectral dataset."""
 
-        
-            # dataSet = self._extract_peak_positions(file, motor_label, manual=manual, **kwargs)
-        peak_dict = {}
+        peak_dict = {}  # Dictionary to store peaks per spectrometer wavelength
 
+        # Process peak dictionary from `self.dataSet.peakfit_dict`
         for filename, peakdict in self.dataSet.peakfit_dict.items():
             peaks = [Peak(*p) for p in peakdict.get('peaks', [])]
             spectrometer_wavelength = filename.split('-')[0].split('_')[1]
@@ -1181,7 +1181,6 @@ class CameraCalibration:
             try:
                 spectrometer_wavelength = float(spectrometer_wavelength)
                 laser_wavelength = float(laser_wavelength)
-
             except ValueError:
                 print(f"Invalid wavelength format in filename: {filename}")
                 continue
@@ -1190,12 +1189,34 @@ class CameraCalibration:
                 peak_dict[spectrometer_wavelength] = {}
             peak_dict[spectrometer_wavelength][laser_wavelength] = peaks[0].pos
 
-        print(peak_dict)
+        # Now perform the calibration using pixel shifts between consecutive sets
+        # return self._calibrate_pixel_to_wavelength(peak_dict)
+        self._build_pixel_array(peak_dict)
+    
+    def _build_pixel_array(self, peak_dict):
+        curve_dict = {}
+
+        for name, peaks in peak_dict.items():
+            pixel_array = []
+            for wavelength, peak in peaks.items():
+                pixel_array.append((float(peak), float(wavelength)))
+
+            pixel_array.sort()
+            curve_dict[name] = np.array(pixel_array)
+
+        for idx, (name, data) in enumerate(curve_dict.items()):
+            print(f"Curve: {name}")
+            plt.scatter(data[:, 0], data[:, 1], label=name)
+
+        plt.legend()
+        plt.show()
+        plt.xlabel('Wavelength (nm)')
         breakpoint()
 
     
-    def _generate_motor_calibration(self, motor_label, dataSet, poly_order=2, show=False):
+    def _generate_individual_calibration(self, motor_label, dataSet, poly_order=2, show=False):
         peak_positions = []
+        # TODO>:HERE
 
         for wavelength, peakdict in dataSet.peakfitDict.items():
             peaks = [Peak(*p) for p in peakdict.get('peaks', [])]
