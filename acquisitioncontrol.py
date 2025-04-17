@@ -314,7 +314,15 @@ class AcquisitionControl:
 
     # def save_transient_spectrum(self, image_data, wavelength_axis, **kwargs):
     def save_spectrum_transient(self, image_data, wavelength_axis=None, **kwargs):
+        if wavelength_axis is None:
+            print("No wavelength axis provided—defaulting to pixel indices.")
+            wavelength_axis = np.arange(image_data.shape[1])
         
+        wavelength_path = os.path.join(self.microscope.scriptDir, 'data', 'transient_data', 'transient_wavelengths.npy')
+        image_path = os.path.join(self.microscope.scriptDir, 'data', 'transient_data', 'transient_data.npy')
+        np.save(image_path, image_data)
+        np.save(wavelength_path, wavelength_axis)
+
 
     def save_spectrum(self, image_data, **kwargs):
         scan_index     = kwargs.get('scan_index',     self.general_parameters['scan_index'])
@@ -350,7 +358,7 @@ class AcquisitionControl:
                 # maybe the reader just hasn’t closed it yet
                 time.sleep(0.1)
         else:
-            print(f"Warning: could not replace {out_path} after multiple attempts")
+            print(f"Warning: could not replace {out_path} after {attempt} attempts")
 
     @property
     def wavelength_axis(self):
