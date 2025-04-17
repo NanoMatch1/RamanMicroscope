@@ -315,7 +315,7 @@ class AcquisitionControl:
     # def save_transient_spectrum(self, image_data, wavelength_axis, **kwargs):
     def save_spectrum_transient(self, image_data, wavelength_axis=None, **kwargs):
         if wavelength_axis is None:
-            print("No wavelength axis provided—defaulting to pixel indices.")
+            # print("No wavelength axis provided—defaulting to pixel indices.")
             wavelength_axis = np.arange(image_data.shape[1])
         
         wavelength_path = os.path.join(self.microscope.scriptDir, 'data', 'transient_data', 'transient_wavelengths.npy')
