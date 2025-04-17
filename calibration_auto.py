@@ -1087,9 +1087,23 @@ def mask_data(dataDict, range:tuple):
 class CameraCalibration:
 
 
-    def __init__(self, dataDir):
-        self.data_dict = {}  # Dictionary to hold data from all CSV files
-        self.dataDir = dataDir
+    def __init__(self, dataDir=None, dataSet=None):
+        if dataSet is None and dataDir is None:
+            raise ValueError("Either dataDir or dataSet must be provided.")
+        self.dataSet = dataSet
+        if dataSet is None:
+            self.dataSet = asp.DataSet(dataDir)
+            self.data_dict = {}  # Dictionary to hold data from all CSV files
+        else:
+            self.dataSet = dataSet
+
+        if dataDir is None:
+            self.dataDir = dataSet.dataDir
+        else:
+            self.dataDir = dataDir
+
+        self.series_name = os.path.basename(self.dataDir)  # Series name for the dataset
+
         self.calibrations = {}  # Dictionary to hold calibration data
         self.calibration_metrics = {}  # Dictionary to hold calibration metrics
         self.report_dict = {}  # Dictionary to hold report data
@@ -1110,7 +1124,7 @@ class CameraCalibration:
         """Load all CSV files."""
 
         # self.dataSet = asp.DataSet(self.dataDir)
-        breakpoint()
+        # breakpoint()
 
         for file in self.files:
             file_path = os.path.join(self.dataDir, file)
@@ -1132,10 +1146,10 @@ class CameraCalibration:
     
     def _extract_peak_positions(self, manual=False, **kwargs):
         # smoothing = self.kwargs.get('smoothing', 3)
-        dataSet = asp.DataSet(dataDir)
+        
 
 
-        for cal_obj in dataSet.dataDict.values():
+        for cal_obj in self.dataSet.data_dict.values():
             cal_obj._minimise_data()
             # cal_obj._apply_smoothing(window_length=smoothing)
 
@@ -1144,23 +1158,126 @@ class CameraCalibration:
             'peak_type': 'voigt_pseudo',
             'peak_sign': 'positive',
             'threshold': 0.01,
-            'peak_detect': 'all',
+            'peak_detect': None,
             'copy_peaks': False,
             'show_ui': manual,
         }
 
-        dataSet._peakfit(peakfitting_info=peakfit_config)
-        dataSet.save_database(tagList='', seriesName=f'camera_cal_peaks_{file}')
-        return dataSet
+        self.dataSet._peakfit(peakfitting_info=peakfit_config)
+        self.dataSet.save_database(tagList='', seriesName=f'camera_cal_peaks_{self.series_name}')
+        return self.dataSet
+    
+    def calibrate_camera_axis(self, poly_order=2, load=False):
+        """Automatically calibrate a motor axis based on peak fitting of a spectral dataset."""
+
+        
+            # dataSet = self._extract_peak_positions(file, motor_label, manual=manual, **kwargs)
+        peak_dict = {}
+
+        for filename, peakdict in self.dataSet.peakfit_dict.items():
+            peaks = [Peak(*p) for p in peakdict.get('peaks', [])]
+            spectrometer_wavelength = filename.split('-')[0].split('_')[1]
+            laser_wavelength = filename.split('-')[1][:-8]
+            try:
+                spectrometer_wavelength = float(spectrometer_wavelength)
+                laser_wavelength = float(laser_wavelength)
+
+            except ValueError:
+                print(f"Invalid wavelength format in filename: {filename}")
+                continue
+
+            if spectrometer_wavelength not in peak_dict:
+                peak_dict[spectrometer_wavelength] = {}
+            peak_dict[spectrometer_wavelength][laser_wavelength] = peaks[0].pos
+
+        print(peak_dict)
+        breakpoint()
+
+    
+    def _generate_motor_calibration(self, motor_label, dataSet, poly_order=2, show=False):
+        peak_positions = []
+
+        for wavelength, peakdict in dataSet.peakfitDict.items():
+            peaks = [Peak(*p) for p in peakdict.get('peaks', [])]
+            if not peaks:
+                continue
+            peaks.sort(key=lambda p: p.amp)
+            peak = peaks[-1]
+            peak_positions.append((float(wavelength), float(peak.pos)))
+
+        if not peak_positions:
+            raise RuntimeError(f"No peaks found for calibration of {motor_label}.")
+
+        peak_positions.sort()
+        data = np.array(peak_positions)
+        wavelengths = data[:, 0]
+        self.wavelength_axis = wavelengths # needed for linked calibrations
+        steps = data[:, 1]
+
+        # Forward calibration: wavelength → motor steps
+        coeff_fwd = np.polyfit(wavelengths, steps, poly_order)
+        poly_fwd = np.poly1d(coeff_fwd)
+        pred_steps = poly_fwd(wavelengths)
+        residuals_fwd = steps - pred_steps
+        metrics_fwd = self.calculate_fit_metrics(steps, pred_steps)
+
+        # Inverse calibration: motor steps → wavelength
+        coeff_inv = np.polyfit(steps, wavelengths, poly_order)
+        poly_inv = np.poly1d(coeff_inv)
+        pred_wl = poly_inv(steps)
+        residuals_inv = wavelengths - pred_wl
+        metrics_inv = self.calculate_fit_metrics(wavelengths, pred_wl)
+
+        # Store calibration
+        self.calibrations[f'wl_to_{motor_label}'] = coeff_fwd.tolist()
+        self.calibrations[f'{motor_label}_to_wl'] = coeff_inv.tolist()
+        self.calibration_metrics[f'wl_to_{motor_label}'] = metrics_fwd
+        self.calibration_metrics[f'{motor_label}_to_wl'] = metrics_inv
+
+        if show or getattr(self, 'showplots', False):
+            fig, ax = plt.subplots(2, 1)
+            ax[0].scatter(wavelengths, steps, color='black', label='Measured')
+            ax[0].plot(wavelengths, pred_steps, color='tab:blue', label='Fit')
+            ax[0].set_title(f'Auto Calibration: Wavelength to {motor_label.upper()}')
+            ax[0].set_ylabel('Motor Steps')
+            ax[0].legend()
+
+            ax[1].plot(wavelengths, residuals_fwd, marker='o', label='Residuals')
+            ax[1].set_xlabel('Wavelength (nm)')
+            ax[1].set_ylabel('Residuals (steps)')
+            ax[1].legend()
+            plt.tight_layout()
+            plt.show()
+
+        self.save_calibration(f'autocal_{motor_label}')
+
+        return {
+            'forward': {
+                'coeff': coeff_fwd,
+                'metrics': metrics_fwd,
+                'poly': poly_fwd,
+            },
+            'inverse': {
+                'coeff': coeff_inv,
+                'metrics': metrics_inv,
+                'poly': poly_inv,
+            }
+        }
+
+    
     
 
     
 
 dataDir = r'C:\Users\Raman\matchbook\RamanMicroscope\data\camera_calibration_data_17-04-25\processed_spectra'
-camcal = CameraCalibration(dataDir)
-
-camcal.load_all_csv()
-camcal._extract_peak_positions('camera_calibration_17-04-25.csv', manual=True, smoothing=3)
+dataSet = asp.DataSet(dataDir)
+dataSet.access_database('camera_cal_peaks_processed_spectra')
+camcal = CameraCalibration(dataSet=dataSet, dataDir=dataDir)
+# breakpoint()
+# camcal.load_all_csv()
+# camcal._extract_peak_positions(manual=True)
+# camcal.dataSet.plot_peaks()
+camcal.calibrate_camera_axis(poly_order=2, load=True)
 breakpoint()
 
 # series name - name of file
