@@ -312,28 +312,46 @@ class AcquisitionControl:
         progress_callback(total_steps, total_steps, start_time)
         print("Scan complete.")
 
+    # def save_transient_spectrum(self, image_data, wavelength_axis, **kwargs):
+    def save_spectrum_transient(self, image_data, wavelength_axis=None, **kwargs):
+        
+
     def save_spectrum(self, image_data, **kwargs):
-                      # wavelength_axis=None, save_dir=None, filename=None, scan_index=None):
-        scan_index = kwargs.get('scan_index', self.general_parameters['scan_index'])
+        scan_index     = kwargs.get('scan_index',     self.general_parameters['scan_index'])
         wavelength_axis = kwargs.get('wavelength_axis', self.microscope.wavelength_axis)
-        filename = kwargs.get('filename', self.general_parameters['filename'])  
-        save_dir = kwargs.get('save_dir', self.microscope.dataDir)
+        filename       = kwargs.get('filename',       self.general_parameters['filename'])
+        save_dir       = kwargs.get('save_dir',       self.microscope.dataDir)
 
         if wavelength_axis is None:
-            print("No wavelength axis provided defaulting to pixels.")
-            wavelength_axis = np.arange(image_data.shape[1]) 
+            print("No wavelength axis provided—defaulting to pixel indices.")
+            wavelength_axis = np.arange(image_data.shape[1])
 
+        # build output paths
+        out_dir = os.path.join(self.microscope.scriptDir, save_dir, filename)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path    = os.path.join(out_dir, f"{filename}_{scan_index:06}.npz")
+        tmp_path    = os.path.join(out_dir,'temp', f"{filename}_{scan_index:06}.npz")
+        if not os.path.exists(os.path.dirname(tmp_path)):
+            os.makedirs(os.path.dirname(tmp_path))
 
-        out_path = os.path.join(self.microscope.scriptDir, save_dir, filename, f"{filename}_{scan_index:06}.npz")
-        
-        if not os.path.exists(os.path.dirname(out_path)):
-            os.makedirs(os.path.dirname(out_path))
+        # write compressed data to temporary file
+        np.savez_compressed(
+            tmp_path,
+            image=image_data,
+            wavelength=wavelength_axis,
+            metadata=json.dumps(self.metadata)
+        )
 
-        np.savez_compressed(out_path,
-                            image=image_data,
-                            wavelength=wavelength_axis,
-                            metadata=json.dumps(self.metadata))
-        
+        for attempt in range(5):
+            try:
+                os.replace(tmp_path, out_path)
+                break
+            except PermissionError as e:
+                # maybe the reader just hasn’t closed it yet
+                time.sleep(0.1)
+        else:
+            print(f"Warning: could not replace {out_path} after multiple attempts")
+
     @property
     def wavelength_axis(self):
         return self.microscope.wavelength_axis
