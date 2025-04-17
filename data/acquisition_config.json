@@ -1,7 +1,7 @@
 {
   "general_parameters": {
-    "acquisition_time": 1000.0,
-    "filename": "run-rest2",
+    "acquisition_time": "500",
+    "filename": "750.184-750.184",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "scan_index": 0,

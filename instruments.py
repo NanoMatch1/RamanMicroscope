@@ -620,6 +620,10 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
+    @property
+    def filename(self):
+        return self.acquisition_control.filename
+    
     @ui_callable
     def go_to_image_mode(self):
         '''Set the acquisition mode to image mode.'''
@@ -2310,7 +2314,8 @@ class TucsenCamera(Camera):
             # plt.plot(data[:, 0], data[:, 1])
         filepath = os.path.join(self.save_dir, filename)
         np.save(filepath, data)
-        print('Data saved to %s' % filepath)
+        if not 'transient_data' in filename:
+            print('Data saved to %s' % filepath)
 
     def SetExposure(self, value):
 
