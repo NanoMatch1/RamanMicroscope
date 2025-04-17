@@ -306,6 +306,34 @@ class TucamCamera:
         sim_frame = np.expand_dims(img, axis=2)
         
         return sim_frame
+    
+    def start_keep_camera_cooled(self):
+        """Start a low‑overhead continuous stream to keep the fan running."""
+        if getattr(self, "_keep_cool_thread", None) and self._keep_cool_thread.is_alive():
+            return  # already running
+
+        # allocate once and hold
+        self.allocate_buffer_and_start()
+        self._keep_cool_stop = threading.Event()
+
+        def _cooling_loop():
+            while not self._keep_cool_stop.is_set():
+                # you could optionally poll temperature here:
+                # self.check_camera_temperature(report=False)
+                time.sleep(1)  # idle, but hardware stays in streaming mode
+            self.deallocate_buffer_and_stop()
+
+        self._keep_cool_thread = threading.Thread(
+            target=_cooling_loop, daemon=True
+        )
+        self._keep_cool_thread.start()
+        print("Started camera cooldown hold.")
+
+    def stop_keep_camera_cooled(self):
+        """Stop the dummy stream and let the camera go idle."""
+        if hasattr(self, "_keep_cool_stop"):
+            self._keep_cool_stop.set()
+            print("Stopped camera cooldown hold.")
 
     # @simulate(function_handler=lambda self, *args, **kwargs: 'Simulated camera initialized')
     def initialise(self):
@@ -331,10 +359,12 @@ class TucamCamera:
         print("TUCam API initialized.")
 
         self.open_camera()
+
         self.set_hardware_binning()
         self.set_acqtime(self.acqtime)
         self.set_image_processing(0)
         self.set_resolution(1)
+        self.start_keep_camera_cooled()
         # self.set_denoise(0)
         self.set_image_and_gain()
         self.set_roi(self.roi_new)
@@ -354,12 +384,15 @@ class TucamCamera:
             return
         else:
             print('Open the camera success!')
+            self.set_fan_speed(3)  # Set fan speed to high for cooling
 
     def close_camera(self):
         """
         Close the currently open camera if any.
         """
         if self.TUCAMOPEN.hIdxTUCam != 0 and self.TUCAMOPEN.hIdxTUCam is not None:
+            if not self._keep_cool_stop.is_set():
+                self.stop_keep_camera_cooled()
             TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
             self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
             print("Close the camera success")
@@ -444,7 +477,6 @@ class TucamCamera:
         """
         acquire a single frame
         """
-        breakpoint()
         if self.simulate:
             # Generate a simulated frame based on current settings
             width = self._sim_roi[2] if hasattr(self, '_sim_roi') else 2048
@@ -458,14 +490,14 @@ class TucamCamera:
             return data
         
         # Real hardware acquisition
-        self.allocate_buffer_and_start()
+        # self.allocate_buffer_and_start()
         data = self.wait_for_image_data()
 
         if export is True:
             self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
             time.sleep(0.001)
 
-        self.deallocate_buffer_and_stop()
+        # self.deallocate_buffer_and_stop()
         return data
     
     def acquire_transient(self, save_dir='transient', export=True):
@@ -1038,7 +1070,6 @@ class TucamCamera:
     
     def _convert_to_numpy(self, frame):
         # Cast the buffer pointer to a pointer to 16-bit unsigned integers.
-        # breakpoint()
         buf_type = ctypes.POINTER(ctypes.c_ushort)
         # Compute the number of 16-bit elements.
         n_elements = frame.uiImgSize // 2
@@ -1047,13 +1078,7 @@ class TucamCamera:
         np_array = np.ctypeslib.as_array(buffer_ptr, shape=(n_elements,))
         np_array = np_array.view('<u2')
         # Reshape the array to the correct dimensions.
-        # breakpoint()
         np_array = np_array.reshape((frame.usHeight, frame.usWidth))
         return np_array
 
 
-    # def get_camera_info(self):
-    #     # Example stub if you have gain-attribute retrieval from TUCam
-    #     gain_info = get_camera_gain_attributes(self.handle)
-    #     print(gain_info)
-    #     return gain_info
