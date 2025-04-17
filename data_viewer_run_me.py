@@ -13,8 +13,10 @@ from matplotlib.widgets import RectangleSelector
 
 
 class LiveDataPlotter:
-    def __init__(self, file_path, **kwargs):
-        self.file_path = file_path
+    def __init__(self, image_name, wavelengths, dataDir, **kwargs):
+        self.dataDir = dataDir
+        self.image_name = image_name
+        self.wavelength_name = wavelengths
         self.autoscale_enabled = True
         self.updating = True
         self.roi = None  # Region of Interest for autoscaling
@@ -319,17 +321,30 @@ class LiveDataPlotter:
                 time.sleep(0.1)
                 continue
 
-            if not os.path.exists(self.file_path):
+            if not os.path.exists(os.path.join(self.dataDir, self.image_name)) or not os.path.exists(os.path.join(self.dataDir, self.wavelength_name)):
                 time.sleep(0.1)
                 continue
 
             # Try loading with retries
             for attempt in range(5):
                 try:
-                    with np.load(self.file_path, allow_pickle=True) as npzfile:
-                        self.data = npzfile['image']
-                        self.wavelength_axis = npzfile['wavelength']
-                        self.metadata = npzfile['metadata']
+                    # with np.load(self.file_path, allow_pickle=True) as npzfile:
+                    #     self.data = npzfile['image']
+                    #     self.wavelength_axis = npzfile['wavelength']
+                    #     self.metadata = npzfile['metadata']
+                    with np.load(os.path.join(self.dataDir, image_name)) as image_file:
+                        self.data = image_file
+                        breakpoint()
+                    break
+                except (ValueError, EOFError, zipfile.BadZipFile) as e:
+                    # File was probably mid‑write, back off and retry
+                    print(f"Warning: could not load {self.file_path} (attempt {attempt+1}): {e}")
+                    time.sleep(0.1)
+                
+                try:
+                    with np.load(os.path.join(self.dataDir, wavelengths)) as wavelength_file:
+                        self.wavelength_axis = wavelength_file
+                        breakpoint()
                     break
                 except (ValueError, EOFError, zipfile.BadZipFile) as e:
                     # File was probably mid‑write, back off and retry
@@ -355,11 +370,13 @@ class LiveDataPlotter:
 # Run the GUI
 if __name__ == "__main__":
     # Replace with your actual file path
+    image_name = 'transient_data'
+    wavelengths = 'transient_wavelengths'
     scriptDir = os.path.dirname(__file__)
     dataDir = os.path.join(scriptDir, "data", "transient_data")
-    files = sorted([x for x in os.listdir(dataDir) if x.endswith(".npz")])
-    file_path = os.path.join(dataDir, files[-1])
+    # files = sorted([x for x in os.listdir(dataDir) if x.endswith(".npz")])
+    # file_path = os.path.join(dataDir, files[-1])
 
-    plotter = LiveDataPlotter(file_path, bin_centre=70, bin_width=10)
+    plotter = LiveDataPlotter(image_name, wavelengths, dataDir, bin_centre=70, bin_width=50)
     plotter.start()
 
