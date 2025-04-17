@@ -23,7 +23,8 @@ class LiveDataPlotter:
         self.y_center_entry = kwargs.get('bin_center', 70)
         self.y_width_entry = kwargs.get('bin_width', 10)
 
-        self.wavelength_axis = None
+        self.data = np.zeros((10, 10))
+        self.wavelength_axis = np.arange(self.data.shape[1])
 
         self.data_mode = "Image"
         self.data_mode = "Spectrum"
@@ -39,11 +40,15 @@ class LiveDataPlotter:
         self.root = tk.Tk()
         self.root.title("Live Data Plotter")
 
-        # Create a Matplotlib figure embedded in Tkinter
+        # build your figure/canvas exactly once
         self.fig, self.ax = plt.subplots()
-        self.line, = self.ax.plot([], [], 'r-')  # Initialize an empty plot
-        # self.ax.vlines([50], 0, 70000)
-        # breakpoint()
+        self.line, = self.ax.plot([], [], 'r-')
+        self.vline = self.ax.axvline(0, color='blue')
+        self.im = self.ax.imshow(self.data, cmap='plasma', vmin=0, vmax=1)
+        self._build_canvas()
+
+        # Set up the initial image display
+        self.im = self.ax.imshow(np.zeros((10,10)), cmap='plasma', vmin=0, vmax=1)
         
         self.cursor_label = tk.Label(self.root, text="X: --, Y: --, Intensity: --")
         self.cursor_label.pack(side=tk.BOTTOM)
@@ -52,7 +57,7 @@ class LiveDataPlotter:
         self.fig.canvas.mpl_connect("scroll_event", self.zoom)
         self.zoom_limits = None  # Store zoom range
         # Set up a Tkinter canvas for Matplotlib
-        self._build_canvas()
+        # self._build_canvas()
 
         # Create control buttons and entry fields
         self.create_controls()
@@ -66,6 +71,33 @@ class LiveDataPlotter:
         
         
         self.apply_y_roi()
+
+    def _safe_update_spectrum(self, data):
+        """Always run on the Tk thread via root.after."""
+        if data is None:
+            return
+        x, y = data[:, 0], data[:, 1]
+        # update line + marker
+        self.line.set_data(x, y)
+        idx = min(50, x.size - 1)
+        self.vline.set_xdata(x[idx])
+        # rescale & redraw
+        self.ax.relim()
+        self.ax.autoscale_view()
+        self.canvas.draw_idle()
+
+    def _safe_update_image(self, frame):
+        """Always run on the Tk thread via root.after."""
+        # assume frame is 2D
+        self.im.set_data(frame)
+        if self.image_autoscale_enabled:
+            self.im.set_clim(frame.min(), frame.max())
+        # restore any saved zoom
+        if self.zoom_limits:
+            xlim, ylim = self.zoom_limits
+            self.ax.set_xlim(xlim)
+            self.ax.set_ylim(ylim)
+        self.canvas.draw_idle()
 
     def zoom(self, event):
         """ Zooms in/out using the mouse scroll wheel. """
@@ -105,33 +137,41 @@ class LiveDataPlotter:
 
     
     def _build_canvas(self):
-        """ Rebuild the Matplotlib canvas and reinitialize the ROI selector. """
-        if hasattr(self, "canvas"):  # Destroy old canvas if it exists
-            self.canvas.get_tk_widget().destroy()
-
-        self.fig, self.ax = plt.subplots()
+        """Call this exactly once in __init__."""
+        # assume self.fig and self.ax were created in __init__
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.canvas.draw_idle()
 
 
     def toggle_data_mode(self):
-        """ Toggle between 1D spectrum and 2D image display """
-        self.data_mode = "Spectrum" if self.data_mode == "Image" else "Image"
+        """Switch between image and spectrum by hiding/showing artists."""
+        if self.data_mode == "Image":
+            self.data_mode = "Spectrum"
+            # hide image
+            self.im.set_visible(False)
+            # show line + vline
+            self.line.set_visible(True)
+            self.vline.set_visible(True)
+            # update spectrum immediately
+            spec = self.frame_to_spectrum()
+            self._safe_update_spectrum(spec)
 
-        self._build_canvas()  # Rebuild the entire Matplotlib canvas
-
-        if self.data_mode == "Spectrum":
-            spectrum = self.frame_to_spectrum(wavelength_axis=self.wavelength_axis)
-            self.ax.plot(spectrum[:, 0], spectrum[:, 1], 'r-')  # Plot 1D spectrum
         else:
-            self.ax.imshow(self.data, cmap='plasma')  # Plot 2D image
-        
-        self.ax.set_title(self.data_mode)
-        self.canvas.draw()
+            self.data_mode = "Image"
+            # hide spectrum artists
+            self.line.set_visible(False)
+            self.vline.set_visible(False)
+            # show image
+            self.im.set_visible(True)
+            # update image immediately
+            self._safe_update_image(self.data)
 
-        # Update button text
+        # update title & button text
+        self.ax.set_title(self.data_mode)
         self.data_mode_button.config(text=self.data_mode)
+        self.canvas.draw_idle()
+
 
     def create_controls(self):
         # Create a frame for buttons
@@ -305,77 +345,120 @@ class LiveDataPlotter:
 
 
     def frame_to_spectrum(self):
-        """ Calculate spectrum by averaging the selected ROI in the image. """
-        if self.spectrum_roi is None:
-            y_start, y_end = 0, self.data.shape[0]  # Default to full height
+        """Return an (N×2) array [[x0,y0],…] or None on error."""
+        arr = getattr(self, "data", None)
+        if arr is None:
+            return None
+
+        # collapse any 3D → 2D
+        if arr.ndim == 3:
+            arr = arr[:, :, 0]
+        if arr.ndim != 2:
+            print(f"frame_to_spectrum: expected 2D, got {arr.ndim}D")
+            return None
+
+        # clip ROI
+        y0, y1 = self.spectrum_roi
+        y0 = max(0, min(arr.shape[0], y0))
+        y1 = max(0, min(arr.shape[0], y1))
+        if y1 <= y0:
+            y1 = y0 + 1
+
+        # compute mean spectrum
+        spec = arr[y0:y1, :].mean(axis=0)
+
+        # choose x‐axis
+        if len(self.wavelength_axis) == spec.size:
+            x = self.wavelength_axis
         else:
-            y_start, y_end = self.spectrum_roi
-            y_start = max(0, min(self.data.shape[0], y_start))
-            y_end = max(0, min(self.data.shape[0], y_end))
+            x = np.arange(spec.size)
 
-        if y_end <= y_start:
-            print("Invalid ROI: end must be greater than start")
-            y_end = y_start + 1
+        return np.column_stack((x, spec))
+    # def monitor_image_file_old(self):
 
-        data_array = self.data[y_start:y_end, :]
-        spectrum_data = np.mean(data_array, axis=0)
+    #     while True:
+    #         if self.updating:
+    #             try:
+    #                 if os.path.exists(self.image_file_path):
+    #                     # Load data from the file
+    #                     try:
+    #                         self.data = np.load(self.image_file_path)
+    #                         if len(self.data.shape) == 3:
+    #                             self.data = self.data[:, :, 0]
+    #                     except Exception as e:
+    #                         print(f"Error loading data from file {self.image_file_path}: {e}")
+    #                         time.sleep(1)
+    #                         continue
 
-        if self.wavelength_axis is None:
-            self.wavelength_axis = np.arange(len(spectrum_data))  # Default to pixel indices
-
-        spectrum_data = np.column_stack((self.wavelength_axis, spectrum_data))
-
-        return spectrum_data
-
-
+    #                     if self.data_mode == "Image":
+    #                         self.update_image(self.data)
+    #                     else:
+    #                         spectrum = self.frame_to_spectrum()
+    #                         self.update_plot(spectrum)
+    #             except PermissionError:
+    #                 print(f"Permission denied to access file {self.image_file_path}.")
+    #             except Exception as e:
+    #                 print(f"Error processing file:\n{traceback.format_exc()}")
+    #         time.sleep(0.1)  # Wait before checking again
     def monitor_image_file(self):
-
+        """Worker thread: load .npy then schedule GUI update."""
         while True:
-            if self.updating:
+            if self.updating and os.path.exists(self.image_file_path):
                 try:
-                    if os.path.exists(self.image_file_path):
-                        # Load data from the file
-                        try:
-                            self.data = np.load(self.image_file_path)
-                            if len(self.data.shape) == 3:
-                                self.data = self.data[:, :, 0]
-                        except Exception as e:
-                            print(f"Error loading data from file {self.image_file_path}: {e}")
-                            time.sleep(1)
-                            continue
-
-                        if self.data_mode == "Image":
-                            self.update_image(self.data)
-                        else:
-                            spectrum = self.frame_to_spectrum()
-                            self.update_plot(spectrum)
+                    arr = np.load(self.image_file_path)
+                    if arr.ndim == 3:
+                        arr = arr[:, :, 0]
+                    self.data = arr
+                    if self.data_mode == "Image":
+                        self.root.after(0, self._safe_update_image, arr)
+                    else:
+                        spec = self.frame_to_spectrum()
+                        if spec is not None:
+                            self.root.after(0, self._safe_update_spectrum, spec)
                 except PermissionError:
-                    print(f"Permission denied to access file {self.image_file_path}.")
-                except Exception as e:
-                    print(f"Error processing file:\n{traceback.format_exc()}")
-            time.sleep(0.1)  # Wait before checking again
+                    pass
+                except Exception:
+                    print("monitor_image_file:", traceback.format_exc())
+            time.sleep(0.1)
 
     def monitor_wavelength_file(self):
+        """Worker thread: load wavelengths then schedule spectrum update."""
         while True:
-            if self.updating:
+            if self.updating and os.path.exists(self.wavelengths_file_path):
                 try:
-                    if os.path.exists(self.wavelengths_file_path):
-                        # Load data from the file
-                        try:
-                            self.wavelength_axis = np.load(self.wavelengths_file_path)
-                        except Exception as e:
-                            print(f"Error loading wavelengths from file {self.wavelengths_file_path}: {e}")
-                            time.sleep(1)
-                            continue
-
-                        if self.data_mode == "Spectrum":
-                            spectrum = self.frame_to_spectrum()
-                            self.update_plot(spectrum)
+                    wl = np.load(self.wavelengths_file_path)
+                    self.wavelength_axis = wl
+                    if self.data_mode == "Spectrum":
+                        spec = self.frame_to_spectrum()
+                        if spec is not None:
+                            self.root.after(0, self._safe_update_spectrum, spec)
                 except PermissionError:
-                    print(f"Permission denied to access file {self.wavelengths_file_path}.")
-                except Exception as e:
-                    print(f"Error processing file:\n{traceback.format_exc()}")
-            time.sleep(0.1)  # Wait before checking again
+                    pass
+                except Exception:
+                    print("monitor_wavelength_file:", traceback.format_exc())
+            time.sleep(0.1)
+
+    # def monitor_wavelength_file_old(self):
+    #     while True:
+    #         if self.updating:
+    #             try:
+    #                 if os.path.exists(self.wavelengths_file_path):
+    #                     # Load data from the file
+    #                     try:
+    #                         self.wavelength_axis = np.load(self.wavelengths_file_path)
+    #                     except Exception as e:
+    #                         print(f"Error loading wavelengths from file {self.wavelengths_file_path}: {e}")
+    #                         time.sleep(1)
+    #                         continue
+
+    #                     if self.data_mode == "Spectrum":
+    #                         spectrum = self.frame_to_spectrum()
+    #                         self.update_plot(spectrum)
+    #             except PermissionError:
+    #                 print(f"Permission denied to access file {self.wavelengths_file_path}.")
+    #             except Exception as e:
+    #                 print(f"Error processing file:\n{traceback.format_exc()}")
+    #         time.sleep(0.1)  # Wait before checking again
 
 
     def start(self):

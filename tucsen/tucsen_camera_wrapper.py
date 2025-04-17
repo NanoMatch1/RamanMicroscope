@@ -485,7 +485,7 @@ class TucamCamera:
             
             if export:
                 # self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
-                self.interface.microscope.save_acquisition(data, filename='test', save_dir=os.path.join(self.script_dir, save_dir), overwrite=False)
+                self.interface.microscope.acquisition_control.save_acquisition(data, filename='test', save_dir=os.path.join(self.script_dir, save_dir), overwrite=False)
                 time.sleep(0.001)
             
             return data

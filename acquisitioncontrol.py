@@ -327,35 +327,17 @@ class AcquisitionControl:
         filename       = kwargs.get('filename',       self.general_parameters['filename'])
         save_dir       = kwargs.get('save_dir',       self.microscope.dataDir)
 
-        if wavelength_axis is None:
-            print("No wavelength axis provided—defaulting to pixel indices.")
-            wavelength_axis = np.arange(image_data.shape[1])
-
-        # build output paths
-        out_dir = os.path.join(self.microscope.scriptDir, save_dir, filename)
-        os.makedirs(out_dir, exist_ok=True)
-        out_path    = os.path.join(out_dir, f"{filename}_{scan_index:06}.npz")
-        tmp_path    = os.path.join(out_dir,'temp', f"{filename}_{scan_index:06}.npz")
-        if not os.path.exists(os.path.dirname(tmp_path)):
-            os.makedirs(os.path.dirname(tmp_path))
-
         # write compressed data to temporary file
+        file_path = os.path.join(save_dir, f"{filename}", f"{filename}_{scan_index:06d}.npz")
+        if not os.path.exists(os.path.dirname(file_path)):
+            os.makedirs(os.path.dirname(file_path))
+
         np.savez_compressed(
-            tmp_path,
+            file_path,
             image=image_data,
             wavelength=wavelength_axis,
             metadata=json.dumps(self.metadata)
         )
-
-        for attempt in range(5):
-            try:
-                os.replace(tmp_path, out_path)
-                break
-            except PermissionError as e:
-                # maybe the reader just hasn’t closed it yet
-                time.sleep(0.1)
-        else:
-            print(f"Warning: could not replace {out_path} after {attempt} attempts")
 
     @property
     def wavelength_axis(self):
