@@ -1084,83 +1084,84 @@ def mask_data(dataDict, range:tuple):
     return newData
     
 
-# def peakfit_autocal(scriptDir, dataDir, calibration_name):
-#     working_calibration_file = get_latest_calibration_file(dataDir)
-#     dataSet = asp.DataSet(dataDir, fileList=[working_calibration_file])
+class CameraCalibration:
 
-#     fileObj = dataSet.dataDict.get(working_calibration_file)
-#     dataSet.dataDict = fileObj.data
-#     dataSet.dataDict = mask_data(dataSet.dataDict, (710, 880))
+
+    def __init__(self, dataDir):
+        self.data_dict = {}  # Dictionary to hold data from all CSV files
+        self.dataDir = dataDir
+        self.calibrations = {}  # Dictionary to hold calibration data
+        self.calibration_metrics = {}  # Dictionary to hold calibration metrics
+        self.report_dict = {}  # Dictionary to hold report data
+        self.showplots = False  # Flag to control whether to show plots
+        self.files = [file for file in os.listdir(dataDir) if file.endswith('.csv')]
+
+
+    def load_csv(self, file_path):
+        """Load a CSV file."""
+        try:
+            data = np.loadtxt(file_path, delimiter=',')
+            return data
+        except Exception as e:
+            print(f"Error loading CSV file {file_path}: {e}")
+            return None
+        
+    def load_all_csv(self):
+        """Load all CSV files."""
+
+        # self.dataSet = asp.DataSet(self.dataDir)
+        breakpoint()
+
+        for file in self.files:
+            file_path = os.path.join(self.dataDir, file)
+            self.data_dict[file] = self.load_csv(file_path)
+        return self.data_dict
     
+    def peakfit_all(self, manual=False, **kwargs):
+        """Extract peak positions from all CSV files."""
+        self.peakfit_dict = {}  # Dictionary to hold peakfit data
+        for file in self.files:
+            dataSet = self._extract_peak_positions(file, manual=manual, **kwargs)
+            breakpoint()
 
-#     for cal_obj in dataSet.dataDict.values():
-#         # cal_obj._invert_data()
-#         cal_obj._minimise_data()
-#         cal_obj._apply_smoothing(window_length=7)
-#         # cal_obj._plot_individual()
-    
-#     dataSet.plot_current()
-
-
-#     # dataSet.minimise_all()
-#     # dataSet.baseline_all(show=False, lam=100, p=0.01)
-
-#     peakfitting_info = {
-#         'peak_list': [],
-#         'peak_type': 'voigt_pseudo',
-#         'peak_sign': 'positive',
-#         'threshold': 0.01, # percentage of max intensity
-#         'peak_detect': 'all',
-#         'copy_peaks': False,
-#     } 
-#     dataSet._peakfit(peakfitting_info=peakfitting_info)
-#     dataSet.save_database(tagList='', seriesName=calibration_name)
-
-# def generate_autocal(scriptDir, dataDir, calibration_name):
-#     key_index = {
-#         'pos': 1,
-#         'amp': 2,
-#         'fwhm': 3,
-#     }
-#     dataSet = asp.DataSet(dataDir)
-#     dataSet.load_database(calibration_name)
-#     # dataSet.plot_peaks()
-#     # dataSet.plot_current()
-
-#     calibration_peaks = {}
-
-#     for wave, peakdict in dataSet.peakfitDict.items():
-#         peak_list = []
-#         peaks = peakdict['peaks']
-#         if len(peaks) == 0:
-#             continue
-#         # print(wave, peaks)
-#         for peak in peaks:
-#             # breakpoint()
-#             peak_list.append(Peak(*peak))
-#         if len(peak_list) > 1:
-#             peak_list.sort(key=lambda x: x.amp)
-#         peak = peak_list[0]
-#         calibration_peaks[wave] = peak
-
-#     for key, value in calibration_peaks.items():
-#         print(key, value)
-#     # breakpoint()
-#     calibration = Calibration(calibration_peaks, showplots=True)
-#     fit, fitmetrics1 = calibration.wavelength_to_g1(mode='subtractive', show=True, model='poly', poly_order=1)
-#     print(fit)
-#     print(fitmetrics1)
-#     fit, fitmetrics2 = calibration.g1_to_wavelength(mode='subtractive', show=True, model='poly', poly_order=1)
-#     print(fit)
-#     print(fitmetrics2)
-#     # fit, fitmetrics3 = calibration.wavelength_to_g1_test(mode='subtractive', show=True, poly_order=1)
-#     # print(fit)
-#     # print(fitmetrics3)
-#     breakpoint()
-#     calibration.save_calibration(calibration_name)
-#     breakpoint()
         
 
+        return self.peakfit_dict
+        
+
+    
+    def _extract_peak_positions(self, manual=False, **kwargs):
+        # smoothing = self.kwargs.get('smoothing', 3)
+        dataSet = asp.DataSet(dataDir)
+
+
+        for cal_obj in dataSet.dataDict.values():
+            cal_obj._minimise_data()
+            # cal_obj._apply_smoothing(window_length=smoothing)
+
+        peakfit_config = {
+            'peak_list': [],
+            'peak_type': 'voigt_pseudo',
+            'peak_sign': 'positive',
+            'threshold': 0.01,
+            'peak_detect': 'all',
+            'copy_peaks': False,
+            'show_ui': manual,
+        }
+
+        dataSet._peakfit(peakfitting_info=peakfit_config)
+        dataSet.save_database(tagList='', seriesName=f'camera_cal_peaks_{file}')
+        return dataSet
+    
+
+    
+
+dataDir = r'C:\Users\Raman\matchbook\RamanMicroscope\data\camera_calibration_data_17-04-25\processed_spectra'
+camcal = CameraCalibration(dataDir)
+
+camcal.load_all_csv()
+camcal._extract_peak_positions('camera_calibration_17-04-25.csv', manual=True, smoothing=3)
+breakpoint()
 
 # series name - name of file
 calibration_name = 'autocal_2'

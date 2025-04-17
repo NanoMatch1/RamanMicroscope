@@ -1534,41 +1534,13 @@ class Calibration:
 
         return fit_coeff_g2_to_wavelength, fit_metrics
 
-class CameraCalibration:
 
-
-    def __init__(self, dataDir):
-        self.data_dict = {}  # Dictionary to hold data from all CSV files
-        self.dataDir = dataDir
-        self.calibrations = {}  # Dictionary to hold calibration data
-        self.calibration_metrics = {}  # Dictionary to hold calibration metrics
-        self.report_dict = {}  # Dictionary to hold report data
-        self.showplots = False  # Flag to control whether to show plots
-        self.files = [file for file in os.listdir(dataDir) if file.endswith('.csv')]
-
-
-    def load_csv(self, file_path):
-        """Load a CSV file."""
-        try:
-            data = np.loadtxt(file_path, delimiter=',')
-            return data
-        except Exception as e:
-            print(f"Error loading CSV file {file_path}: {e}")
-            return None
-        
-    def load_all_csv(self):
-        """Load all CSV files."""
-
-        for file in self.files:
-            file_path = os.path.join(self.dataDir, file)
-            self.data_dict[file] = self.load_csv(file_path)
-        return self.data_dict
 
 
 if __name__ == '__main__':
 
-    dataDir = r'C:\Users\Raman\matchbook\RamanMicroscope\data\camera_calibration_data_17-04-25\processed_spectra'
-    camcal = CameraCalibration(dataDir)
+
+
 
 
     # calibration, cal_data = initialise(showplots=False)
