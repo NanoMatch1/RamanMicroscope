@@ -1168,7 +1168,7 @@ class CameraCalibration:
         self.dataSet.save_database(tagList='', seriesName=f'camera_cal_peaks_{self.series_name}')
         return self.dataSet
     
-    def calibrate_camera_axis(self, poly_order=2, load=False):
+    def calibrate_camera_axis(self, poly_order=2, load=False, show=True, skiprows=0):
         """Automatically calibrate a motor axis based on peak fitting of a spectral dataset."""
 
         peak_dict = {}  # Dictionary to store peaks per spectrometer wavelength
@@ -1191,99 +1191,160 @@ class CameraCalibration:
 
         # Now perform the calibration using pixel shifts between consecutive sets
         # return self._calibrate_pixel_to_wavelength(peak_dict)
-        self._build_pixel_array(peak_dict)
+        extended_pixel_array, poly_list = self._build_pixel_array(peak_dict, show=show)
+        self._calibrate_extended_pixels(extended_pixel_array, show=show, skiprows=skiprows)
+
     
-    def _build_pixel_array(self, peak_dict):
+    def _build_pixel_array(self, peak_dict, show=True):
         curve_dict = {}
 
         for name, peaks in peak_dict.items():
             pixel_array = []
             for wavelength, peak in peaks.items():
-                pixel_array.append((float(peak), float(wavelength)))
+                pixel_array.append((float(wavelength), float(peak)))
 
             pixel_array.sort()
             curve_dict[name] = np.array(pixel_array)
 
-        for idx, (name, data) in enumerate(curve_dict.items()):
-            print(f"Curve: {name}")
-            plt.scatter(data[:, 0], data[:, 1], label=name)
+        if show:
+            for idx, (name, data) in enumerate(curve_dict.items()):
+                print(f"Curve: {name}")
+                plt.scatter(data[:, 0], data[:, 1], label=name)
 
-        plt.legend()
-        plt.show()
-        plt.xlabel('Wavelength (nm)')
-        breakpoint()
+            plt.legend()
+            plt.show()
+            plt.xlabel('Wavelength (nm)')
+            plt.show()
 
-    
-    def _generate_individual_calibration(self, motor_label, dataSet, poly_order=2, show=False):
-        peak_positions = []
-        # TODO>:HERE
+        extended_pixel_array, poly_list = self._extend_pixel_calibration(curve_dict, poly_order=2, show=show)
 
-        for wavelength, peakdict in dataSet.peakfitDict.items():
-            peaks = [Peak(*p) for p in peakdict.get('peaks', [])]
-            if not peaks:
-                continue
-            peaks.sort(key=lambda p: p.amp)
-            peak = peaks[-1]
-            peak_positions.append((float(wavelength), float(peak.pos)))
+        return extended_pixel_array, poly_list
 
-        if not peak_positions:
-            raise RuntimeError(f"No peaks found for calibration of {motor_label}.")
-
-        peak_positions.sort()
-        data = np.array(peak_positions)
-        wavelengths = data[:, 0]
-        self.wavelength_axis = wavelengths # needed for linked calibrations
-        steps = data[:, 1]
-
-        # Forward calibration: wavelength → motor steps
-        coeff_fwd = np.polyfit(wavelengths, steps, poly_order)
+        
+    def _calibrate_extended_pixels(self, extended_pixel_array, poly_order=1, show=True, skiprows=0):
+            
+        # breakpoint()
+        wavelengths = extended_pixel_array[skiprows:, 0]
+        pixels = extended_pixel_array[skiprows:, 1]
+        coeff_fwd = np.polyfit(wavelengths, pixels, poly_order)
         poly_fwd = np.poly1d(coeff_fwd)
-        pred_steps = poly_fwd(wavelengths)
-        residuals_fwd = steps - pred_steps
-        metrics_fwd = self.calculate_fit_metrics(steps, pred_steps)
+        pred_pixels = poly_fwd(wavelengths)
+        residuals_fwd = pixels - pred_pixels
+        # metrics_fwd = self.calculate_fit_metrics(pixels, pred_pixels)
 
-        # Inverse calibration: motor steps → wavelength
-        coeff_inv = np.polyfit(steps, wavelengths, poly_order)
+        # Inverse calibration: motor pixels → wavelength
+        coeff_inv = np.polyfit(pixels, wavelengths, poly_order)
         poly_inv = np.poly1d(coeff_inv)
-        pred_wl = poly_inv(steps)
+        pred_wl = poly_inv(pixels)
         residuals_inv = wavelengths - pred_wl
-        metrics_inv = self.calculate_fit_metrics(wavelengths, pred_wl)
+        # metrics_inv = self.calculate_fit_metrics(wavelengths, pred_wl)
 
         # Store calibration
-        self.calibrations[f'wl_to_{motor_label}'] = coeff_fwd.tolist()
-        self.calibrations[f'{motor_label}_to_wl'] = coeff_inv.tolist()
-        self.calibration_metrics[f'wl_to_{motor_label}'] = metrics_fwd
-        self.calibration_metrics[f'{motor_label}_to_wl'] = metrics_inv
+        self.calibrations['wl_to_pixel'] = coeff_fwd.tolist()
+        self.calibrations['pixel_to_wl'] = coeff_inv.tolist()
 
-        if show or getattr(self, 'showplots', False):
+        # self.calibration_metrics['wl_to_pixel'] = metrics_fwd
+        # self.calibration_metrics['pixel_to_wl'] = metrics_inv
+
+        if show:
             fig, ax = plt.subplots(2, 1)
-            ax[0].scatter(wavelengths, steps, color='black', label='Measured')
-            ax[0].plot(wavelengths, pred_steps, color='tab:blue', label='Fit')
-            ax[0].set_title(f'Auto Calibration: Wavelength to {motor_label.upper()}')
-            ax[0].set_ylabel('Motor Steps')
+            ax[0].scatter(wavelengths, pixels, color='black', label='Measured')
+            ax[0].plot(wavelengths, pred_pixels, color='tab:blue', label='Fit')
+            ax[0].set_title('Auto Calibration: Wavelength to Pixel')
+            ax[0].set_ylabel('Pixel')
             ax[0].legend()
 
             ax[1].plot(wavelengths, residuals_fwd, marker='o', label='Residuals')
             ax[1].set_xlabel('Wavelength (nm)')
-            ax[1].set_ylabel('Residuals (steps)')
+            ax[1].set_ylabel('Residuals (pixels)')
             ax[1].legend()
             plt.tight_layout()
             plt.show()
 
-        self.save_calibration(f'autocal_{motor_label}')
 
-        return {
-            'forward': {
-                'coeff': coeff_fwd,
-                'metrics': metrics_fwd,
-                'poly': poly_fwd,
-            },
-            'inverse': {
-                'coeff': coeff_inv,
-                'metrics': metrics_inv,
-                'poly': poly_inv,
-            }
-        }
+
+
+    def _extend_pixel_calibration(self, curve_dict, poly_order=2, show=False):
+        """Extend the pixel calibration using polynomial fitting."""
+        poly_list = []
+
+        for idx, (spectrometer_wavelength, data) in enumerate(curve_dict.items()):
+            
+            if idx > 0:
+                previous_calibration = poly_list[-1]
+                prev_poly = np.poly1d(previous_calibration)
+                overlap_wavelength, overlap_pixel = data[0]
+                new_pixel_value = prev_poly(overlap_wavelength) 
+                data[:, 1] = data[:, 1] + new_pixel_value - overlap_pixel
+                # breakpoint()
+            wavelengths = data[:, 0]
+            pixels = data[:, 1]
+            if idx == 0:
+                # First calibration, so no need to adjust the pixel values
+                new_arry = data.copy()
+            else:
+                new_arry = np.vstack((new_arry, data))
+
+        # Forward calibration: wavelength → motor steps
+            coeff_fwd = np.polyfit(wavelengths, pixels, poly_order)
+            poly_fwd = np.poly1d(coeff_fwd)
+            pred_pixels = poly_fwd(wavelengths)
+            residuals_fwd = pixels - pred_pixels
+            # metrics_fwd = self.calculate_fit_metrics(pixels, pred_pixels)
+
+            poly_list.append(coeff_fwd.tolist())
+
+        return new_arry, poly_list
+    
+    def _save_calibration(self, filename):
+        self.calibrationDir = os.path.join(os.path.dirname(__file__), 'calibration')
+        with open(os.path.join(self.calibrationDir, 'camera_calibration.json'), 'w') as f:
+            json.dump(self.calibrations, f)
+
+        print("Calibration complete: Successfully saved camera calibration data to 'camera_calibration.json' file.")
+
+        # # # Inverse calibration: motor pixels → wavelength
+        # # coeff_inv = np.polyfit(pixels, wavelengths, poly_order)
+        # # poly_inv = np.poly1d(coeff_inv)
+        # # pred_wl = poly_inv(pixels)
+        # # residuals_inv = wavelengths - pred_wl
+        # # metrics_inv = self.calculate_fit_metrics(wavelengths, pred_wl)
+
+        # # Store calibration
+        # self.calibrations[f'wl_to_{motor_label}'] = coeff_fwd.tolist()
+        # self.calibrations[f'{motor_label}_to_wl'] = coeff_inv.tolist()
+        # self.calibration_metrics[f'wl_to_{motor_label}'] = metrics_fwd
+        # self.calibration_metrics[f'{motor_label}_to_wl'] = metrics_inv
+
+        # if show or getattr(self, 'showplots', False):
+        #     fig, ax = plt.subplots(2, 1)
+        #     ax[0].scatter(wavelengths, steps, color='black', label='Measured')
+        #     ax[0].plot(wavelengths, pred_steps, color='tab:blue', label='Fit')
+        #     ax[0].set_title(f'Auto Calibration: Wavelength to {motor_label.upper()}')
+        #     ax[0].set_ylabel('Motor Steps')
+        #     ax[0].legend()
+
+        #     ax[1].plot(wavelengths, residuals_fwd, marker='o', label='Residuals')
+        #     ax[1].set_xlabel('Wavelength (nm)')
+        #     ax[1].set_ylabel('Residuals (steps)')
+        #     ax[1].legend()
+        #     plt.tight_layout()
+        #     plt.show()
+
+        # self.save_calibration(f'autocal_{motor_label}')
+
+        # return {
+        #     'forward': {
+        #         'coeff': coeff_fwd,
+        #         'metrics': metrics_fwd,
+        #         'poly': poly_fwd,
+        #     },
+        #     'inverse': {
+        #         'coeff': coeff_inv,
+        #         'metrics': metrics_inv,
+        #         'poly': poly_inv,
+        #     }
+        # }
 
     
     
@@ -1298,7 +1359,9 @@ camcal = CameraCalibration(dataSet=dataSet, dataDir=dataDir)
 # camcal.load_all_csv()
 # camcal._extract_peak_positions(manual=True)
 # camcal.dataSet.plot_peaks()
-camcal.calibrate_camera_axis(poly_order=2, load=True)
+camcal.calibrate_camera_axis(poly_order=2, load=True, show=True, skiprows=3)
+breakpoint()
+camcal._save_calibration('camera_calibration')
 breakpoint()
 
 # series name - name of file
