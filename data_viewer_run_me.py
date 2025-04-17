@@ -321,7 +321,9 @@ class LiveDataPlotter:
                 time.sleep(0.1)
                 continue
 
+
             if not os.path.exists(os.path.join(self.dataDir, self.image_name)) or not os.path.exists(os.path.join(self.dataDir, self.wavelength_name)):
+                print(f"Warning: {self.image_name} or {self.wavelength_name} not found in {self.dataDir}.")
                 time.sleep(0.1)
                 continue
 
@@ -332,23 +334,19 @@ class LiveDataPlotter:
                     #     self.data = npzfile['image']
                     #     self.wavelength_axis = npzfile['wavelength']
                     #     self.metadata = npzfile['metadata']
-                    with np.load(os.path.join(self.dataDir, image_name)) as image_file:
-                        self.data = image_file
-                        breakpoint()
-                    break
+                    self.data = np.load(os.path.join(self.dataDir, self.image_name))
+
                 except (ValueError, EOFError, zipfile.BadZipFile) as e:
                     # File was probably mid‑write, back off and retry
-                    print(f"Warning: could not load {self.file_path} (attempt {attempt+1}): {e}")
+                    print(f"Warning: could not load {self.image_name} (attempt {attempt+1}): {e}")
                     time.sleep(0.1)
                 
                 try:
-                    with np.load(os.path.join(self.dataDir, wavelengths)) as wavelength_file:
-                        self.wavelength_axis = wavelength_file
-                        breakpoint()
-                    break
+                    self.wavelength_axis = np.load(os.path.join(self.dataDir, self.wavelength_name))
+
                 except (ValueError, EOFError, zipfile.BadZipFile) as e:
                     # File was probably mid‑write, back off and retry
-                    print(f"Warning: could not load {self.file_path} (attempt {attempt+1}): {e}")
+                    print(f"Warning: could not load {self.wavelength_name} (attempt {attempt+1}): {e}")
                     time.sleep(0.1)
             else:
                 # all retries failed, skip this cycle
@@ -370,8 +368,8 @@ class LiveDataPlotter:
 # Run the GUI
 if __name__ == "__main__":
     # Replace with your actual file path
-    image_name = 'transient_data'
-    wavelengths = 'transient_wavelengths'
+    image_name = 'transient_data.npy'
+    wavelengths = 'transient_wavelengths.npy'
     scriptDir = os.path.dirname(__file__)
     dataDir = os.path.join(scriptDir, "data", "transient_data")
     # files = sorted([x for x in os.listdir(dataDir) if x.endswith(".npz")])
