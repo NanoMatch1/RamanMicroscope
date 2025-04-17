@@ -268,9 +268,7 @@ class AcquisitionControl:
         self.microscope.update_stage_positions(micron_dict)
         self.update_stage_positions()
 
-        breakpoint()
 
-    
     def prepare_acquisition_params(self):
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
         self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
@@ -283,10 +281,9 @@ class AcquisitionControl:
             self.microscope.go_to_wavelength_all,
         ]
         sequence = self.generate_scan_sequence()
-        breakpoint()
         total_steps = len(sequence)
         start_time = time.time()
-        predicted_time = ((total_steps * self.general_parameters['acquisition_time'] / 1000.0)/3600) * 1.2
+        predicted_time = ((total_steps * float(self.general_parameters['acquisition_time']) / 1000.0)/3600) * 1.2
         print(f"Predicted time: {predicted_time:.2f} hours")
 
         self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan

@@ -1,7 +1,7 @@
 {
   "general_parameters": {
-    "acquisition_time": "500",
-    "filename": "750.184-750.184",
+    "acquisition_time": "1000",
+    "filename": "sulfur_test",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "scan_index": 0,
@@ -14,19 +14,19 @@
       "Z": 0.0
     },
     "end_position": {
-      "X": 4.0,
-      "Y": 4.0,
+      "X": 0.0,
+      "Y": 0.0,
       "Z": 0.0
     },
     "resolution": {
-      "X": 1.0,
+      "X": 0.0,
       "Y": 1.0,
       "Z": 0.0
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 750.0,
-    "end_wavelength": 760.0,
+    "start_wavelength": 800.0,
+    "end_wavelength": 820.0,
     "resolution": 5.0
   },
   "polarization_parameters": {
