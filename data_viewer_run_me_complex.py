@@ -44,7 +44,13 @@ class LiveDataPlotter:
         self.fig, self.ax = plt.subplots()
         self.line, = self.ax.plot([], [], 'r-')
         self.vline = self.ax.axvline(0, color='blue')
-        self.im = self.ax.imshow(self.data, cmap='plasma', vmin=0, vmax=1)
+        # force origin='lower' so Y goes up
+        self.im = self.ax.imshow(
+            np.zeros((10,10)),
+            cmap='plasma',
+            vmin=0, vmax=1,
+            origin='lower'
+        )
         self._build_canvas()
 
         # Set up the initial image display
@@ -73,30 +79,45 @@ class LiveDataPlotter:
         self.apply_y_roi()
 
     def _safe_update_spectrum(self, data):
-        """Always run on the Tk thread via root.after."""
         if data is None:
             return
+
         x, y = data[:, 0], data[:, 1]
-        # update line + marker
         self.line.set_data(x, y)
         idx = min(50, x.size - 1)
         self.vline.set_xdata(x[idx])
-        # rescale & redraw
-        self.ax.relim()
-        self.ax.autoscale_view()
+
+        # lock X limits to full wavelength span
+        self.ax.set_xlim(x[0], x[-1])
+
+        if self.autoscale_enabled:
+            if self.roi:
+                y0, y1 = self.roi
+                y_roi = y[y0:y1]
+                if y_roi.size:
+                    self.ax.set_ylim(y_roi.min(), y_roi.max())
+            else:
+                # recompute data limits then autoscale only Y
+                self.ax.relim()
+                self.ax.autoscale_view(scalex=False, scaley=True)
+
         self.canvas.draw_idle()
 
     def _safe_update_image(self, frame):
-        """Always run on the Tk thread via root.after."""
-        # assume frame is 2D
+        # frame is 2D
         self.im.set_data(frame)
         if self.image_autoscale_enabled:
             self.im.set_clim(frame.min(), frame.max())
-        # restore any saved zoom
+
+        # restore any zoom limits
         if self.zoom_limits:
             xlim, ylim = self.zoom_limits
             self.ax.set_xlim(xlim)
             self.ax.set_ylim(ylim)
+
+        # make *sure* we still have origin='lower'
+        self.im.set_origin('lower')
+
         self.canvas.draw_idle()
 
     def zoom(self, event):
