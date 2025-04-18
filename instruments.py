@@ -379,8 +379,9 @@ class MotionControl:
         self.wait_for_motors(list(motor_id_steps.keys()))
 
         if backlash:
-            motors_for_correction = {motor: steps for motor, steps in motor_id_steps.items() if steps < 0} # Only apply backlash if moving backwards. i.e. forwards direction should already have the backlash taken up
+            motors_for_correction = {motor: steps for motor, steps in motor_id_steps.items() if int(steps) < 0} # Only apply backlash if moving backwards. i.e. forwards direction should already have the backlash taken up
             self.backlash_correction(motors_for_correction)
+
         
         return response
 
@@ -1088,24 +1089,24 @@ class Microscope(Instrument):
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'X': travel_distance})
-        self.stage_positions_microns['X'] += travel_distance
-        self.acquisition_control.update_stage_positions()
+        # self.stage_positions_microns['X'] += travel_distance
+        # self.acquisition_control.update_stage_positions()
         print('X stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
         '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Y': travel_distance})
-        self.stage_positions_microns['Y'] += travel_distance
-        self.acquisition_control.update_stage_positions()
+        # self.stage_positions_microns['Y'] += float(travel_distance)
+        # self.acquisition_control.update_stage_positions()
         print('Y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
         '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
         self.motion_control.move_motors({'Z': travel_distance})
-        self.stage_positions_microns['Z'] += travel_distance
-        self.acquisition_control.update_stage_positions()
+        # self.stage_positions_microns['Z'] += travel_distance
+        # self.acquisition_control.update_stage_positions()
         print('Z stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable

@@ -195,6 +195,9 @@ class Interface:
             # Already using real hardware
             print("Already connected to real TRIAX")
 
+    #8.56 -14.81
+    #Z #5.35 - 4.1
+
     def connect_to_camera(self):
         """Switch from simulated to real camera"""
         if self.simulate or 'camera' in self.debug_skip or not self.connected_to_camera:
