@@ -602,6 +602,8 @@ class Microscope(Instrument):
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
             'closecamera': self.close_camera_connection,
+            'allocate': self.allocate_camera_buffer,
+            'deallocate': self.deallocate_camera_buffer
         }
 
         self.current_shift = 0
@@ -1372,6 +1374,7 @@ class Microscope(Instrument):
     @ui_callable
     def set_filename(self, filename):
         self.acquisition_control.general_parameters['filename'] = filename
+        print("Filename set to: ", filename)
 
     @ui_callable
     def set_laser_power(self, value):
@@ -1400,14 +1403,14 @@ class Microscope(Instrument):
         self.interface.debug_skip.append('camera')
 
     @ui_callable
-    def acquire_one_frame(self, filename=None, scan_index=0, export=False):
+    def acquire_one_frame(self, filename=None, scan_index=0, export_raw=False):
         if filename is None:
             filename = self.acquisition_control.general_parameters['filename']
 
-        image_data = self.camera.safe_acquisition(export=export)
+        image_data = self.camera.safe_acquisition(export=export_raw)
 
-        if export:
-            self.acquisition_control.save_spectrum(image_data, wavelength_axis=self.wavelength_axis, save_dir='data', filename=filename, scan_index=scan_index)
+
+        self.acquisition_control.save_spectrum(image_data, wavelength_axis=self.wavelength_axis, save_dir='data', filename=filename, scan_index=scan_index)
 
         return image_data
     
@@ -1429,7 +1432,16 @@ class Microscope(Instrument):
     #                         image=image_data,
     #                         wavelength=self.wavelength_axis,
     #                         metadata=json.dumps(self.acquisition_control.metadata))
-        
+    @ui_callable
+    def allocate_camera_buffer(self):
+        '''Allocates the camera buffer for the acquisition.'''
+        self.camera.allocate_buffer_and_start()
+    
+    @ui_callable
+    def deallocate_camera_buffer(self):
+        '''Deallocates the camera buffer and stops the acquisition.'''
+        self.camera.deallocate_buffer_and_stop()
+
 
     def prepare_dataset_acquisition(self):
         '''Prepares the dataset acquisition by setting the parameters.'''
