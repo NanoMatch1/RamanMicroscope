@@ -299,13 +299,14 @@ class AcquisitionControl:
                 if change is not None:
                     command(change)
             
-            image_data = self.microscope.acquire_one_frame(export=False)
+            image_data = self.microscope.acquire_one_frame(export_raw=False)
             if image_data is None:
                 print("Error image data None")
                 status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
                 return
             
             self.save_spectrum(image_data, scan_index=index)
+            self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
         status_callback("Scan complete.")
         progress_callback(total_steps, total_steps, start_time)
         print("Scan complete.")
