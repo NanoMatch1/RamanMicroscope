@@ -167,8 +167,9 @@ class TucamCamera:
             # ch:保存数据帧到硬盘 | en:Save image to disk
             # TUCAM_File_SaveImage(self.TUCAMOPEN.hIdxTUCam, m_fs)
             # print('Save the image data success, the path is %#s'%ImgName)
-        except Exception:
+        except Exception as e:
             print('Grab the frame failure')
+            print(e)
             return None
 
         if debug:
@@ -369,6 +370,8 @@ class TucamCamera:
         self.set_image_and_gain()
         self.set_roi(self.roi_new)
 
+        self.allocate_buffer_and_start()
+
     def open_camera(self, Idx=0):
 
         if  Idx >= self.TUCAMINIT.uiCamCount:
@@ -391,10 +394,11 @@ class TucamCamera:
         Close the currently open camera if any.
         """
         if self.TUCAMOPEN.hIdxTUCam != 0 and self.TUCAMOPEN.hIdxTUCam is not None:
-            if not self._keep_cool_stop.is_set():
-                self.stop_keep_camera_cooled()
+            # if not self._keep_cool_stop.is_set():
+                # self.stop_keep_camera_cooled()
             TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
             self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
+            self.deallocate_buffer_and_stop()
             print("Close the camera success")
 
     def uninit_api(self):
@@ -446,7 +450,12 @@ class TucamCamera:
         """
         while True:
             temp = ctypes.c_double()
-            TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
+        # if cam is open, check temperature
+            if self.TUCAMOPEN.hIdxTUCam != 0:
+                TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
+            else:
+                print("Camera not open. Cannot check temperature.")
+                return None
 
             if temp.value < target_temp:
                 print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
@@ -496,6 +505,7 @@ class TucamCamera:
 
         if export is True:
             self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
+            print("Exported data to:", os.path.join(self.script_dir, save_dir))
             time.sleep(0.001)
 
         # self.deallocate_buffer_and_stop()
@@ -534,7 +544,7 @@ class TucamCamera:
             print("Camera is already running continuous acquisition!")
             return
         
-        self.allocate_buffer_and_start()
+        # self.allocate_buffer_and_start()
 
         # Set up for continuous acquisition
         def continuous_task():

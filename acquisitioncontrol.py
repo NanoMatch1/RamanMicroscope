@@ -301,6 +301,7 @@ class AcquisitionControl:
             
             image_data = self.microscope.acquire_one_frame(export=False)
             if image_data is None:
+                print("Error image data None")
                 status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
                 return
             
@@ -321,6 +322,8 @@ class AcquisitionControl:
         # image_data = np.vstack((image_data, self.wavelength_axis))  # stack the 
         # print(image_data.shape)
         save_path = os.path.join(self.microscope.dataDir, 'data', 'transient_data', 'transient_data.npy')
+        if kwargs.get('report', False):
+            print(f"Saving transient data to {save_path}")
         print(f"Saving transient data to {save_path}")
         np.save(os.path.join(self.microscope.dataDir, 'transient_data', 'transient_data.npy'), image_data)
         # breakpoint()# image data along a new axis
