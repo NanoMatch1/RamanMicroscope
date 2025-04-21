@@ -428,7 +428,7 @@ class TucamCamera:
             print(f"Failed to set binning. Error code: {status}")
 
 
-    def safe_acquisition(self, target_temp=-5):
+    def safe_acquisition(self, target_temp=-5, export=True):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
@@ -438,7 +438,7 @@ class TucamCamera:
 
             if temp.value < target_temp:
                 print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
-                data = self.acquire_one_frame()
+                data = self.acquire_one_frame(export=export)
                 return data
             else:
                 print(f"Camera too hot ({temp.value}°C). Waiting...")
@@ -470,22 +470,17 @@ class TucamCamera:
             width = self._sim_roi[2] if hasattr(self, '_sim_roi') else 2048
             height = self._sim_roi[3] if hasattr(self, '_sim_roi') else 148
             data = self._generate_simulated_image(width, height)
-            
-            if export:
+
+        else:
+            # Real hardware acquisition
+            self.allocate_buffer_and_start()
+            data = self.wait_for_image_data()
+
+            if export is True:
                 self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
                 time.sleep(0.001)
-            
-            return data
-        
-        # Real hardware acquisition
-        self.allocate_buffer_and_start()
-        data = self.wait_for_image_data()
 
-        if export is True:
-            self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
-            time.sleep(0.001)
-
-        self.deallocate_buffer_and_stop()
+            self.deallocate_buffer_and_stop()
         return data
     
     def acquire_transient(self, save_dir='transient', export=True):

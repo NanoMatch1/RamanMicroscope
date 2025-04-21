@@ -1411,6 +1411,7 @@ class Microscope(Instrument):
 
 
         self.acquisition_control.save_spectrum(image_data, wavelength_axis=self.wavelength_axis, save_dir='data', filename=filename, scan_index=scan_index)
+        self.acquisition_control.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis)
 
         return image_data
     
