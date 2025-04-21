@@ -1415,6 +1415,8 @@ class Microscope(Instrument):
 
         return image_data
     
+    # @ui_callable
+    
     # def save_acquisition(self, image_data, filename=None, save_folder=None, scan_index=0):
         
     #     if self.wavelength_axis is None:
