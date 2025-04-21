@@ -529,7 +529,9 @@ class TucamCamera:
                     if data is None:
                         print("Failed to acquire frame.")
                         break
-                    self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
+                    # self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
+                    wavelengths = self.interface.microscope.wavelength_axis
+                    self.interface.microscope.acquisition_control.save_spectrum_transient(data, wavelengths)
                     time.sleep(0.001)
                 except Exception as e:
                     print(f"Acquisition error: {e}")

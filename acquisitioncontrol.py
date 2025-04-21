@@ -317,16 +317,12 @@ class AcquisitionControl:
             # print("No wavelength axis provided—defaulting to pixel indices.")
             wavelength_axis = np.arange(image_data.shape[1])
 
-        # breakpoint()
-        
-        # print(image_data.shape)
-        # image_data = np.vstack((image_data, self.wavelength_axis))  # stack the 
-        # print(image_data.shape)
-        save_path = os.path.join(self.microscope.dataDir, 'data', 'transient_data', 'transient_data.npy')
+        # TODO:add wavelength axis to the image data along a new axis
+        save_path = os.path.join(self.microscope.dataDir, 'transient_data', 'transient_data.npy')
         if kwargs.get('report', False):
             print(f"Saving transient data to {save_path}")
         print(f"Saving transient data to {save_path}")
-        np.save(os.path.join(self.microscope.dataDir, 'transient_data', 'transient_data.npy'), image_data)
+        np.save(save_path, image_data)
         # breakpoint()# image data along a new axis
 
     def save_spectrum(self, image_data, **kwargs):
