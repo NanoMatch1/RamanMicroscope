@@ -15,7 +15,7 @@
         <DenoiseValue>0</DenoiseValue>
         <DenoisePermission>1</DenoisePermission>
         <Temperature>40</Temperature>
-        <FanMode>0</FanMode>
+        <FanMode>3</FanMode>
         <ImageModeSelect>1</ImageModeSelect>
         <Enhance>0</Enhance>
         <ImageProcessEnable>0</ImageProcessEnable>
