@@ -76,7 +76,8 @@ AccelStepper stepperZ4(AccelStepper::DRIVER, 52, 53);
 
 const int ldr0pin = A0;      // LDR input pin
 const int gShutPin = 9;      // Grating shutter pin
-const int ledPin = 11;       // LED illunimation pin
+const int ledPin1 = 11;       // LED illunimation pin
+const int ledPin2 = 10;
 
 const int homingLimitPin = 13; // Or whatever pin you use
 
@@ -264,11 +265,13 @@ void monoShutter(String state) {
 
 void toggleIllumination(String state) {
   if (state == "off") {
-    digitalWrite(ledPin, LOW);
+    digitalWrite(ledPin1, LOW);
+    digitalWrite(ledPin2, LOW);
     Serial.println("LED off");
   }
   else if (state == "on") {
-    digitalWrite(ledPin, HIGH);
+    digitalWrite(ledPin1, HIGH);
+    digitalWrite(ledPin2, HIGH);
     Serial.println("LED on");
   }
 }

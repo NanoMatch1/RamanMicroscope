@@ -59,6 +59,26 @@ def simulate(expected_value=None):
 
 class TucamData:
 
+    '''A simple class wrapper for handling the data structure of the Tucsen camera.'''
+
+    def __init__(self, camera, filename=None, save_dir=None):
+        self.camera = camera
+        self.data = None
+
+        self.m_fs = TUCAM_FILE_SAVE()
+        self.m_frame = TUCAM_FRAME()
+        self.m_format = TUIMG_FORMATS
+        self.m_frformat = TUFRM_FORMATS
+        self.m_capmode = TUCAM_CAPTURE_MODES
+        self.m_frame.pBuffer = 0
+        self.m_frame.ucFormatGet = TUFRM_FORMATS.TUFRM_FMT_USUAl.value
+        self.m_frame.uiRsdSize = 1
+
+        self.m_fs.nSaveFmt = self.m_format.TUFMT_TIF.value
+
+
+class TucamData:
+
     def __init__(self, camera, filename=None, save_dir=None):
         self.camera = camera
         self.data = None
@@ -112,7 +132,7 @@ class TucamCamera:
         self.is_running = False
 
         self.command_functions = {
-            "safeacquire": self.safe_acquisition,
+            "acquire": self.safe_acquisition,
             "acqnow": self.acquire_one_frame,
             "transient": self.acquire_transient,
             "run": self.start_continuous_acquisition,
@@ -167,9 +187,8 @@ class TucamCamera:
             # ch:保存数据帧到硬盘 | en:Save image to disk
             # TUCAM_File_SaveImage(self.TUCAMOPEN.hIdxTUCam, m_fs)
             # print('Save the image data success, the path is %#s'%ImgName)
-        except Exception as e:
+        except Exception:
             print('Grab the frame failure')
-            print(e)
             return None
 
         if debug:
@@ -307,34 +326,6 @@ class TucamCamera:
         sim_frame = np.expand_dims(img, axis=2)
         
         return sim_frame
-    
-    def start_keep_camera_cooled(self):
-        """Start a low‑overhead continuous stream to keep the fan running."""
-        if getattr(self, "_keep_cool_thread", None) and self._keep_cool_thread.is_alive():
-            return  # already running
-
-        # allocate once and hold
-        self.allocate_buffer_and_start()
-        self._keep_cool_stop = threading.Event()
-
-        def _cooling_loop():
-            while not self._keep_cool_stop.is_set():
-                # you could optionally poll temperature here:
-                # self.check_camera_temperature(report=False)
-                time.sleep(1)  # idle, but hardware stays in streaming mode
-            self.deallocate_buffer_and_stop()
-
-        self._keep_cool_thread = threading.Thread(
-            target=_cooling_loop, daemon=True
-        )
-        self._keep_cool_thread.start()
-        print("Started camera cooldown hold.")
-
-    def stop_keep_camera_cooled(self):
-        """Stop the dummy stream and let the camera go idle."""
-        if hasattr(self, "_keep_cool_stop"):
-            self._keep_cool_stop.set()
-            print("Stopped camera cooldown hold.")
 
     # @simulate(function_handler=lambda self, *args, **kwargs: 'Simulated camera initialized')
     def initialise(self):
@@ -360,17 +351,14 @@ class TucamCamera:
         print("TUCam API initialized.")
 
         self.open_camera()
-
         self.set_hardware_binning()
         self.set_acqtime(self.acqtime)
         self.set_image_processing(0)
         self.set_resolution(1)
-        # self.start_keep_camera_cooled()
         # self.set_denoise(0)
         self.set_image_and_gain()
         self.set_roi(self.roi_new)
-
-        self.allocate_buffer_and_start()
+        self.set_fan_speed(3)
 
     def open_camera(self, Idx=0):
 
@@ -387,18 +375,14 @@ class TucamCamera:
             return
         else:
             print('Open the camera success!')
-            self.set_fan_speed(3)  # Set fan speed to high for cooling
 
     def close_camera(self):
         """
         Close the currently open camera if any.
         """
         if self.TUCAMOPEN.hIdxTUCam != 0 and self.TUCAMOPEN.hIdxTUCam is not None:
-            # if not self._keep_cool_stop.is_set():
-                # self.stop_keep_camera_cooled()
             TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
             self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
-            self.deallocate_buffer_and_stop()
             print("Close the camera success")
 
     def uninit_api(self):
@@ -444,22 +428,17 @@ class TucamCamera:
             print(f"Failed to set binning. Error code: {status}")
 
 
-    def safe_acquisition(self, target_temp=-5, export=True, **kwargs):
+    def safe_acquisition(self, target_temp=-5):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
         while True:
             temp = ctypes.c_double()
-        # if cam is open, check temperature
-            if self.TUCAMOPEN.hIdxTUCam != 0:
-                TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
-            else:
-                print("Camera not open. Cannot check temperature.")
-                return None
+            TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
 
             if temp.value < target_temp:
                 print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
-                data = self.acquire_one_frame(export=export, **kwargs)
+                data = self.acquire_one_frame()
                 return data
             else:
                 print(f"Camera too hot ({temp.value}°C). Waiting...")
@@ -493,22 +472,20 @@ class TucamCamera:
             data = self._generate_simulated_image(width, height)
             
             if export:
-                # self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
-                self.interface.microscope.acquisition_control.save_acquisition(data, filename='test', save_dir=os.path.join(self.script_dir, save_dir), overwrite=False)
+                self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
                 time.sleep(0.001)
             
             return data
         
         # Real hardware acquisition
-        # self.allocate_buffer_and_start()
+        self.allocate_buffer_and_start()
         data = self.wait_for_image_data()
 
         if export is True:
             self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
-            print("Exported data to:", os.path.join(self.script_dir, save_dir))
             time.sleep(0.001)
 
-        # self.deallocate_buffer_and_stop()
+        self.deallocate_buffer_and_stop()
         return data
     
     def acquire_transient(self, save_dir='transient', export=True):
@@ -544,7 +521,7 @@ class TucamCamera:
             print("Camera is already running continuous acquisition!")
             return
         
-        # self.allocate_buffer_and_start()
+        self.allocate_buffer_and_start()
 
         # Set up for continuous acquisition
         def continuous_task():
@@ -557,8 +534,7 @@ class TucamCamera:
                     if data is None:
                         print("Failed to acquire frame.")
                         break
-                    # self.export_data(data, 'transient_data', save_dir=self.transient_dir, wavelength_axis=self.interface.microscope.wavelength_axis, overwrite=True)
-                    self.interface.microscope.acquisition_control.save_spectrum_transient(data, wavelength_axis=self.interface.microscope.wavelength_axis)
+                    self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
                     time.sleep(0.001)
                 except Exception as e:
                     print(f"Acquisition error: {e}")
@@ -580,7 +556,7 @@ class TucamCamera:
         self.is_running = False
         self.deallocate_buffer_and_stop()
     
-    def check_camera_temperature(self, report=False):
+    def check_camera_temperature(self, report=True):
         """
         Checks and prints the current camera temperature.
         """
@@ -1082,6 +1058,7 @@ class TucamCamera:
     
     def _convert_to_numpy(self, frame):
         # Cast the buffer pointer to a pointer to 16-bit unsigned integers.
+        # breakpoint()
         buf_type = ctypes.POINTER(ctypes.c_ushort)
         # Compute the number of 16-bit elements.
         n_elements = frame.uiImgSize // 2
@@ -1090,7 +1067,13 @@ class TucamCamera:
         np_array = np.ctypeslib.as_array(buffer_ptr, shape=(n_elements,))
         np_array = np_array.view('<u2')
         # Reshape the array to the correct dimensions.
+        # breakpoint()
         np_array = np_array.reshape((frame.usHeight, frame.usWidth))
         return np_array
 
 
+    # def get_camera_info(self):
+    #     # Example stub if you have gain-attribute retrieval from TUCam
+    #     gain_info = get_camera_gain_attributes(self.handle)
+    #     print(gain_info)
+    #     return gain_info
