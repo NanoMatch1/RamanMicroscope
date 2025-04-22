@@ -2438,12 +2438,18 @@ class Triax(Instrument):
             'mex': self.move_exit_slit,
             'mg': self.move_grating_relative,
             'initialise': self.initialise_spectrometer,
+            'specgrat1': self.default_grating,
+            'specgrat2': self.other_grating,
         }
 
         self.spectrometer_position = 380000
 
+        # 108659 = 750 nm
+
         self.message_map = {
             'initialise': 'A',
+            'specgrat1': 'a0',
+            'specgrat2': 'b0',
             'comsmode': '02000',
             'get_grating_steps': 'H0',
             'read_grating': 'H0',
@@ -2486,7 +2492,22 @@ class Triax(Instrument):
     @ui_callable
     def initialise_spectrometer(self):
         '''Initialise the spectrometer.'''
-        self.send_command('initialise')
+        response = self.send_command('initialise')
+
+    @ui_callable
+    def default_grating(self):
+        '''Set the default grating for the spectrometer.'''
+        response = self.send_command('specgrat1')
+        # print(response)
+        return response
+
+    @ui_callable
+    def other_grating(self):
+        '''Set the other grating for the spectrometer.'''
+
+        response = self.send_command('specgrat2')
+        # print(response)
+        return response
     
     @ui_callable
     def read_enterance_slit(self):

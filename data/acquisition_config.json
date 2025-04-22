@@ -1,11 +1,11 @@
 {
   "general_parameters": {
-    "acquisition_time": "1000",
-    "filename": "acq_testies",
+    "acquisition_time": "1",
+    "filename": "Sulfur-wavelengthscan-t1",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "scan_index": 0,
-    "scan_type": "None"
+    "scan_type": "wavelength"
   },
   "motion_parameters": {
     "start_position": {
@@ -25,8 +25,8 @@
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 800.0,
-    "end_wavelength": 820.0,
+    "start_wavelength": 750.0,
+    "end_wavelength": 850.0,
     "resolution": 5.0
   },
   "polarization_parameters": {
