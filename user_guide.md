@@ -3,7 +3,39 @@
 
 1. Boot the software by running the `interface_run_me.py` script. **ENSURE the power to the motors is OFF**.
 2. Once provided a `Enter command` promt, turn on the motor power at the controller switch.
-3. Type 
+3. Type `enable` to begin first phase of laser warmup
+4. `homelaser` to home all laser motors
+5. `homegratings` to home all grating motors
+6. Use `sall` $\lambda$ to go to a specific wavelength. 
+    - NOTE: A go-to command is required after homing any motor.
+    - Homing motors brings them to the zero steps position. All motots at zero does not equate to any calibrated wavelength, so a go-to command is required to realign to a chosen wavelength.
+7. If not yet done, open or cycle the shutter `cycleshutter` or `shutteron`
+8. Confirm the laser is lasing at the desing wavelength. At the desing wavelength, the laser will make it to the pinhole and should pass through the rest of the microscope to the sample. 
+- **Troubleshooting**: If the laser does not lase properly, or is weak, sometimes the l2 motor is not where it should be after homing (this is not common but can happen). Rehome just l2 with `home l2` and follow up with `sl` $\lambda$. If this does not fix it, manually jog the motor until lasing is restored. Find the motor positon that centres the alignment on the lasing condition, then use `reference` $\lambda$ to reference this set of motor positions to this wavelength.
+9. Ensure lasing at the sample (sulfur test).
+10. Type `run` to initiate the continuous acquisition for focus and alignment. NOTE: The `data_viewer_run_me.py` should be running in a separate window. If not, go to the RamanMicroscope code folder and run this file by double clicking.
+11. In the data viewer UI, ensure the ROI start and end are set to a logical range. Usually 100-2000 respectively. Toggle autoscale as required to view the spectrum and lock/normalise the intensity range. 
+12. Also ensure the Y centre and Y width are set to capture the data. This is the binning on the CCD array, and the data should be centred around pixel 83 with ~10 pixel range. On rare occasions, this can change, so if no peaks are present try widening the Y width value (and click Apply Y ROI) 
+13. Upon running, the data viewer should update with live data each frame. The sulfur spectrum should be just barely visible at 1 second acquisition time if you're lucky. Not not:
+    1. Check the sample is in focus 
+    2. **the motors may need to be jogged into alignment**
+
+### Jogging motors:
+After homing, sometimes the motors can be slightly off still. I believe this is a consequence of inaccuracy in the limit swicth positions and the absolute positioning of the grating motor drivers. The fix is to massage the setup into its final alignment.
+
+1. start with motor G1. You can place a target card in the cage system near the 45 degree vertical turn (just after the beamsplitters). The laser should pass dead centre through the target card. If not, use `g1 x` to move the motor x steps. Do this until it passes through the target card centre.
+2. Remove the target card.
+3. Next, work through the other motors by observing changes to the spectrum. 
+    - g2, g3, g4
+    - The intensity should reach a maximum within 1-3 steps of thier current positions. Find the maximum value for the motor, then move on to the next.
+    - Once all motors have reached their maximum intensities, you can cycle back and repeat once more.
+    - Once you are satisfied with the intensities, reference this position (`reference` $\lambda$) and move on.
+
+The microscope should now be aligned and calibrated, ready for scans.
+
+# Running a Scan
+
+
 
 # Control Notes
 
@@ -19,6 +51,10 @@ All commands can be passed arguments in the form of characters separated by `<sp
 - `sm` $\lambda$: set wavelength on just the monochromator gratings. Useful for moving the dection closer to the laser line (for seeing low-frequency modes) or further from the laser line (to reduce stray light and rayleigh scattering signal)
 - `st` $\lambda$: set TIRAX spectrometer wavelength
 - `sall` $\lambda$: set all wavelengths (for changing the whole setup to a specific wavelength)
+
+- `homelaser`: homes the three laser motors in sequence
+- `homegratings`: homes all graing motors in sequence
+- `home` $motorlabel$: homes the motor of $motorlabel$ (e.g. `home l1`)
 
 - `reference` $\lambda$: reassigns the current motor positions to the wavelength of choice. Used when making minor adjustments to the alignment of the laser or gratings.
 
@@ -47,9 +83,8 @@ Sometimes you need to jog the motors a small number of steps, for alignment or f
 - `g4` $x$: move grating motor 4 $x$ steps
 
 
-
-
-
+## Adidtional Commands
+Many of these commands are required for maintenance but some have calibration-breaking consequences (not permanent but annoying). Only use commands you are familiar with and know what the consequences are.
 
 ### 🔧 **System Control**
 
