@@ -131,9 +131,11 @@ class ArduinoUNO:
         new_command = self._format_command_length(command) # return  a list
 
         motor_positions = []
+
         for command in new_command:
-            repsonse = self.send_command(command)
-            motor_positions.append(repsonse[0])
+            response = self.send_command(command)
+
+            motor_positions.append(response[0])
 
         return motor_positions
 

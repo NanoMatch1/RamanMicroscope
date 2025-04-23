@@ -281,6 +281,8 @@ class AcquisitionControl:
         print(f"Predicted time: {predicted_time:.2f} hours")
 
         self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
+        if self.microscope.microscope_mode != 'ramanmode':
+            self.microscope.raman_mode()
 
         for index, step in enumerate(sequence):
             self.general_parameters['scan_index'] = index
