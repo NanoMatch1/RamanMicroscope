@@ -17,14 +17,14 @@ except Exception as e:
     TucamCamera = SimulatedCamera
 import re
 
-def cli(instrument):
+def cli(interface):
     while True:
         command = input("Enter a command: ")
         if command == 'exit':
             break
 
         if command == 'help':
-            instrument.show_help()
+            interface.show_help()
             continue
     
         if command == 'debug':
@@ -32,15 +32,15 @@ def cli(instrument):
             breakpoint()
         
         if command == 'reinit':
-            # instrument.camera.close_camera()
-            # instrument.microcontroller.
-            # instrument.__init__(simulate=instrument.simulate, com_port=instrument.com_port, baud=instrument.baud, debug_skip=instrument.debug_skip)
-            # TODO: write close methods for all instruments, and reinitialise them here
+            # interface.camera.close_camera()
+            # interface.microcontroller.
+            # interface.__init__(simulate=interface.simulate, com_port=interface.com_port, baud=interface.baud, debug_skip=interface.debug_skip)
+            # TODO: write close methods for all interfaces, and reinitialise them here
             continue
             
-        result = instrument._command_handler(command)
+        result = interface._command_handler(command)
         print(result)
-        instrument.microscope.save_instrument_state()
+        interface.microscope.save_instrument_state()
 
 class Interface:
 

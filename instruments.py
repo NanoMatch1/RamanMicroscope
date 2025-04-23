@@ -512,7 +512,7 @@ class Microscope(Instrument):
         self.config = self.load_config()
 
         self.stage_positions_microns = {
-            'X': 0, 'Y': 0, 'Z': 0
+            'x': 0, 'y': 0, 'z': 0
         }
 
         # self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
@@ -558,6 +558,7 @@ class Microscope(Instrument):
             'x': self.move_x,
             'y': self.move_y,
             'z': self.move_z,
+            'stagepos': self.get_stage_positions_microns,
 
             'stagehome': self.set_stage_home,
             # motor commands
@@ -631,6 +632,14 @@ class Microscope(Instrument):
     def filename(self):
         return self.acquisition_control.filename
     
+    # TODO: use setter and getter for stage_pos_microns and update_stage
+    @ui_callable
+    def get_stage_positions_microns(self):
+        '''Get the current stage positions in microns. Returns a dictionary of stage positions.'''
+        stage = " ".join([f"{axis}{pos}" for axis, pos in self.stage_positions_microns.items()])
+        print("Current stage positions: {}".format(stage))
+        return
+    
     @ui_callable
     def generate_wavelength_axis(self):
         spectrometer_wavelength = self.calculate_spectrometer_wavelength()['triax'] # TODO:change to getter
@@ -663,21 +672,29 @@ class Microscope(Instrument):
         self.controller.report = False
         motor_positions = self.get_all_motor_positions(report=False)
         self.controller.report = True
-        
 
+        instrument_state = {
+            "motor_dict": motor_positions,
+            "stage_positions": self.stage_positions_microns
+            }
+        
         save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
         
         with open(save_state_path, 'w') as f:
-            json.dump(motor_positions, f, indent=2)
+            json.dump(instrument_state, f, indent=2)
 
     def load_instrument_state(self):
         '''Loads the state of the microscope and motors from a config, in case of reboot or crash.'''
         save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
         if os.path.exists(save_state_path):
             with open(save_state_path, 'r') as f:
-                motor_positions = json.load(f)
+                instrument_state = json.load(f)
+            motor_positions = instrument_state.get('motor_dict', {})
+            stage_positions = instrument_state.get('stage_positions', {})
             print('Instrument state loaded from file')
             self.write_motor_positions(motor_dict=motor_positions)
+            self.stage_positions_microns = stage_positions
+            
             self.get_all_current_wavelengths()
             self.detect_microscope_mode()
         else:
@@ -1070,7 +1087,7 @@ class Microscope(Instrument):
         Accepts either:
         - A string such as 'x100 y200 z200', 'y21 z34', or 'y2 x5 z2'
         - A tuple of 3 floats
-        Returns a dictionary mapping keys "X", "Y", "Z" to their respective float values.
+        Returns a dictionary mapping keys "x", "y", "z" to their respective float values.
         For string inputs, only keys present in the string are added.
         For tuple inputs, assumes order is (X, Y, Z).
         """
@@ -1106,7 +1123,7 @@ class Microscope(Instrument):
                 x, y, z = float(command[0]), float(command[1]), float(command[2])
             except ValueError:
                 raise ValueError("All tuple elements must be numeric values.")
-            return {"X": x, "Y": y, "Z": z}
+            return {"x": x, "y": y, "z": z}
 
         else:
             raise TypeError("Input must be either a string or a tuple/list of three floats.")
@@ -1121,38 +1138,63 @@ class Microscope(Instrument):
             
         self.acquisition_control.update_stage_positions()
         
-    def move_stage(self, motor_steps):
-        '''Moves the microcsope sample stage in steps in the X, Y and Z directions'''
+    # def move_stage(self, motor_steps):
+    #     '''Moves the microcsope sample stage in steps in the X, Y and Z directions'''
 
-        motion_dict = self._parse_stage_motion_command(motor_steps)
-        self.motion_control.move_motors(motion_dict)
-        # self.update_stage_positions(motion_dict)
+    #     motion_dict = self._parse_stage_motion_command(motor_steps)
+    #     self.motion_control.move_motors(motion_dict)
+    #     if "x" in motion_dict:
+    #         # self.move_x(motion_dict['X'])
+    #         x_steps = self.calibrations.microns_to_steps(motion_dict['X'])
+    #     if "y" in motion_dict:
+    #         self.move_y(motion_dict['Y'])
+    #     if "z" in motion_dict:
+    #         self.move_z(motion_dict['Z'])
+    #     self.update_stage_positions(motion_dict)
 
-        # print('Stage moved to {}'.format(self.acquisition_control.current_stage_coordinates))
+    #     print('Stage moved to {}'.format(self.acquisition_control.current_stage_coordinates))
     
     @ui_callable
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
-        self.motion_control.move_motors({'X': travel_distance})
-        # self.stage_positions_microns['X'] += travel_distance
-        # self.acquisition_control.update_stage_positions()
-        print('X stage moved by {} micrometers'.format(travel_distance))
+        try:
+            travel_distance = float(travel_distance)
+        except ValueError:
+            print("Invalid travel distance. Must be a number.")
+            return
+        
+        motor_dict = self.calibrations.microns_to_steps({"x": travel_distance})
+        self.motion_control.move_motors(motor_dict)
+        self.update_stage_positions({"x": travel_distance})
+        print('x stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
         '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
-        self.motion_control.move_motors({'Y': travel_distance})
-        # self.stage_positions_microns['Y'] += float(travel_distance)
-        # self.acquisition_control.update_stage_positions()
-        print('Y stage moved by {} micrometers'.format(travel_distance))
+        try:
+            travel_distance = float(travel_distance)
+        except ValueError:
+            print("Invalid travel distance. Must be a number.")
+            return
+        
+        motor_dict = self.calibrations.microns_to_steps({"y": travel_distance})
+        self.motion_control.move_motors(motor_dict)
+        self.update_stage_positions({"y": travel_distance})
+        print('y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
         '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
-        self.motion_control.move_motors({'Z': travel_distance})
-        # self.stage_positions_microns['Z'] += travel_distance
-        # self.acquisition_control.update_stage_positions()
-        print('Z stage moved by {} micrometers'.format(travel_distance))
+        try:
+            travel_distance = float(travel_distance)
+        except ValueError:
+            print("Invalid travel distance. Must be a number.")
+            return
+        
+        motor_dict = self.calibrations.microns_to_steps({"z": travel_distance})
+        self.motion_control.move_motors(motor_dict)
+        self.update_stage_positions({"z": travel_distance})
+        print('z stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def set_stage_home(self):
@@ -2115,8 +2157,8 @@ class Microscope(Instrument):
         
         for motor, position in stage_steps.items():
             print(f'{motor}: {position} steps')
-
-        
+        for motor, position in self.stage_positions_microns.items():
+            print(f'{motor}: {position} microns')
 
         return 
     

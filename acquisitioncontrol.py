@@ -20,9 +20,9 @@ class AcquisitionControl:
             'scan_type': None,
         }
         self.motion_parameters = {
-            'start': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
-            'end': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
-            'resolution': {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
+            'start': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'end': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'resolution': {'x': 0.0, 'y': 0.0, 'z': 0.0}
         }
         self.wavelength_parameters = {
             'start': 0.0,
@@ -35,7 +35,7 @@ class AcquisitionControl:
         }
 
         self._current_parameters = {
-            'sample_position': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
+            'sample_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'laser_wavelength': 0.0,
             'polarization_in_angle': 0.0,
             'polarization_out_angle': 0.0,
@@ -52,24 +52,24 @@ class AcquisitionControl:
         
     def update_stage_positions(self):
         self.stage_positions = {
-            'X': self.microscope.stage_positions_microns['X'],
-            'Y': self.microscope.stage_positions_microns['Y'],
-            'Z': self.microscope.stage_positions_microns['Z']
+            'x': self.microscope.stage_positions_microns['x'],
+            'y': self.microscope.stage_positions_microns['y'],
+            'z': self.microscope.stage_positions_microns['z']
         }
         self._current_parameters['sample_position'] = self.stage_positions
         
     @property
     def current_stage_coordinates(self):
         current_coords = [
-            self.microscope.stage_positions_microns['X'], 
-            self.microscope.stage_positions_microns['Y'], 
-            self.microscope.stage_positions_microns['Z']
+            self.microscope.stage_positions_microns['x'], 
+            self.microscope.stage_positions_microns['y'], 
+            self.microscope.stage_positions_microns['z']
             ]
         
         self._current_parameters['sample_position'] = {
-            'X': current_coords[0], 
-            'Y': current_coords[1], 
-            'Z': current_coords[2]
+            'x': current_coords[0], 
+            'y': current_coords[1], 
+            'z': current_coords[2]
         }
 
         return current_coords
@@ -105,8 +105,8 @@ class AcquisitionControl:
 
 
     def estimate_scan_duration(self):
-        x_range = (self.motion_parameters['end_position']['X'] - self.motion_parameters['start_position']['X']) / self.motion_parameters['resolution']['X']
-        y_range = (self.motion_parameters['end_position']['Y'] - self.motion_parameters['start_position']['Y']) / self.motion_parameters['resolution']['Y']
+        x_range = (self.motion_parameters['end_position']['x'] - self.motion_parameters['start_position']['x']) / self.motion_parameters['resolution']['x']
+        y_range = (self.motion_parameters['end_position']['y'] - self.motion_parameters['start_position']['y']) / self.motion_parameters['resolution']['y']
         p_range = (self.polarization_parameters['input']['end_angle'] - self.polarization_parameters['input']['start_angle']) / self.polarization_parameters['input']['resolution']
         w_range = (self.wavelength_parameters['end_wavelength'] - self.wavelength_parameters['start_wavelength']) / self.wavelength_parameters['resolution']
 
@@ -214,16 +214,16 @@ class AcquisitionControl:
             self.polarization_parameters['input']['resolution']
         )
         x_positions = generate_array(
-            self.motion_parameters['start_position']['X'],
-            self.motion_parameters['end_position']['X'],
-            self.motion_parameters['resolution']['X']
+            self.motion_parameters['start_position']['x'],
+            self.motion_parameters['end_position']['x'],
+            self.motion_parameters['resolution']['x']
         )
         y_positions = generate_array(
-            self.motion_parameters['start_position']['Y'],
-            self.motion_parameters['end_position']['Y'],
-            self.motion_parameters['resolution']['Y']
+            self.motion_parameters['start_position']['y'],
+            self.motion_parameters['end_position']['y'],
+            self.motion_parameters['resolution']['y']
         )
-        z_val = self.motion_parameters['start_position']['Z']
+        z_val = self.motion_parameters['start_position']['z']
 
         prev = [self.current_stage_coordinates, None, None]
         for wl in wavelength_list:
@@ -246,17 +246,18 @@ class AcquisitionControl:
         target_microns = [new-old for new, old in zip(new_coordinates, current_positions)]
 
         micron_dict = {
-            'X': target_microns[0],
-            'Y': target_microns[1],
-            'Z': target_microns[2]
+            'x': target_microns[0],
+            'y': target_microns[1],
+            'z': target_microns[2]
         }
 
         motor_dict = self.microscope.calibrations.microns_to_steps(micron_dict)
         # self.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
-
-        # self.microscope.move_stage(motor_dict)
+        self.microscope.motion_control.move_motors(motor_dict)
         print("Sent Command {}".format(motor_dict))
-        print("Stage moved to ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
+        print("Stage moved ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
+
+        self.microscope.motion_control
 
         self.microscope.update_stage_positions(micron_dict)
         self.update_stage_positions()
@@ -268,6 +269,8 @@ class AcquisitionControl:
 
 
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
+
+        # TODO: FIX motion back to origin, keep track of stage pos better
 
         command_hierarchy = [
             self.move_stage_absolute,

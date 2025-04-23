@@ -100,10 +100,10 @@ class Calibration:
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         # self.generate_calibrations()
 
-        self.mode_change_steps = 5000 # number of steps required for change from raman to image mode
-        self.x_steps_per_micron = 100 # number of steps per micron for the x stage
-        self.y_steps_per_micron = 100 # number of steps per micron for the y stage
-        self.z_steps_per_micron = 100 # number of steps per micron for the z stage
+        self.mode_change_steps = 100_000 # number of steps required for change from raman to image mode
+        self.x_steps_per_micron = 1 / 0.0625
+        self.y_steps_per_micron = 1 / 0.0625 
+        self.z_steps_per_micron = 1 / 0.00625 
     
     def _load_calibrations(self):
         """
@@ -201,11 +201,11 @@ class Calibration:
         steps_dict = {}
 
         for motor in action_group.keys():
-            if motor == 'X':
+            if motor == "x":
                 steps_dict[motor] = round(action_group[motor] * self.x_steps_per_micron)
-            elif motor == 'Y':
+            elif motor == "y":
                 steps_dict[motor] = round(action_group[motor] * self.y_steps_per_micron)
-            elif motor == 'Z':
+            elif motor == "z":
                 steps_dict[motor] = round(action_group[motor] * self.z_steps_per_micron)
             else:
                 print(f'{motor} not found in calibrations')

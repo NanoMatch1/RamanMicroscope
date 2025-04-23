@@ -99,9 +99,9 @@
       "triax": "triax"
     },
     "stage_movement": {
-      "X": "2X",
-      "Y": "2Y",
-      "Z": "2Z",
+      "x": "2X",
+      "y": "2Y",
+      "z": "2Z",
       "mode": "2A"
     }
   }
