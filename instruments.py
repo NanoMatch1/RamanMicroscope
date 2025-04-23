@@ -545,8 +545,8 @@ class Microscope(Instrument):
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
             'allmotors': self.get_all_motor_positions,
-            'ramanmode': self.go_to_raman_mode,
-            'imagemode': self.go_to_image_mode,
+            'ramanmode': self.raman_mode,
+            'imagemode': self.image_mode,
             'wavelengthaxis': self.generate_wavelength_axis,
             # 'calshift': self.simple_calibration_shift, #TODO: Decide if I need this
             'report': self.report_status,
@@ -603,7 +603,10 @@ class Microscope(Instrument):
             'setgain': self.set_camera_gain,
             'closecamera': self.close_camera_connection,
             'allocate': self.allocate_camera_buffer,
-            'deallocate': self.deallocate_camera_buffer
+            'deallocate': self.deallocate_camera_buffer,
+            # laser commands
+            'low': self.low_power,
+            'high': self.high_power,
         }
 
         self.current_shift = 0
@@ -635,20 +638,6 @@ class Microscope(Instrument):
 
     
     @ui_callable
-    def go_to_image_mode(self):
-        '''Set the acquisition mode to image mode.'''
-        self.move_motors({'mode':self.calibration_service.mode_change_steps})
-        self.microscope_mode = 'imagemode'
-        print("Microscope set to image mode")
-
-    @ui_callable
-    def go_to_raman_mode(self):
-        '''Set the acquisition mode to Raman mode.'''
-        self.move_motors({'mode':self.calibration_service.mode_change_steps})
-        self.microscope_mode = 'ramanmode'
-        print("Microscope set to Raman mode")
-    
-    @ui_callable
     def open_acquisition_gui(self):
         root = tk.Tk()
         params = self.acquisition_control
@@ -674,6 +663,7 @@ class Microscope(Instrument):
         self.controller.report = False
         motor_positions = self.get_all_motor_positions(report=False)
         self.controller.report = True
+        
 
         save_state_path = os.path.join(self.scriptDir, 'instrument_state.json')
         
@@ -689,6 +679,7 @@ class Microscope(Instrument):
             print('Instrument state loaded from file')
             self.write_motor_positions(motor_dict=motor_positions)
             self.get_all_current_wavelengths()
+            self.detect_microscope_mode()
         else:
             print('Instrument state file not found. Saving current state.')
             self.save_instrument_state()
@@ -703,12 +694,35 @@ class Microscope(Instrument):
         else:
             raise FileNotFoundError(f"Config file not found at {self.config_path}")
         
+    def detect_microscope_mode(self):
+        '''Determines Raman or Imagemode depending on the current position of the mode motor.'''
+
+        mode_steps = self.get_stage_steps()['mode']
+        if -160_000 < mode_steps < -10_000:
+            self.microscope_mode = 'ramanmode'
+        elif -10_000 < mode_steps < 10_000:
+            self.microscope_mode = 'imagemode'
+
+        else:
+            raise ValueError(f"Unknown mode motor position: {mode_steps}. Please check the motor positions.")
+
+        print("Microscope mode detected: {}".format(self.microscope_mode))
+        return self.microscope_mode
+        
+    
+    def get_stage_steps(self):
+        '''Get the current position of the mode motor. Returns the position in steps.'''
+        steps_dict = self.motion_control.get_motor_positions(self.action_groups['stage_movement'])
+        return steps_dict
+
+        
     @ui_callable
     def load_config(self):
         self.config = self.load_config_file()
         self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
         self.hard_limits = self.config.get("hard_limits", {})
         self.action_groups = self.config.get("action_groups", {})
+        self.mode_steps = self.config.get("mode_steps", {}).get("mode", 0)
 
         return self.config
 
@@ -717,6 +731,35 @@ class Microscope(Instrument):
             json.dump(self.config, f, indent=2)
 
     #? Motor and Homing
+
+    @ui_callable
+    def raman_mode(self):
+        '''Set the acquisition mode to Raman mode.'''
+        if self.microscope_mode == 'ramanmode':
+            # print("Microscope already in Raman mode")
+            response = input("Microscope already in Raman mode. Do you want to continue? (y/n)")
+            if response.lower() != 'y':
+                print("aborting mode change, staying in raman mode")
+                return
+            
+        self.motion_control.move_motors({'mode':-self.mode_steps})
+        self.microscope_mode = 'ramanmode'
+        print("Microscope set to Raman mode")
+    
+    @ui_callable
+    def image_mode(self):
+        '''Set the acquisition mode to image mode.'''
+        if self.microscope_mode == 'imagemode':
+            # print("Microscope already in Image mode")
+            response = input("Microscope already in Image mode. Do you want to continue? (y/n)")
+            if response.lower() != 'y':
+                print("aborting mode change, staying in image mode")
+                return
+
+        self.motion_control.move_motors({'mode':self.mode_steps})
+        self.microscope_mode = 'imagemode'
+        print("Microscope set to Image mode")
+
 
     @ui_callable
     def test_homing(self, label, series_name, cycles=20):
@@ -1213,6 +1256,19 @@ class Microscope(Instrument):
         print("Returning to initial position")
         self.go_to_laser_steps(initial_laser)
         self.go_to_grating_steps(initial_grating)
+
+    @ui_callable
+    def low_power(self):
+        '''sets the laser power to low to save on the diode lifetimes'''
+        self.set_laser_power(0.00)
+
+        print("Laser power set to low")
+    
+    @ui_callable
+    def high_power(self, power=4.5):
+        '''Sets the laser power to 4.5 W or otherwise provided in the kwarg for standard ops.'''
+        self.set_laser_power(power)
+        print("Laser power set to {power}".format(power))
 
     @ui_callable
     def go_to_laser_steps(self, target_positions):
@@ -2030,6 +2086,8 @@ class Microscope(Instrument):
     
     def report_all_current_positions(self):
         '''Formats and prints the current positions of the microscope.'''
+        stage_steps = self.get_stage_steps()
+
         print("---Steps---")
         for motor, position in self.laser_steps.items():
             print(f'{motor}: {position} steps')
@@ -2051,6 +2109,13 @@ class Microscope(Instrument):
         print('---Spectrometer---')
         print(f'Spectrometer position: {self.spectrometer_position} steps')
         print(f'Spectrometer wavelength: {self.spectrometer_wavelength} nm')
+
+        # stage
+        print('---Stage---')
+        
+        for motor, position in stage_steps.items():
+            print(f'{motor}: {position} steps')
+
         
 
         return 

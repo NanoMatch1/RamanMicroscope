@@ -70,7 +70,10 @@
   "stage_resolution": {
     "X" : 0.0625,
     "Y" : 0.0625,
-    "Z" : 0.0625
+    "Z" : 0.00625
+  },
+  "mode_steps": {
+    "mode": 100000
   },
   "action_groups": {
     "laser_wavelength": {
