@@ -2075,6 +2075,9 @@ class Microscope(Instrument):
         self.laser_wavelengths = self.calibrations.steps_to_wl(current_pos)
 
         return self.laser_wavelengths
+    
+    def calculate_polarization_angles(self):
+        pass
 
     def go_to_wavenumber(self, wavenumber):
         """
