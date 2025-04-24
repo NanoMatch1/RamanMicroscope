@@ -182,7 +182,12 @@ class ArduinoUNO:
         return laser_steps
 
     def _connect_to_UNO(self):
-        UNO_serial = serial.Serial(self.com_port, self.baud, timeout=1)
+        UNO_serial = serial.Serial()
+        UNO_serial.port = self.com_port
+        UNO_serial.baudrate = self.baud
+        UNO_serial.dtr = False
+        UNO_serial.open()
+        
         while UNO_serial.in_waiting == 0:
             time.sleep(0.1)
         while UNO_serial.in_waiting > 0:
