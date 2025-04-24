@@ -6,7 +6,7 @@ from instruments import Instrument, ui_callable
 
 class ArduinoUNO:
 
-    def __init__(self, interface, com_port='COM10', baud=9600, simulate=False, report=True):
+    def __init__(self, interface, com_port='COM10', baud=9600, simulate=False, report=True, dtr=False):
         self.interface = interface
         self.simulate = simulate
         self.com_port = com_port
