@@ -77,7 +77,7 @@ class Interface:
             # self.stage_controller = SimulatedStageControl(self)
         else:
             # Create real hardware instances
-            self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=False)
+            self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=False, dtr=False)
             self.camera = TucamCamera(self, simulate=False)
             self.spectrometer = Triax(self, simulate=False)
             self.laser = MillenniaLaser(self, simulate=False)
