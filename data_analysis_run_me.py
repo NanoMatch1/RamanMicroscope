@@ -13,8 +13,8 @@ from dataset_analysis import DataSet
 # from pipelines.shifan import fluorometer_tests
 
 
-series_name = r'Sulfur-wavelengthscan-t1'
-series_name = r'logic-t1'
+series_name = r'sulfur-wavelengthscan-t4'
+# series_name = r'logic-t1'
 dataDir = r'C:\Users\sjbrooke\matchbook\RamanMicroscope\data'
 fileDir = os.path.join(dataDir, series_name)
 
