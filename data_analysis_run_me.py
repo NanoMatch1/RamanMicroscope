@@ -13,7 +13,8 @@ from dataset_analysis import DataSet
 # from pipelines.shifan import fluorometer_tests
 
 
-series_name = r'sulfur-wavelengthscan-t4'
+series_name = r'sulfur-wavelengthscan-t4' # CHANGE THIS TO THE NAME OF THE FOLDER IN THE DATA DIRECTORY
+
 # series_name = r'logic-t1'
 dataDir = r'C:\Users\sjbrooke\matchbook\RamanMicroscope\data'
 fileDir = os.path.join(dataDir, series_name)
@@ -26,7 +27,7 @@ if __name__ == '__main__':
     # dataSet.access_database('ramantest')
 
     dataSet.frames_to_spectrum(
-        # binning_region=(30,120)
+         # binning_region=(35,45) # uncomment this line to bin the data automatically
         )
     # breakpoint()
     # for filename, data in dataSet.data_dict.items():
@@ -36,6 +37,8 @@ if __name__ == '__main__':
         # breakpoint()
     # dataSet.load_data()
     # breakpoint()
-    dataSet.plot_current(offset=1000, legend=False)
-    dataSet.plot_wavelength_scan()
+    dataSet.sort_by_excitation_wavelength()
+    # dataSet.plot_current(offset=1000, legend=False)
+    # dataSet.plot_wavelength_scan(mode='wavelength')
+    dataSet.plot_wavelength_scan_pcolourmesh(mode='wavelength', y_bin_width=1)
     # dataSet.plot_current()
