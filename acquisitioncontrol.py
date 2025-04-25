@@ -326,15 +326,15 @@ class AcquisitionControl:
             image_data = self.microscope.acquire_one_frame(export_raw=False)
             if image_data is None:
                 print("Error image data None")
-                status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
-                rescan_list.append(index, step)
+                status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list.")
+                rescan_list.append([index, step])
                 return
             
             self.save_spectrum(image_data, scan_index=index)
             self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
         
         if len(rescan_list) > 0:
-            for index, step in rescan_list:
+            for (index, step) in rescan_list:
                 self.general_parameters['scan_index'] = index
                 if cancel_event.is_set():
                     status_callback("Scan cancelled.")
