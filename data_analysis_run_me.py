@@ -16,7 +16,8 @@ from dataset_analysis import DataSet
 series_name = r'sulfur-wavelengthscan-t4' # CHANGE THIS TO THE NAME OF THE FOLDER IN THE DATA DIRECTORY
 
 # series_name = r'logic-t1'
-dataDir = r'C:\Users\sjbrooke\matchbook\RamanMicroscope\data'
+dirname = os.path.dirname(__file__)
+dataDir = os.path.join(dirname, 'data')
 fileDir = os.path.join(dataDir, series_name)
 
 
@@ -37,8 +38,9 @@ if __name__ == '__main__':
         # breakpoint()
     # dataSet.load_data()
     # breakpoint()
+    dataSet.subtract_single_background()
     dataSet.sort_by_excitation_wavelength()
-    # dataSet.plot_current(offset=1000, legend=False)
+    dataSet.plot_current(offset=1000, legend=False)
     # dataSet.plot_wavelength_scan(mode='wavelength')
     dataSet.plot_wavelength_scan_pcolourmesh(mode='wavelength', y_bin_width=1)
     # dataSet.plot_current()

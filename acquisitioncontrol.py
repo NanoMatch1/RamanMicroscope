@@ -267,6 +267,30 @@ class AcquisitionControl:
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
         self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
+    # TODO: Refactor into initiate_scan_sequence and acquire_scan
+    # def initiate_scan_sequence(self, scan_sequence, cancel_event, status_callback, progress_callback):
+        for index, step in enumerate(scan_sequence):
+            self.general_parameters['scan_index'] = index
+            if cancel_event.is_set():
+                status_callback("Scan cancelled.")
+                return
+            status_callback(f"Running step {index}: {step}")
+            progress_callback(index + 1, total_steps, start_time)
+            for command, change in zip(command_hierarchy, step):
+                if change is not None:
+                    command(change)
+            
+            image_data = self.microscope.acquire_one_frame(export_raw=False)
+            if image_data is None:
+                print("Error image data None")
+                status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
+                rescan_list.append(index, step)
+                return
+            
+            self.save_spectrum(image_data, scan_index=index)
+            self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+        
+
 
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
 
@@ -282,6 +306,7 @@ class AcquisitionControl:
         start_time = time.time()
         predicted_time = ((total_steps * float(self.general_parameters['acquisition_time']) / 1000.0)/3600) * 1.2
         print(f"Predicted time: {predicted_time:.2f} hours")
+        rescan_list = []
 
         self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
         if self.microscope.microscope_mode != 'ramanmode':
@@ -302,10 +327,34 @@ class AcquisitionControl:
             if image_data is None:
                 print("Error image data None")
                 status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
+                rescan_list.append(index, step)
                 return
             
             self.save_spectrum(image_data, scan_index=index)
             self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+        
+        if len(rescan_list) > 0:
+            for index, step in rescan_list:
+                self.general_parameters['scan_index'] = index
+                if cancel_event.is_set():
+                    status_callback("Scan cancelled.")
+                    return
+                status_callback(f"Running step {index}: {step}")
+                progress_callback(index + 1, total_steps, start_time)
+                for command, change in zip(command_hierarchy, step):
+                    if change is not None:
+                        command(change)
+                
+                image_data = self.microscope.acquire_one_frame(export_raw=False)
+                if image_data is None:
+                    print("Error image data None")
+                    status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
+                    rescan_list.append(index, step)
+                    return
+                
+                self.save_spectrum(image_data, scan_index=index)
+                self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+            
         status_callback("Scan complete.")
         progress_callback(total_steps, total_steps, start_time)
         print("Scan complete.")
