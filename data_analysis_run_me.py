@@ -14,6 +14,7 @@ from dataset_analysis import DataSet
 
 
 series_name = r'sulfur-wavelengthscan-t4' # CHANGE THIS TO THE NAME OF THE FOLDER IN THE DATA DIRECTORY
+series_name = r'MoS2-wavelengthscan-3'
 
 # series_name = r'logic-t1'
 dirname = os.path.dirname(__file__)
@@ -28,7 +29,7 @@ if __name__ == '__main__':
     # dataSet.access_database('ramantest')
 
     dataSet.frames_to_spectrum(
-         # binning_region=(35,45) # uncomment this line to bin the data automatically
+          binning_region=(35,45) # uncomment this line to bin the data automatically
         )
     # breakpoint()
     # for filename, data in dataSet.data_dict.items():
@@ -38,9 +39,13 @@ if __name__ == '__main__':
         # breakpoint()
     # dataSet.load_data()
     # breakpoint()
-    dataSet.subtract_single_background()
+    # dataSet.parse_scan_index()
+    dataSet.sort_by_scan_index()    
+    
+    dataSet.peakfit()
     dataSet.sort_by_excitation_wavelength()
     dataSet.plot_current(offset=1000, legend=False)
     # dataSet.plot_wavelength_scan(mode='wavelength')
     dataSet.plot_wavelength_scan_pcolourmesh(mode='wavelength', y_bin_width=1)
+    dataSet.plot_wavelength_scan_pcolourmesh(mode='raman', y_bin_width=1)
     # dataSet.plot_current()
