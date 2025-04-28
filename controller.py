@@ -187,13 +187,20 @@ class ArduinoUNO:
         UNO_serial.baudrate = self.baud
         UNO_serial.dtr = False
         UNO_serial.open()
-        
+
+        start_time = time.time()
+        timeout = 2  # Timeout in seconds
         while UNO_serial.in_waiting == 0:
+            if time.time() - start_time > timeout:
+                print("Timeout waiting for Arduino to respond.")
+                return UNO_serial
             time.sleep(0.1)
+        
         while UNO_serial.in_waiting > 0:
             response = UNO_serial.readline().decode().strip()
             print(response)
         return UNO_serial
+
     
     def _send_command_to_UNO(self, command):
         self.serial.write('{}\n'.format(command).encode())

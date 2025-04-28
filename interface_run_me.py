@@ -170,7 +170,7 @@ class Interface:
             
         # Initialize the high-level instrument classes
         self.laser.initialise()
-        self.microscope.initialise()  # This one must be last as it relies on others
+        self.microscope.initialise()  #t be last as it relies on others
         
         self._integrity_checker()
 
