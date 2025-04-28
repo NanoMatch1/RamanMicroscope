@@ -444,7 +444,7 @@ class TucamCamera:
                 print(f"Camera too hot ({temp.value}°C). Waiting...")
                 time.sleep(5)  # Wait before checking temperature again
 
-    def set_fan_speed(self, speed=3):
+    def set_fan_speed(self, speed=3, report=True):
         """
         Adjusts the fan speed to enhance cooling.
         Speed Levels:
@@ -456,7 +456,8 @@ class TucamCamera:
         status = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, speed)
 
         if status == TUCAMRET.TUCAMRET_SUCCESS:
-            print(f"Fan speed set to {speed} (High Recommended for Cooling).")
+            if report:
+                print(f"Fan speed set to {speed} (High Recommended for Cooling).")
         else:
             print(f"Failed to set fan speed. Error code: {status}")
 
@@ -481,6 +482,7 @@ class TucamCamera:
                 time.sleep(0.001)
 
             self.deallocate_buffer_and_stop()
+            self.set_fan_speed(3, report=False) # TODO: check if this is needed, forces fan to high speed after acquisition to work around temp bug
         return data
     
     def acquire_transient(self, save_dir='transient', export=True):
