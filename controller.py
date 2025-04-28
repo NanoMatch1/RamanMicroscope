@@ -182,6 +182,7 @@ class ArduinoUNO:
         return laser_steps
 
     def _connect_to_UNO(self):
+        print("Connecting to Arduino controller...")
         UNO_serial = serial.Serial()
         UNO_serial.port = self.com_port
         UNO_serial.baudrate = self.baud

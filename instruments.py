@@ -2717,6 +2717,7 @@ class Triax(Instrument):
     @simulate(expected_value=True) # TODO: Change to actual response
     def connect(self):
         # Open a connection to the instrument
+        print("Connecting to TRIAX spectrometer...")
         rm = pyvisa.ResourceManager()
         rm.list_resources()
         self.spectrometer = rm.open_resource('GPIB0::1::INSTR')  # Replace with the actual VISA address of your instrument
@@ -3043,6 +3044,8 @@ class MillenniaLaser(Instrument):
         if self.simulate:
             print("Simulated connection.")
             return
+        
+        print("Connecting to the laser on port {}...".format(self.port))
 
         self.ser = serial.Serial(
             port=self.port,
