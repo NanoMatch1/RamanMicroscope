@@ -1,9 +1,9 @@
 {
   "general_parameters": {
-    "acquisition_time": "1000",
-    "filename": "cutoff-t11",
+    "acquisition_time": "7000",
+    "filename": "MoS2-WL-LowFreq2",
     "raman_shift": 0.0,
-    "laser_power": 4.5,
+    "laser_power": "4.5",
     "scan_index": 0,
     "scan_type": "wavelength"
   },
@@ -27,7 +27,7 @@
   "wavelength_parameters": {
     "start_wavelength": 730.0,
     "end_wavelength": 870.0,
-    "resolution": 10.0
+    "resolution": 5.0
   },
   "polarization_parameters": {
     "input": {

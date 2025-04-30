@@ -11,8 +11,8 @@ from analysis_spectroscopy import DataSet
 # from pipelines.shifan import fluorometer_tests
 
 
-series_name = r'sulfur-wavelengthscan-t4' # CHANGE THIS TO THE NAME OF THE FOLDER IN THE DATA DIRECTORY
-series_name = r'MoS2-wavelengthscan-3'
+series_name = r'MoS2-WL-LowFreq2' # CHANGE THIS TO THE NAME OF THE FOLDER IN THE DATA DIRECTORY
+# series_name = r'MoS2-wavelengthscan-3'
 # series_name = r'Nd1-wavelengthscan-2'
 
 # series_name = r'logic-t1'
@@ -51,6 +51,6 @@ if __name__ == '__main__':
     dataSet.calibrate_laser_wavelengths()
     dataSet.sort_by_excitation_wavelength()
     dataSet.plot_current(offset=1000, legend=False)
-    # dataSet.plot_wavelength_scan(mode='wavelength')
+    dataSet.plot_wavelength_scan(mode='wavelength')
     dataSet.plot_wavelength_scan_pcolourmesh(mode='wavelength', y_bin_width=1)
     # dataSet.plot_current()
