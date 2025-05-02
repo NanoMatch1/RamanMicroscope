@@ -3,8 +3,35 @@ import time
 
 from instruments import Instrument, ui_callable
 
+# class SerialComs:
+#     def __init__(self, com_port='COM10', baud=9600, report=True, dtr=False):
+#         self.com_port = com_port
+#         self.baud = baud
+#         self.report = report
 
-class ArduinoUNO:
+#         self.serial = serial.Serial()
+#         self.serial.port = self.com_port
+#         self.serial.baudrate = self.baud
+#         self.serial.dtr = dtr
+#         self.serial.open()
+
+#     def connect(self):
+#         if self.serial.is_open:
+#             print("Serial port is already open.")
+#             return
+
+#         try:
+#             self.serial.open()
+#             print(f"Connected to {self.com_port} at {self.baud} baud.")
+#         except serial.SerialException as e:
+#             print(f"Error opening serial port: {e}")
+
+#     def close(self):
+#         if not self.simulate:
+#             self.serial.close()
+
+
+class ArduinoMEGA:
 
     def __init__(self, interface, com_port='COM10', baud=9600, simulate=False, report=True, dtr=False):
         self.interface = interface
@@ -52,6 +79,10 @@ class ArduinoUNO:
         self.connect()
 
     def connect(self):
+        if self.simulate:
+            from simulation import SimulatedArduinoSerial
+            self.serial = SimulatedArduinoSerial()
+
         self.serial = self._connect_to_UNO()
 
     def _format_command_length(self, command, threshold=56):
@@ -183,6 +214,7 @@ class ArduinoUNO:
 
     def _connect_to_UNO(self):
         print("Connecting to Arduino controller...")
+
         UNO_serial = serial.Serial()
         UNO_serial.port = self.com_port
         UNO_serial.baudrate = self.baud

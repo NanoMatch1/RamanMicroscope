@@ -243,20 +243,6 @@ Notes for Riley
 4. Perform a linescan
 
 
-# Sam Priority
-- create dummy instrument classes for dependency injection.
-- Ensure scan parameters updating to metadata
-- compress data saving
-- Add simple start-stop UI with save database and load pipelines
-- check json calibration
-    - work on calibration modifying script
-- code solutions for Dark Signal Non Uniformity and Photo Repsonse Non Uniformity
-
-
-
-
-
-
 # Data access
 https://unimelbcloud-my.sharepoint.com/:f:/g/personal/rileyjt_student_unimelb_edu_au/ElSFjKdas_NDlLl6kADVAnUBTr1sApV6YKhTFq065Ky97w?e=5%3a3r9Vvt&at=9
 
@@ -303,3 +289,16 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 
 
 - FYI Camera module in "4. Adapters > ThorCam PCB"
+
+
+# Notes adn ToDo:
+
+## Sam ToDo:
+- create dummy instrument classes for dependency injection.
+- create unit tests for all classes
+- Ensure scan parameters updating to metadata
+- compress data saving
+- Add simple start-stop UI with save database and load pipelines
+- check json calibration
+    - work on calibration modifying script
+- code solutions for Dark Signal Non Uniformity and Photo Repsonse Non Uniformity

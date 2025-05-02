@@ -15,9 +15,9 @@ import ctypes
 from random import randint
 from typing import List, Tuple, Dict, Any, Optional, Union
 
-class SimulatedArduinoController:
+class SimulatedArduinoSerial:
     """
-    Simulates the Arduino-based RamanMicroscope controller.
+    Simulates the Arduino-MEGA-based RamanMicroscope controller.
     Methods:
       send_command(cmd: str) -> str
         Send an envelope command (including its leading/trailing char)
@@ -26,8 +26,9 @@ class SimulatedArduinoController:
 
     MODULES = ('1','2','3','4')
     MOTORS  = ('A','X','Y','Z')
+    # RAMAN_MODE_STEPS = -100_000  # steps to move to Raman mode
 
-    def __init__(self):
+    def __init__(self, interface, com_port=None, baud=None, report=True):
         # Initialize every motor to zero position
         self.current = {
             m: { motor: 0 for motor in self.MOTORS }
@@ -39,6 +40,12 @@ class SimulatedArduinoController:
         self.led2 = False
         # LDR reading (you can override this in tests)
         self.ldr_value = 0
+
+    def write(self, cmd: str) -> None:
+        """Simulate sending a command to the Arduino."""
+        print(f"Sending command: {cmd.strip()}")
+        breakpoint()
+
 
     def send_command(self, cmd: str) -> str:
         """Mimic Serial.readStringUntil('\\n') + parseCommand + Serial responses."""
@@ -171,17 +178,17 @@ class SimulatedArduinoController:
 
     def _raman_mode(self) -> str:
         # module 2, motor A  → +6000 steps
-        self._move('2', 'A', +6000)
+        self._move('2', 'A', self.RAMAN_MODE_STEPS)
         return "Moving to Raman Mode...\n"
 
     def _image_mode(self) -> str:
         # module 2, motor A  → -6000 steps
-        self._move('2', 'A', -100_000)
+        self._move('2', 'A', -self.RAMAN_MODE_STEPS)
         return "Moving to Image Mode...\n"
 
 
 
-class SimulatedArduino:
+class SimulatedArduinoController:
     """Simulated Arduino controller for stepper motors"""
     
     def __init__(self, interface=None, com_port=None, baud=None, report=True):
