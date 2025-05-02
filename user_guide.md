@@ -1,4 +1,4 @@
-# Quickstart Guide
+# DRR Working Notes
 ## Microscope startup and initialisation
 
 1. Boot the software by running the `interface_run_me.py` script. **ENSURE the power to the motors is OFF**.
@@ -34,6 +34,16 @@ After homing, sometimes the motors can be slightly off still. I believe this is 
 The microscope should now be aligned and calibrated, ready for scans.
 
 # Running a Scan
+The scanning controls are currently all managed with a separate UI. Type `gui` to load this UI.
+Here you can select start and end positions and resolution for all scan dimensions: Stage motion, wavelength, and polarization. You can also edit filename and acquisition time.
+Select settings as desired
+Tick the box to "enable scan mode"
+Click "start scan acquisiton" to begin scanning acquisition.
+
+The files are saved to a folder of the filename, inside the data directory of the main RamanMicroscope folder. These will be processed later by analysis scripting.
+
+# Troubleshooting
+
 
 
 
@@ -57,6 +67,10 @@ All commands can be passed arguments in the form of characters separated by `<sp
 - `home` $motorlabel$: homes the motor of $motorlabel$ (e.g. `home l1`)
 
 - `reference` $\lambda$: reassigns the current motor positions to the wavelength of choice. Used when making minor adjustments to the alignment of the laser or gratings.
+
+- `ren`: read enterance slit on the spectrometer. Should be between 25 and 50 microns for standard operation
+- `men`: move enterance slit on the spectrometer.
+
 
 - `run`: runs the camera in continuous acquisition mode. Data is plotted to the data_viewer_run_me.py
 -`stop`: stops a continuous acquisition.
@@ -216,3 +230,100 @@ Many of these commands are required for maintenance but some have calibration-br
 - `wai`: (TBD)
 - `wavelengthaxis`: (TBD)
 - `acqtime`, `filename`, `ramanshift`, `laserpower`: (TBD – placeholder or legacy)
+
+
+
+
+Notes for Riley
+1. Adjust intermediate filter in monochormator so that the spectrum cuts off at lower wavenumbers, closer to the laser line.
+- Trying to avoid cutting into the low-frequency modes between 100 and 300 cm-1
+2. see if the cutoff changes at all wavelengths, ~10 nm steps
+- us mos2 powder to see the effect, ~5s 
+3. Build the sample stage for high magnification oil immersion lenses inspired by thesis design
+4. Perform a linescan
+
+
+## Riley's Research plan/literature survey
+The first aim is to identify and characterise defect modes in other TMDs. This analysis is firstly, novel, given that the defect modes of many TMDs are largely unexplored in general, and completely unexplored under indirect resonance conditions. Secondly, the use of the Raman microscope to comprehensively explore these model systems provides a basis for applying the setup to investigate other defect systems and quantum devices by demonstrating the types of defects that can be investigated, and how exactly selection rules are affected/what to expect in other systems.
+
+We will use the materials avalaible to gain insights sequentially and with increasing complexity. MoS2 serves as the initial validation. The defect modes will be identified and characterised at different wavelengths to validate the setup and provide novel insights beyond published works. WSe2 is the next candidate, and is sufficiently unexplored under DRR to provide publishable results (need to check recent literature for any work in the defect modes of WSe2)
+
+The initial reserach plan is as follows:
+1. Validate the DRR setup by studying MoS2
+- there will be a burn in phase where teething issues and calibration need to be addressed. MoS2 is well understood by the team and will provide a nice benchmark for the setup.
+- Actions:
+    - Defect wavelength scan on MoS2 powder
+    - Line scan on MoS2 flakes, oil immersion lens
+2. WSe2 - Fronteer of research
+- Actions:
+    - Check literature for recent advances/publication on defect modes
+    - Run powder wavelength scans to identify defect modes
+    - perform linescans, maps, and polarization studies to fully map the resonant defect behaviour of flakes under the high NA objective
+
+3. InSe - Strain stuff
+4. Other sytems incl. polaritons
+
+
+
+
+
+--> investigate solar materials once the setup is validated.
+
+# Sam Priority
+- create dummy instrument classes for dependency injection.
+- Ensure scan parameters updating to metadata
+- compress data saving
+- Add simple start-stop UI with save database and load pipelines
+- check json calibration
+    - work on calibration modifying script
+- code solutions for Dark Signal Non Uniformity and Photo Repsonse Non Uniformity
+
+
+
+
+
+
+# Data access
+https://unimelbcloud-my.sharepoint.com/:f:/g/personal/rileyjt_student_unimelb_edu_au/ElSFjKdas_NDlLl6kADVAnUBTr1sApV6YKhTFq065Ky97w?e=5%3a3r9Vvt&at=9
+
+
+# Achieving Kohler illumination
+1. adjust the X and Y translation knobs on the Optimecanic mount holding the white light fiber optic cable to align the light to the center of the microscope objective at the sample. You will optimise for sample brightness on the camera.
+2. Slide the focusing lens until the spot on the sample
+
+
+# Dismantle
+## Goals:
+- Flip the X-Y translation optomechanic mount 180 degrees so the X knob points out to the right
+- Install the X-Y cage-mounted optomechanic to hold the image focusing lens to the camera.
+- Push back the camera to allow longer focal length lenses to fit in the camera image focusing section.
+
+## Flipping the XY optomechanic
+1. Unscrew the post clamp holding the XY optimecahnic. Remove the optomechanic from the table, including the cage rods.
+2. Unscrew the cage rods from the optomechanic and slide the AC80 lens off the rods. Make note of the orientation of the lens with respect to the fiber optic cable.
+3. Remove the SM1FC2 threaded fiber optic adapter from the XY mount.
+4. Flip the mount 180 degrees and re-thread the SM1FC2 adapter into the side of the XY mount that moves (twist the micrometers to see what side moves).
+5. Screw the cage rods into the other, flipped face of the XY translation mount.
+6. Place the AC80 lens back on the cage rods in the same orientation with respect to the whole optomechanic mount/fiber optic cable.
+7. Place the mount back on the table, and push the cage rods back into the white 30-60 adapter. It can help to loosen the cage rods to get all of them into the white adatper, then tighten them back down once in place.
+8. Screw the fiber optic back in and refocus/realign the white light source into the back of the microscope objective. Note the camera needs to be aligned to fully focus/align the white light source.
+
+## Install XY translation cage mount
+1. Remove the 4x microscope objective in the camera section from the cage.
+2. Attempt to slide the whole camera section (cage rods included) from the white 30-60 adapter. If it doesn't come out loosen some of the cage rods on the camrea box/mount
+3. Once the camera is free from the white adapter, extend or replace the cage rods. Make sure they are long enough to create enough space to put the lens in (75-100 mm) but not so long that they push the camera over the edge or extend the rods into the beamsplitter section.
+4. Place the XY cage translation mount on the cage rods.
+4.5 place a lens in the adapter
+5. Slide the cage rods and camera back into the white adapter.
+6. Lock the camera post mount down to the table
+
+## Aligning the light source and camera
+Perform this step with the beamsplitters in the optical axis ("image mode").
+1. Focus the laser to a flat, reflective sample. Use a target card mounted in the cage section just before the beamsplitters. Focus is achieved when the back reflected laser light strikes the targer card on return, and is roughly the same size as the input aperture on the target card.
+2. **Focus to the camera**. Slide the lens along the cage rod until the laser spot is focused as small as possible on the camera. Centre the spot on the camera display using the X-Y translation knobs on the lens mount.
+    - Not the spot might not be perfectly centred with the XY translation knobs and this is fine.
+3. **Align and focus the illumination**. Use the X-Y translate to maximise illumination on the sample, as seen by the camera. Slide the collimating lens along the cage slightly to improve intensity at the sample. You want high brightness and even illumination. Technically best illumination (Kohler illumination) is achieved when the light is uniformly spread over the image region, but with thin 2D materials sometimes overfocusing so that the light becomes more concentrated in the centre can improve contrast and assist in viewing of flakes. 
+4. Iterate steps 2-3 until the image (of a flake) is sharp and evenly illuminated.
+
+
+- FYI Camera module in "4. Adapters > ThorCam PCB"
