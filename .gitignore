@@ -1,4 +1,6 @@
 /data
-/__pycache__
+__pycache__/
+*.py[cod]
 delme.py
+/__pycache__
 

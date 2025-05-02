@@ -243,46 +243,6 @@ Notes for Riley
 4. Perform a linescan
 
 
-## Riley's Research plan/literature survey
-The first aim is to identify and characterise defect modes in other TMDs. This analysis is firstly, novel, given that the defect modes of many TMDs are largely unexplored in general, and completely unexplored under indirect resonance conditions. Secondly, the use of the Raman microscope to comprehensively explore these model systems provides a basis for applying the setup to investigate other defect systems and quantum devices by demonstrating the types of defects that can be investigated, and how exactly selection rules are affected/what to expect in other systems.
-
-We will use the materials avalaible to gain insights sequentially and with increasing complexity. MoS2 serves as the initial validation. The defect modes will be identified and characterised at different wavelengths to validate the setup and provide novel insights beyond published works. WSe2 is the next candidate, and is sufficiently unexplored under DRR to provide publishable results (need to check recent literature for any work in the defect modes of WSe2)
-
-The initial reserach plan is as follows:
-1. Validate the DRR setup by studying MoS2
-- there will be a burn in phase where teething issues and calibration need to be addressed. MoS2 is well understood by the team and will provide a nice benchmark for the setup.
-- Actions:
-    - Defect wavelength scan on MoS2 powder
-    - Line scan on MoS2 flakes, oil immersion lens
-2. WSe2 - Fronteer of research
-- Actions:
-    - Check literature for recent advances/publication on defect modes
-    - Run powder wavelength scans to identify defect modes
-    - perform linescans, maps, and polarization studies to fully map the resonant defect behaviour of flakes under the high NA objective
-
-3. InSe - Strain stuff
-4. Other sytems incl. polaritons
-
-
-
-
-
---> investigate solar materials once the setup is validated.
-
-# Sam Priority
-- create dummy instrument classes for dependency injection.
-- Ensure scan parameters updating to metadata
-- compress data saving
-- Add simple start-stop UI with save database and load pipelines
-- check json calibration
-    - work on calibration modifying script
-- code solutions for Dark Signal Non Uniformity and Photo Repsonse Non Uniformity
-
-
-
-
-
-
 # Data access
 https://unimelbcloud-my.sharepoint.com/:f:/g/personal/rileyjt_student_unimelb_edu_au/ElSFjKdas_NDlLl6kADVAnUBTr1sApV6YKhTFq065Ky97w?e=5%3a3r9Vvt&at=9
 
@@ -329,3 +289,42 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 
 
 - FYI Camera module in "4. Adapters > ThorCam PCB"
+
+
+# Notes adn ToDo:
+
+## Riley's Research plan/literature survey
+The first aim is to identify and characterise defect modes in other TMDs. This analysis is firstly, novel, given that the defect modes of many TMDs are largely unexplored in general, and completely unexplored under indirect resonance conditions. Secondly, the use of the Raman microscope to comprehensively explore these model systems provides a basis for applying the setup to investigate other defect systems and quantum devices by demonstrating the types of defects that can be investigated, and how exactly selection rules are affected/what to expect in other systems.
+
+We will use the materials avalaible to gain insights sequentially and with increasing complexity. MoS2 serves as the initial validation. The defect modes will be identified and characterised at different wavelengths to validate the setup and provide novel insights beyond published works. WSe2 is the next candidate, and is sufficiently unexplored under DRR to provide publishable results (need to check recent literature for any work in the defect modes of WSe2)
+
+The initial reserach plan is as follows:
+1. Validate the DRR setup by studying MoS2
+- there will be a burn in phase where teething issues and calibration need to be addressed. MoS2 is well understood by the team and will provide a nice benchmark for the setup.
+- Actions:
+    - Defect wavelength scan on MoS2 powder
+    - Line scan on MoS2 flakes, oil immersion lens
+2. WSe2 - Fronteer of research
+- Actions:
+    - Check literature for recent advances/publication on defect modes
+    - Run powder wavelength scans to identify defect modes
+    - perform linescans, maps, and polarization studies to fully map the resonant defect behaviour of flakes under the high NA objective
+
+3. InSe - Strain stuff
+4. Other sytems incl. polaritons
+
+
+
+
+
+--> investigate solar materials once the setup is validated.
+
+## Sam ToDo:
+- create dummy instrument classes for dependency injection.
+- create unit tests for all classes
+- Ensure scan parameters updating to metadata
+- compress data saving
+- Add simple start-stop UI with save database and load pipelines
+- check json calibration
+    - work on calibration modifying script
+- code solutions for Dark Signal Non Uniformity and Photo Repsonse Non Uniformity

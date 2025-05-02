@@ -2,7 +2,7 @@
 import os
 import traceback
 
-from controller import ArduinoUNO
+from controller import ArduinoMEGA
 from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, simulate, MillenniaLaser
 from calibration import Calibration
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
@@ -65,11 +65,11 @@ class Interface:
 
         if simulate:
             # Import simulation module only when needed
-            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
-                                  SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
+            from simulation import (SimulatedArduinoController, SimulatedArduinoSerial, SimulatedCamera, SimulatedTriax,
+                                  SimulatedLaser)
             
             # Create simulated hardware instances
-            self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+            self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud)
             self.camera = SimulatedCamera(self)
             self.spectrometer = SimulatedTriax(self)
             self.laser = SimulatedLaser(self)
@@ -90,7 +90,7 @@ class Interface:
 
 
         if len(debug_skip) > 0:
-            from simulation import (SimulatedArduino, SimulatedCamera, SimulatedTriax,
+            from simulation import (SimulatedCamera, SimulatedTriax,
                                     SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
                 
                 # Replace individual components with simulated versions as specified in debug_skip
@@ -98,7 +98,7 @@ class Interface:
                 self.spectrometer = SimulatedTriax(self)
                 
             if 'UNO' in debug_skip:
-                self.controller = SimulatedArduino(self, com_port=com_port, baud=baud)
+                self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud)
                 
             if 'laser' in debug_skip:
                 self.laser = SimulatedLaser(self)
@@ -338,7 +338,7 @@ class Interface:
 
 
 if __name__ == '__main__':
-    interface = Interface(simulate=False, com_port='COM10', debug_skip=[
+    interface = Interface(simulate=True, com_port='COM10', debug_skip=[
         'camera',
         #'laser', 
         'TRIAX'
