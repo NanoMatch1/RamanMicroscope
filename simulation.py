@@ -15,6 +15,172 @@ import ctypes
 from random import randint
 from typing import List, Tuple, Dict, Any, Optional, Union
 
+class SimulatedArduinoController:
+    """
+    Simulates the Arduino-based RamanMicroscope controller.
+    Methods:
+      send_command(cmd: str) -> str
+        Send an envelope command (including its leading/trailing char)
+        and get back exactly what the Arduino would have printed.
+    """
+
+    MODULES = ('1','2','3','4')
+    MOTORS  = ('A','X','Y','Z')
+
+    def __init__(self):
+        # Initialize every motor to zero position
+        self.current = {
+            m: { motor: 0 for motor in self.MOTORS }
+            for m in self.MODULES
+        }
+        # shutter and LEDs
+        self.g_shutter = False
+        self.led1 = False
+        self.led2 = False
+        # LDR reading (you can override this in tests)
+        self.ldr_value = 0
+
+    def send_command(self, cmd: str) -> str:
+        """Mimic Serial.readStringUntil('\\n') + parseCommand + Serial responses."""
+        cmd = cmd.strip()
+        if cmd.startswith('o') and cmd.endswith('o'):
+            # multi–move: o1A1000 2X2000o
+            self._parse_multi_move(cmd[1:-1])
+            return ''  # Arduino only prints "Moving motor…" per token, but tests usually ignore it
+        elif cmd.startswith('g') and cmd.endswith('g'):
+            return self._get_positions(cmd[1:-1])
+        elif cmd.startswith('c') and cmd.endswith('c'):
+            return self._check_moving(cmd[1:-1])
+        elif cmd.startswith('s') and cmd.endswith('s'):
+            return self._set_positions(cmd[1:-1])
+        elif cmd.startswith('m') and cmd.endswith('m'):
+            return self._hardware_command(cmd[1:-1])
+        elif cmd.startswith('h') and len(cmd) == 3:
+            return self._home_motor(cmd[1], cmd[2])
+        elif cmd == 'imagemode':
+            return self._image_mode()
+        elif cmd == 'ramanmode':
+            return self._raman_mode()
+        else:
+            return 'Unrecognized command format\n'
+
+    # ─── motion commands ──────────────────────────────────────────────────────
+
+    def _parse_multi_move(self, content: str):
+        for token in content.split():
+            if len(token) < 3:
+                continue
+            module, motor = token[0], token[1]
+            try:
+                delta = int(token[2:])
+            except ValueError:
+                continue
+            self._move(module, motor, delta)
+
+    def _move(self, module: str, motor: str, delta: int):
+        """Relative move: stepper.move(delta)"""
+        if module in self.current and motor in self.current[module]:
+            self.current[module][motor] += delta
+
+    def _get_positions(self, content: str) -> str:
+        """
+        g1A 2Xg  →  "1A:1000 2X:2000 \n"
+        """
+        out = []
+        for token in content.split():
+            if len(token) < 2:
+                continue
+            m, mt = token[0], token[1]
+            if m in self.current and mt in self.current[m]:
+                pos = self.current[m][mt]
+                out.append(f"{m}{mt}:{pos}")
+        return ' '.join(out) + '\n'
+
+    def _check_moving(self, content: str) -> str:
+        """
+        c1A 2Xc →  "1A:false 2X:false \n"
+        (always false here)
+        """
+        out = []
+        for token in content.split():
+            if len(token) < 2:
+                continue
+            m, mt = token[0], token[1]
+            if m in self.current and mt in self.current[m]:
+                out.append(f"{m}{mt}:false")
+        return ' '.join(out) + '\n'
+
+    def _set_positions(self, content: str) -> str:
+        """
+        s1A1000 3Z-500s → "Set motor 1A position to 1000\n" (last token only)
+        """
+        resp = ''
+        for token in content.split():
+            if len(token) < 3:
+                continue
+            m, mt = token[0], token[1]
+            try:
+                pos = int(token[2:])
+            except ValueError:
+                continue
+            if m in self.current and mt in self.current[m]:
+                self.current[m][mt] = pos
+                resp = f"Set motor {m}{mt} position to {pos}\n"
+        return resp
+
+    # ─── hardware commands ───────────────────────────────────────────────────
+
+    def _hardware_command(self, content: str) -> str:
+        """
+        m...m envelope:
+          gsh on/off → Shutter
+          ld0        → LDR
+          led on/off → LEDs
+        """
+        cmd, _, arg = content.partition(' ')
+        if cmd == 'gsh':
+            return self._mono_shutter(arg.strip())
+        elif cmd == 'ld0':
+            return self._read_ldr()
+        elif cmd == 'led':
+            return self._toggle_led(arg.strip())
+        else:
+            return "Unknown hardware command.\n"
+
+    def _mono_shutter(self, state: str) -> str:
+        self.g_shutter = (state == 'on')
+        return "Shutter open.\n" if self.g_shutter else "Shutter closed.\n"
+
+    def _read_ldr(self) -> str:
+        # Arduino prints 't' + summed reading; here we'll just return one value
+        return f"t{self.ldr_value}\n"
+
+    def _toggle_led(self, state: str) -> str:
+        on = (state == 'on')
+        self.led1 = self.led2 = on
+        return "LED on\n" if on else "LED off\n"
+
+    # ─── homing & modes ───────────────────────────────────────────────────────
+
+    def _home_motor(self, module: str, motor: str) -> str:
+        if module in self.current and motor in self.current[module]:
+            self.current[module][motor] = 0
+            return f"Homed motor {module}{motor} at position 0\n"
+        else:
+            return "Invalid motor.\n"
+
+    def _raman_mode(self) -> str:
+        # module 2, motor A  → +6000 steps
+        self._move('2', 'A', +6000)
+        return "Moving to Raman Mode...\n"
+
+    def _image_mode(self) -> str:
+        # module 2, motor A  → -6000 steps
+        self._move('2', 'A', -100_000)
+        return "Moving to Image Mode...\n"
+
+
+
 class SimulatedArduino:
     """Simulated Arduino controller for stepper motors"""
     

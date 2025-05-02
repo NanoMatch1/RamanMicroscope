@@ -292,7 +292,9 @@ https://unimelbcloud-my.sharepoint.com/:f:/g/personal/rileyjt_student_unimelb_ed
 2. Slide the focusing lens until the spot on the sample
 
 
-# Dismantle
+# Legacy Modifications
+This section contains notes for modifications that were carried out to the microscope. Their inclusion here is only for context and legacy maintenance, in case something needs modification again in the future.
+
 ## Goals:
 - Flip the X-Y translation optomechanic mount 180 degrees so the X knob points out to the right
 - Install the X-Y cage-mounted optomechanic to hold the image focusing lens to the camera.
