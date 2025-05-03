@@ -908,17 +908,17 @@ class Microscope(Instrument):
         return self.config.get("home_positions", {}).get(motor_id)
 
 
-    @ui_callable
-    def connect_to_triax(self):
-        '''Connects to the spectrometer after already running.'''
-        self.interface.connect_to_triax()
-        print('Connected to TRIAX spectrometer')
-        self.generate_wavelength_axis()
+    # @ui_callable
+    # def connect_to_triax(self):
+    #     '''Connects to the spectrometer after already running.'''
+    #     self.interface.connect_to_triax()
+    #     print('Connected to TRIAX spectrometer')
+    #     self.generate_wavelength_axis()
 
-    @ui_callable
-    def connect_to_camera(self):
-        '''Connects to the camera after already running.'''
-        self.interface.connect_to_camera()
+    # @ui_callable
+    # def connect_to_camera(self):
+    #     '''Connects to the camera after already running.'''
+    #     self.interface.connect_to_camera()
 
     @ui_callable
     def write_motor_positions(self, motor_positions='', motor_dict=None):
