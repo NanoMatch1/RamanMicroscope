@@ -2590,7 +2590,7 @@ class Triax(Instrument):
 
     @ui_callable
     def default_grating(self):
-        '''Set the default grating for the spectrometer.'''
+        '''Set the default gratin;'g for the spectrometer.'''
         response = self.send_command('specgrat1')
         # print(response)
         return response
@@ -3196,6 +3196,7 @@ class MillenniaLaser(Instrument):
     @ui_callable
     def get_diode_status(self):
         response_1 = self.send_command('?C1')
+        breakpoint()
         print(f"Diode 1 status: {response_1}")
         response_2 = self.send_command('?C2')
         print(f"Diode 2 status: {response_2}")
