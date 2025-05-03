@@ -295,7 +295,7 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 
 ## Sam ToDo:
 - create dummy instrument classes for dependency injection.
-- create unit tests for all classes
+- create unit tests for all
 - Ensure scan parameters updating to metadata
 - compress data saving
 - Add simple start-stop UI with save database and load pipelines

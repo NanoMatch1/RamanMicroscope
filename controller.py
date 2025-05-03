@@ -79,9 +79,10 @@ class ArduinoMEGA:
         self.connect()
 
     def connect(self):
-        if self.simulate:
+        if self.simulate or self.interface.simulate:
             from simulation import SimulatedArduinoSerial
             self.serial = SimulatedArduinoSerial()
+            return
 
         self.serial = self._connect_to_UNO()
 
@@ -257,6 +258,7 @@ class ArduinoMEGA:
 
             if self.report is True:
                 print(response)
+                
             split_responses = response.split('\r\n')
             for item in split_responses:
                 if item == end_flag:
