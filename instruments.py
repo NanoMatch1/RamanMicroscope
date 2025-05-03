@@ -40,27 +40,27 @@ from functools import wraps
 from calibration import Calibration, LdrScan
 from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
 
-def simulate(expected_value=None, function_handler=None):
-    """
-    Decorator that returns a simulated response when self.simulate is True.
+# def simulate(expected_value=None, function_handler=None):
+#     """
+#     Decorator that returns a simulated response when self.simulate is True.
     
-    Args:
-        expected_value: Static value to return when simulating
-        function_handler: Optional callable that receives self and original args/kwargs
-                         and returns a dynamic simulated value
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            if self.simulate:
-                # If a function handler is provided, use it to get dynamic response
-                if function_handler is not None:
-                    return function_handler(self, *args, **kwargs)
-                # Otherwise return the static expected value
-                return expected_value
-            return func(self, *args, **kwargs)
-        return wrapper
-    return decorator
+#     Args:
+#         expected_value: Static value to return when simulating
+#         function_handler: Optional callable that receives self and original args/kwargs
+#                          and returns a dynamic simulated value
+#     """
+#     def decorator(func):
+#         @wraps(func)
+#         def wrapper(self, *args, **kwargs):
+#             if self.simulate:
+#                 # If a function handler is provided, use it to get dynamic response
+#                 if function_handler is not None:
+#                     return function_handler(self, *args, **kwargs)
+#                 # Otherwise return the static expected value
+#                 return expected_value
+#             return func(self, *args, **kwargs)
+#         return wrapper
+#     return decorator
 
 def ui_callable(func):
     """
@@ -805,23 +805,16 @@ class Microscope(Instrument):
         if label not in self.motor_map:
             raise ValueError(f"Unknown action group: {label}")
 
-        # group = self.action_groups[label]
-        # for axis, motor_id in group.items():
-        #     if motor_id == "triax":  # skip dummy entries
-        #         continue
         motor_id = self.motor_map[label]
         # Send homing command
-        if self.simulate:
-            print(f"[Sim] Homing motor {motor_id}")
-            position = 12345  # dummy value
+
+        response = self.controller.send_command(f"h{motor_id}")
+        response = response[0]
+        print(f"Homing response: {response}")
+        if "at position" in response:
+            position = int(response.split(' ')[-1].strip())
         else:
-            response = self.controller.send_command(f"h{motor_id}")
-            response = response[0]
-            print(f"Homing response: {response}")
-            if "at position" in response:
-                position = int(response.split(' ')[-1].strip())
-            else:
-                raise RuntimeError(f"Unexpected response: {response}")
+            raise RuntimeError(f"Unexpected response: {response}")
 
         # Save to config
         self.config.setdefault("home_positions", {})
@@ -986,19 +979,17 @@ class Microscope(Instrument):
         # return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"
 
 
-    @simulate(expected_value='Microscope initialised')
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
         # Use the injected calibration service
-        self.calibrations = self.calibration_service
         # Update calibrations with auto-calibration data if available
-        # self.calibrations.ammend_calibrations()
+        # self.calibration_service.ammend_calibrations()
         # finally, update with the monochromator calibrations
-        # self.calibrations.update_monochromator_calibrations()
+        # self.calibration_service.update_monochromator_calibrations()
 
         # TODO: Remove unnecessary calibrations later
         # One calibration to rule them all
-        self.calibrations.generate_master_calibration(microsteps=32)
+        self.calibration_service.generate_master_calibration(microsteps=32)
 
         # load the previous known state of the instrument from file
         self.load_instrument_state()
@@ -1145,7 +1136,7 @@ class Microscope(Instrument):
     #     self.motion_control.move_motors(motion_dict)
     #     if "x" in motion_dict:
     #         # self.move_x(motion_dict['X'])
-    #         x_steps = self.calibrations.microns_to_steps(motion_dict['X'])
+    #         x_steps = self.calibration_service.microns_to_steps(motion_dict['X'])
     #     if "y" in motion_dict:
     #         self.move_y(motion_dict['Y'])
     #     if "z" in motion_dict:
@@ -1163,7 +1154,7 @@ class Microscope(Instrument):
             print("Invalid travel distance. Must be a number.")
             return
         
-        motor_dict = self.calibrations.microns_to_steps({"x": travel_distance})
+        motor_dict = self.calibration_service.microns_to_steps({"x": travel_distance})
         self.motion_control.move_motors(motor_dict)
         self.update_stage_positions({"x": travel_distance})
         print('x stage moved by {} micrometers'.format(travel_distance))
@@ -1177,7 +1168,7 @@ class Microscope(Instrument):
             print("Invalid travel distance. Must be a number.")
             return
         
-        motor_dict = self.calibrations.microns_to_steps({"y": travel_distance})
+        motor_dict = self.calibration_service.microns_to_steps({"y": travel_distance})
         self.motion_control.move_motors(motor_dict)
         self.update_stage_positions({"y": travel_distance})
         print('y stage moved by {} micrometers'.format(travel_distance))
@@ -1191,7 +1182,7 @@ class Microscope(Instrument):
             print("Invalid travel distance. Must be a number.")
             return
         
-        motor_dict = self.calibrations.microns_to_steps({"z": travel_distance})
+        motor_dict = self.calibration_service.microns_to_steps({"z": travel_distance})
         self.motion_control.move_motors(motor_dict)
         self.update_stage_positions({"z": travel_distance})
         print('z stage moved by {} micrometers'.format(travel_distance))
@@ -1629,7 +1620,7 @@ class Microscope(Instrument):
             
         if steps is None:
             steps = self.get_spectrometer_position()
-        true_wavelength_laser = self.calibrations.triax_to_wl(float(steps))
+        true_wavelength_laser = self.calibration_service.triax_to_wl(float(steps))
         print('True wavelength: {}. Shifting motor positions to true wavelength'.format(true_wavelength_laser))
         
         if shift is True:
@@ -1641,8 +1632,8 @@ class Microscope(Instrument):
 
 
         # Calculate target positions for laser and monochromator motors
-        laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
-        mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
+        laser_steps = self.calibration_service.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
+        mono_steps = self.calibration_service.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
         
         
 
@@ -1697,8 +1688,8 @@ class Microscope(Instrument):
             true_wavelength_grating = true_wavelength_laser
 
         # Calculate target motor positions from the provided wavelength
-        target_laser_steps = self.calibrations.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
-        target_mono_steps = self.calibrations.wl_to_steps(true_wavelength_grating, self.action_groups['grating_wavelength'])
+        target_laser_steps = self.calibration_service.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
+        target_mono_steps = self.calibration_service.wl_to_steps(true_wavelength_grating, self.action_groups['grating_wavelength'])
 
 
         # write current position to motors
@@ -1733,10 +1724,10 @@ class Microscope(Instrument):
     #     # What the current wavelength should be at the detector
     #     current_monochromator_wavelength = self.wavenumber_to_wavelength(self.current_monochromator_wavenumber)
 
-    #     current_laser_pos[0] = round(self.calibrations.wl_to_l1(current_laser_wavelength[0]))
-    #     current_laser_pos[1] = round(self.calibrations.wl_to_l2(current_laser_wavelength[0]))
-    #     current_grating_pos[0] = round(self.calibrations.wl_to_g1(current_monochromator_wavelength[0]))
-    #     current_grating_pos[1] = round(self.calibrations.wl_to_g2(current_monochromator_wavelength[0]))
+    #     current_laser_pos[0] = round(self.calibration_service.wl_to_l1(current_laser_wavelength[0]))
+    #     current_laser_pos[1] = round(self.calibration_service.wl_to_l2(current_laser_wavelength[0]))
+    #     current_grating_pos[0] = round(self.calibration_service.wl_to_g1(current_monochromator_wavelength[0]))
+    #     current_grating_pos[1] = round(self.calibration_service.wl_to_g2(current_monochromator_wavelength[0]))
 
     #     print('Current Positions:\n Laser: {}\n Monochromator: {}'.format(current_laser_pos, current_grating_pos))
     #     print('Target Positions:\n Laser: {}\n Monochromator: {}'.format([l1_target, l2_target], [g1_target, g2_target]))
@@ -1788,7 +1779,7 @@ class Microscope(Instrument):
         current_pos = self.get_laser_motor_positions()
         
         # Calculate target positions based on wavelength
-        target_steps = self.calibrations.wl_to_steps(target_wavelength, self.action_groups['laser_wavelength'])
+        target_steps = self.calibration_service.wl_to_steps(target_wavelength, self.action_groups['laser_wavelength'])
         
         # Calculate steps to move (difference between target and current)
         move_steps = {}
@@ -1813,7 +1804,7 @@ class Microscope(Instrument):
     @ui_callable
     def invert_calibrations(self):
         '''Inverts the calibration for the laser and monochromator motors.'''
-        self.calibrations.invert_calibrations()
+        self.calibration_service.invert_calibrations()
         print('Calibration inverted')
     
     @ui_callable
@@ -1837,7 +1828,7 @@ class Microscope(Instrument):
         
         # Get target positions from calibration service
         # Assumes the calibration service has a wl_to_steps method that returns a dictionary
-        target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['laser_wavelength'])
+        target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['laser_wavelength'])
         
         # Move to target positions
         self.go_to_laser_steps(target_positions)
@@ -1872,7 +1863,7 @@ class Microscope(Instrument):
         self.close_mono_shutter()
         
         # Get target positions from calibration service
-        target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
+        target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
         
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
@@ -1904,7 +1895,7 @@ class Microscope(Instrument):
         self.close_mono_shutter()
         
         # Get target positions from calibration service
-        target_positions = self.calibrations.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
+        target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
         
         # Move to target positions
         self.go_to_grating_steps(target_positions)
@@ -1980,7 +1971,7 @@ class Microscope(Instrument):
         current_pos = self.get_monochromator_motor_positions()
         
         # Calculate target positions based on wavelength
-        target_steps = self.calibrations.wl_to_steps(target_wavelength, self.action_groups['monochromator_wavelength'])
+        target_steps = self.calibration_service.wl_to_steps(target_wavelength, self.action_groups['monochromator_wavelength'])
         
         # Calculate steps to move (difference between target and current)
         move_steps = {}
@@ -2020,7 +2011,7 @@ class Microscope(Instrument):
         
 
         # Calculate wavelengths for each motor using calibration functions
-        self.monochromator_wavelengths = self.calibrations.steps_to_wl(current_pos)
+        self.monochromator_wavelengths = self.calibration_service.steps_to_wl(current_pos)
       
         return self.monochromator_wavelengths
 
@@ -2040,7 +2031,7 @@ class Microscope(Instrument):
         self.grating_steps = current_pos
         
         # Calculate wavelengths for each motor using calibration functions
-        self.grating_wavelengths = self.calibrations.steps_to_wl(current_pos)
+        self.grating_wavelengths = self.calibration_service.steps_to_wl(current_pos)
         
         return self.grating_wavelengths
 
@@ -2123,7 +2114,7 @@ class Microscope(Instrument):
         else:
             self.spectrometer_position = steps
 
-        self.spectrometer_wavelength = self.calibrations.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
+        self.spectrometer_wavelength = self.calibration_service.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
         return self.spectrometer_wavelength
     
     def report_all_current_positions(self):
@@ -2179,7 +2170,7 @@ class Microscope(Instrument):
         
                
         # Calculate wavelengths for each motor using calibration functions
-        self.laser_wavelengths = self.calibrations.steps_to_wl(current_pos)
+        self.laser_wavelengths = self.calibration_service.steps_to_wl(current_pos)
 
         return self.laser_wavelengths
     
@@ -2279,12 +2270,10 @@ class Camera(Instrument):
     def initialise(self):
         self.connect()
     
-    @simulate(expected_value=serial.Serial)
     def connect(self):
         print("Connecting to the camera.")
         self.serial = self.connect_to_camera()
 
-    @simulate(expected_value=serial.Serial)
     def connect_to_camera(self):
         return serial.Serial
 
@@ -2309,7 +2298,6 @@ class TucsenCamera(Camera):
             'stop_continuous_acquire': self.stop_continuous_acquisition
         }
 
-    @simulate(expected_value=serial.Serial)
     def connect(self):
         print("Connecting to Tucsen...")
         self.TUCAMINIT = TUCAM_INIT(0, self.scriptDir.encode('utf-8'))
@@ -2321,7 +2309,6 @@ class TucsenCamera(Camera):
         # self.open_camera(0)
         # self.SetROI(set_ROI=self.set_ROI)
 
-    @simulate(expected_value=np.arange(1024))
     @ui_callable
     def acquire_one_frame(self):
         self.open_camera(0)
@@ -2590,12 +2577,11 @@ class Triax(Instrument):
     def __str__(self):
         return "TRIAX Spectrometer"
     
-    # @simulate(expected_value=380000) # TODO: Change to actual response
     def initialise(self):
         '''Connect and establish primary attributes.'''
         self.connect()
         self.get_spectrometer_position()
-        # self.calibrations = self.interface.microscope.calibrations
+        # self.calibration_service = self.interface.microscope.calibrations
 
         return self.spectrometer_position
 
@@ -2649,7 +2635,6 @@ class Triax(Instrument):
         response = self.send_command('mg {}'.format(position))
         return response
     
-    # @simulate(expected_value='S0') # TODO: Change to actual response
     def go_to_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
         try:
@@ -2684,7 +2669,6 @@ class Triax(Instrument):
             print('Triax communication failed:')
             print(response)
 
-    @simulate(expected_value='S0') # TODO: Change to actual response
     def wait_for_triax(self, target_steps, timeout=10):
         '''Polls the spectrometer until the target steps are reached. Note the MOTOR BUSY CHECK (E) on the spectrometer does not send a response with this configuration, so we use this command instead.'''
         start = time.time()
@@ -2700,21 +2684,18 @@ class Triax(Instrument):
     
 
     @ui_callable
-    @simulate(expected_value=380000) # TODO: Change to actual response
     def get_spectrometer_position(self):
         '''Get the current position of the spectrometer in motor steps.'''
         self.spectrometer_position = self.get_triax_steps()
         return self.spectrometer_position
     
     @ui_callable
-    @simulate(expected_value='OK') # TODO: Change to actual response
     def go_to_position(self, position):
         print("Going to the position: {}".format(position))
         command = self.message_map['move_grating'] + str(position)
         response = self._send_command_to_spectrometer(command)
         return response
 
-    @simulate(expected_value=True) # TODO: Change to actual response
     def connect(self):
         # Open a connection to the instrument
         print("Connecting to TRIAX spectrometer...")
@@ -2731,7 +2712,6 @@ class Triax(Instrument):
 
         return self.spectrometer, self.state
 
-    @simulate(expected_value=380000) # TODO: Change to actual response
     def get_triax_steps(self):
         '''Polls the spectrometer for position and returns the current position in steps.'''
         response = self._send_command_to_spectrometer(self.message_map['get_grating_steps'])
@@ -2751,14 +2731,12 @@ class Triax(Instrument):
         
         return new_command
     
-    @simulate(expected_value='o') # TODO: Change to actual response
     def send_command(self, command):
         '''Send a command to the spectrometer.'''
         coms = self._command_parser(command)
         response = self._send_command_to_spectrometer(coms)
         return response
     
-    @simulate(expected_value='OK') # TODO: Change to actual response
     def _send_command_to_spectrometer(self, command, report=True):
         self.spectrometer.write(command)
         time.sleep(0.0001)
@@ -2896,7 +2874,6 @@ class Monochromator(Instrument):
 #     def initialise(self):
 #         self.connect()
     
-#     @simulate(expected_value=True) # TODO: Change to actual response
 #     def connect(self):
 #         print("Connecting to the laser.")
 #         pass

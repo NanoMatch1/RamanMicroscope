@@ -15,6 +15,16 @@ import ctypes
 from random import randint
 from typing import List, Tuple, Dict, Any, Optional, Union
 
+class BufferSimulation:
+    """Simulates a serial buffer for testing purposes."""
+
+    def __init__(self):
+        self.buffer = []
+    
+    def in_waiting(self) -> int:
+        """Return the number of bytes in the buffer."""
+        return len(self.buffer)
+
 class SimulatedArduinoSerial:
     """
     Simulates the Arduino-MEGA-based RamanMicroscope controller.
@@ -28,7 +38,7 @@ class SimulatedArduinoSerial:
     MOTORS  = ('A','X','Y','Z')
     # RAMAN_MODE_STEPS = -100_000  # steps to move to Raman mode
 
-    def __init__(self, interface, com_port=None, baud=None, report=True):
+    def __init__(self, com_port=None, baud=None, report=True):
         # Initialize every motor to zero position
         self.current = {
             m: { motor: 0 for motor in self.MOTORS }
@@ -40,36 +50,56 @@ class SimulatedArduinoSerial:
         self.led2 = False
         # LDR reading (you can override this in tests)
         self.ldr_value = 0
+        self.buffer = []
+        # self.in_waiting = len(self.buffer)  # Simulate serial input buffer
+
+        print("Simulated Arduino initialized")
+
+    @property
+    def in_waiting(self) -> int:
+        """Return the number of bytes in the buffer."""
+        return len(self.buffer)
+
 
     def write(self, cmd: str) -> None:
         """Simulate sending a command to the Arduino."""
-        print(f"Sending command: {cmd.strip()}")
-        breakpoint()
+        command = cmd.decode().strip()
+        response = self._parse_command(command)
+        self.buffer.append(response.encode())
+        self.buffer.append(b'#CF\r\n')  # Simulate end of command response
+        return response
+    
+    def readline(self) -> str:
+        """Simulate reading a line from the Arduino."""
+        if self.in_waiting > 0:
+            return self.buffer.pop(0)
+        else:
+            return ''
 
-
-    def send_command(self, cmd: str) -> str:
-        """Mimic Serial.readStringUntil('\\n') + parseCommand + Serial responses."""
-        cmd = cmd.strip()
+    def _parse_command(self, cmd: str) -> str:
+        """Mimic Serial.readStringUntil('\r\n') + parseCommand + Serial responses."""
         if cmd.startswith('o') and cmd.endswith('o'):
             # multi–move: o1A1000 2X2000o
             self._parse_multi_move(cmd[1:-1])
             return ''  # Arduino only prints "Moving motor…" per token, but tests usually ignore it
         elif cmd.startswith('g') and cmd.endswith('g'):
-            return self._get_positions(cmd[1:-1])
+            response = self._get_positions(cmd[1:-1])
         elif cmd.startswith('c') and cmd.endswith('c'):
-            return self._check_moving(cmd[1:-1])
+            response = self._check_moving(cmd[1:-1])
         elif cmd.startswith('s') and cmd.endswith('s'):
-            return self._set_positions(cmd[1:-1])
+            response = self._set_positions(cmd[1:-1])
         elif cmd.startswith('m') and cmd.endswith('m'):
-            return self._hardware_command(cmd[1:-1])
+            response = self._hardware_command(cmd[1:-1])
         elif cmd.startswith('h') and len(cmd) == 3:
-            return self._home_motor(cmd[1], cmd[2])
+            response = self._home_motor(cmd[1], cmd[2])
         elif cmd == 'imagemode':
-            return self._image_mode()
+            response = self._image_mode()
         elif cmd == 'ramanmode':
-            return self._raman_mode()
+            response = self._raman_mode()
         else:
-            return 'Unrecognized command format\n'
+            response = 'Unrecognized command format'
+        
+        return f"{response}\r\n" # Simulate Arduino response format
 
     # ─── motion commands ──────────────────────────────────────────────────────
 
@@ -91,7 +121,7 @@ class SimulatedArduinoSerial:
 
     def _get_positions(self, content: str) -> str:
         """
-        g1A 2Xg  →  "1A:1000 2X:2000 \n"
+        g1A 2Xg  →  "1A:1000 2X:2000 "
         """
         out = []
         for token in content.split():
@@ -101,11 +131,11 @@ class SimulatedArduinoSerial:
             if m in self.current and mt in self.current[m]:
                 pos = self.current[m][mt]
                 out.append(f"{m}{mt}:{pos}")
-        return ' '.join(out) + '\n'
+        return ' '.join(out)
 
     def _check_moving(self, content: str) -> str:
         """
-        c1A 2Xc →  "1A:false 2X:false \n"
+        c1A 2Xc →  "1A:false 2X:false "
         (always false here)
         """
         out = []
@@ -115,11 +145,11 @@ class SimulatedArduinoSerial:
             m, mt = token[0], token[1]
             if m in self.current and mt in self.current[m]:
                 out.append(f"{m}{mt}:false")
-        return ' '.join(out) + '\n'
+        return ' '.join(out)
 
     def _set_positions(self, content: str) -> str:
         """
-        s1A1000 3Z-500s → "Set motor 1A position to 1000\n" (last token only)
+        s1A1000 3Z-500s → "Set motor 1A position to 1000" (last token only)
         """
         resp = ''
         for token in content.split():
@@ -132,7 +162,7 @@ class SimulatedArduinoSerial:
                 continue
             if m in self.current and mt in self.current[m]:
                 self.current[m][mt] = pos
-                resp = f"Set motor {m}{mt} position to {pos}\n"
+                resp = f"Set motor {m}{mt} position to {pos}"
         return resp
 
     # ─── hardware commands ───────────────────────────────────────────────────
@@ -152,39 +182,39 @@ class SimulatedArduinoSerial:
         elif cmd == 'led':
             return self._toggle_led(arg.strip())
         else:
-            return "Unknown hardware command.\n"
+            return "Unknown hardware command."
 
     def _mono_shutter(self, state: str) -> str:
         self.g_shutter = (state == 'on')
-        return "Shutter open.\n" if self.g_shutter else "Shutter closed.\n"
+        return "Shutter open." if self.g_shutter else "Shutter closed."
 
     def _read_ldr(self) -> str:
         # Arduino prints 't' + summed reading; here we'll just return one value
-        return f"t{self.ldr_value}\n"
+        return f"t{self.ldr_value}"
 
     def _toggle_led(self, state: str) -> str:
         on = (state == 'on')
         self.led1 = self.led2 = on
-        return "LED on\n" if on else "LED off\n"
+        return "LED on" if on else "LED off"
 
     # ─── homing & modes ───────────────────────────────────────────────────────
 
     def _home_motor(self, module: str, motor: str) -> str:
         if module in self.current and motor in self.current[module]:
             self.current[module][motor] = 0
-            return f"Homed motor {module}{motor} at position 0\n"
+            return f"Homed motor {module}{motor} at position 0"
         else:
-            return "Invalid motor.\n"
+            return "Invalid motor."
 
     def _raman_mode(self) -> str:
         # module 2, motor A  → +6000 steps
         self._move('2', 'A', self.RAMAN_MODE_STEPS)
-        return "Moving to Raman Mode...\n"
+        return "Moving to Raman Mode..."
 
     def _image_mode(self) -> str:
         # module 2, motor A  → -6000 steps
         self._move('2', 'A', -self.RAMAN_MODE_STEPS)
-        return "Moving to Image Mode...\n"
+        return "Moving to Image Mode..."
 
 
 

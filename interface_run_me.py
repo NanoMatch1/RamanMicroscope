@@ -64,12 +64,12 @@ class Interface:
 
 
         if simulate:
-            # Import simulation module only when needed
+            # Import s imulation module only when needed
             from simulation import (SimulatedArduinoController, SimulatedArduinoSerial, SimulatedCamera, SimulatedTriax,
                                   SimulatedLaser)
             
             # Create simulated hardware instances
-            self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud)
+            self.controller = ArduinoMEGA(self, com_port=com_port, simulate=True, baud=baud)
             self.camera = SimulatedCamera(self)
             self.spectrometer = SimulatedTriax(self)
             self.laser = SimulatedLaser(self)
@@ -77,16 +77,10 @@ class Interface:
             # self.stage_controller = SimulatedStageControl(self)
         else:
             # Create real hardware instances
-            self.controller = ArduinoUNO(self, com_port=com_port, baud=baud, simulate=False, dtr=False)
+            self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=True, dtr=False)
             self.camera = TucamCamera(self, simulate=False)
             self.spectrometer = Triax(self, simulate=False)
             self.laser = MillenniaLaser(self, simulate=False)
-            # For now, we'll use the simulated versions for the new controllers
-            # in production these would be real hardware controllers
-            # from simulation import SimulatedLaser, SimulatedMonochromator, SimulatedStageControl
-            # self.laser_controller = MillenniaLaser(self, simulate=False)
-            # self.monochromator_controller = SimulatedMonochromator(self, simulate=False)
-            # self.stage_controller = SimulatedStageControl(self, simulate=False)
 
 
         if len(debug_skip) > 0:
@@ -98,7 +92,7 @@ class Interface:
                 self.spectrometer = SimulatedTriax(self)
                 
             if 'UNO' in debug_skip:
-                self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud)
+                self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=True, dtr=False)
                 
             if 'laser' in debug_skip:
                 self.laser = SimulatedLaser(self)
@@ -338,9 +332,9 @@ class Interface:
 
 
 if __name__ == '__main__':
-    interface = Interface(simulate=True, com_port='COM10', debug_skip=[
+    interface = Interface(simulate=False, com_port='COM10', debug_skip=[
         'camera',
-        #'laser', 
+        'laser', 
         'TRIAX'
         ])
     cli(interface)
