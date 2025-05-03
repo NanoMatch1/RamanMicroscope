@@ -46,6 +46,13 @@ def cli(interface):
 class Interface:
 
     def __init__(self, simulate=False, com_port='COM10', baud=9600, debug_skip=[]):
+
+        self.interface_commands = {
+            'triax': self.connect_to_triax,
+            'camera': self.connect_to_camera,
+            'laser': self.connect_to_laser,
+        }
+
         self.simulate = simulate
         self.com_port = com_port
         self.baud = baud
@@ -64,7 +71,7 @@ class Interface:
         self.calibration_service = Calibration()
 
         # Create hardware instances
-        self.contorller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
+        self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
         self.camera = TucamCamera(self, simulate=simulate)
         self.spectrometer = Triax(self, simulate=simulate)
         self.laser = MillenniaLaser(self, simulate=simulate)
@@ -289,6 +296,7 @@ class Interface:
     def _generate_command_map(self):
         '''Dynamically generate a command map from the instruments declared in __init__'''
         instruments = [self.__getattribute__(attribute) for attribute in dir(self) if isinstance(self.__getattribute__(attribute), Instrument)]
+
         command_map = {
             funct: (instrument, method)
             for instrument in instruments
@@ -319,7 +327,16 @@ class Interface:
 
         funct, arguments = self._command_parser(command)
 
-        if funct in self.command_map:
+        # Check for interface level commands first
+        if funct in self.interface_commands:
+            try:
+                result = self.interface_commands[funct]()
+            except Exception as e:
+                error_details = traceback.format_exc()
+                result = f" > Error: {e}\n{error_details}"
+            return result
+
+        elif funct in self.command_map:
             _, method = self.command_map[funct]
             try:
                 result = method(*(arguments or []))
