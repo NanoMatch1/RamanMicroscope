@@ -542,8 +542,6 @@ class Microscope(Instrument):
             'reference': self.reference_calibration_from_wavelength,
             'referencetriax': self.reference_calibration_from_triax,
             'invertcal': self.invert_calibrations,
-            'triax': self.connect_to_triax,
-            'camera': self.connect_to_camera,
             'allmotors': self.get_all_motor_positions,
             'ramanmode': self.raman_mode,
             'imagemode': self.image_mode,
@@ -2522,8 +2520,8 @@ class Triax(Instrument):
     def __init__(self, interface, simulate=False):
         super().__init__()
         self.interface = interface
-        self.simulate = simulate
-
+        self.simulate = simulate or interface.simulate
+        self.calibration_service = interface.calibration_service
 
         self.command_functions = {
             'get_spectrometer_position': self.get_spectrometer_position,
@@ -2581,8 +2579,8 @@ class Triax(Instrument):
         '''Connect and establish primary attributes.'''
         self.connect()
         self.get_spectrometer_position()
-        # self.calibration_service = self.interface.microscope.calibrations
-
+        # self.generate_wavelength_axis()
+        self.interface.microscope.generate_wavelength_axis() # TODO: move from microscope to spectrometer. Use @property to generate wavelength axis on the fly
         return self.spectrometer_position
 
     @ui_callable
