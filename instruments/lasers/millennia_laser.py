@@ -103,9 +103,9 @@ class MillenniaLaser(Laser):
 
         # UI-callable commands registry
         self.command_functions.update({
-            'connect': self.connect,
-            'disconnect': self.disconnect,
-            'reconnect': self.reconnect,
+            'connectlaser': self.connect,
+            'disconnectlaser': self.disconnect,
+            'reconnectlaser': self.reconnect,
             'laseron': self.turn_on,
             'laseroff': self.turn_off,
             'setpower': self.set_power,
@@ -118,15 +118,12 @@ class MillenniaLaser(Laser):
             'getdiode': self.get_diode_status,
             'cycleshutter': self.cycle_shutter,
             'diagnosis': self.laser_diagnosis,
-            'status': self.get_status,
+            'laserstatus': self.get_status,
             'enable': self.enable_laser
         })
 
     def initialise(self):
         '''Initialise the laser and establish a connection.'''
-        if self.simulate:
-            print("Simulated connection.")
-            return
         self.connect()
         setpoint = self.get_power_setpoint()
         current_power = self.get_power()
@@ -189,36 +186,38 @@ class MillenniaLaser(Laser):
     @ui_callable
     def turn_off(self):
         """Turn the laser off and close the shutter."""
-        self.send_command('OFF')
+        response = self.send_command('OFF')
         self.status = "OFF"
         self.close_shutter()
         print("Laser is now OFF.")
-        return True
+        return response
 
     @ui_callable
     def set_power(self, power_watts):
-        """Set the laser output power (0–6 W)."""
+        '''Set the laser power in Watts. Valid range is 0 to 6 Watts.'''
         try:
-            pw = round(float(power_watts), 2)
+            power_watts = round(float(power_watts), 2)
         except ValueError:
-            raise ValueError("Power must be numeric.")
-        if not 0 <= pw <= 6:
-            raise ValueError("Power must be between 0 and 6 W.")
-        self.send_command(f'P:{pw}')
-        print(f"Power set to {pw} W.")
-        return True
+            raise ValueError("Power must be a numeric value.")
+
+        if power_watts < 0 or power_watts > 6:
+            raise ValueError("Power must be between 0 and 6 Watts.")
+        
+        response = self.send_command('P:{}'.format(power_watts))
+        print("Power set to {} Watts.".format(power_watts))
+        return response
 
     @ui_callable
     def get_power(self):
         """Get the current measured laser power in Watts."""
-        resp = self.send_command('?P')
-        return float(resp.strip('%'))
+        response = self.send_command('?P')
+        return float(response[:-1])
 
     @ui_callable
     def get_power_setpoint(self):
         """Get the current power setpoint in Watts."""
-        resp = self.send_command('?PSET')
-        return float(resp.strip('%'))
+        response = self.send_command('?PSET')
+        return float(response[:-1])
 
     @ui_callable
     def warmup(self):
@@ -228,8 +227,8 @@ class MillenniaLaser(Laser):
     @ui_callable
     def get_warmup_status(self):
         """Query the laser warmup status (0–100%)."""
-        resp = self.send_command('?WARMUP%')
-        return float(resp.strip('%'))
+        response = self.send_command('?WARMUP%')
+        return float(response[:-1])
 
     @ui_callable
     def open_shutter(self):
@@ -257,12 +256,12 @@ class MillenniaLaser(Laser):
 
     @ui_callable
     def get_diode_status(self):
-        """Get internal diode monitor readings as tuple of two values."""
-        d1 = self.send_command('?C1')
-        d2 = self.send_command('?C2')
-        print(f"Diode1: {d1}, Diode2: {d2}")
-        return (d1, d2)
-
+        response_1 = self.send_command('?C1')
+        print(f"Diode 1 status: {response_1}")
+        response_2 = self.send_command('?C2')
+        print(f"Diode 2 status: {response_2}")
+        return (response_1, response_2)
+    
     @ui_callable
     def cycle_shutter(self):
         """Quickly close and open the shutter to verify operation."""
@@ -303,7 +302,7 @@ class MillenniaLaser(Laser):
         return self.serial.read_all().decode('ascii').strip()
 
     def __str__(self):
-        return "MillenniaLaser Controller"
+        return "Millennia Laser"
 
     def __call__(self, command: str, *args, **kwargs):
         if command not in self.command_functions:

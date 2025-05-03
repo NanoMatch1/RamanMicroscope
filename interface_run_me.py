@@ -165,15 +165,9 @@ class Interface:
             try:
                 self.laser = MillenniaLaser(self, simulate=False)
                 self.laser.initialise()
-                print("Successfully connected to real laser")
                 self.command_map = self._generate_command_map()
             except Exception as e:
                 print(f"Failed to connect to real laser: {e}")
-                # Fallback to simulation
-                from simulation import SimulatedLaser
-                self.laser = SimulatedLaser(self)
-                self.laser.initialise()
-                print("Reverted to simulated laser")
         else:
             # Already using real hardware
             print("Already connected to real laser")
@@ -237,8 +231,6 @@ class Interface:
     def _generate_command_map(self):
         '''Dynamically generate a command map from the instruments declared in __init__'''
         instruments = [self.__getattribute__(attribute) for attribute in dir(self) if isinstance(self.__getattribute__(attribute), Instrument) or isinstance(self.__getattribute__(attribute), InstrumentBase)] # TODO: Eventually replace all Instrument with InstrumentBase
-
-        breakpoint()
 
         command_map = {
             funct: (instrument, method)
