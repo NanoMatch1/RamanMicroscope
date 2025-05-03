@@ -3,7 +3,7 @@ import os
 import traceback
 
 from controller import ArduinoMEGA
-from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, simulate, MillenniaLaser
+from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, MillenniaLaser
 from calibration import Calibration
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
@@ -332,9 +332,9 @@ class Interface:
 
 
 if __name__ == '__main__':
-    interface = Interface(simulate=False, com_port='COM10', debug_skip=[
+    interface = Interface(simulate=True, com_port='COM10', debug_skip=[
         'camera',
-        'laser', 
+        #'laser', 
         'TRIAX'
         ])
     cli(interface)
