@@ -1,0 +1,1 @@
+from instruments.ui_decorators import ui_callable
