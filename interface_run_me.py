@@ -4,6 +4,7 @@ import traceback
 
 from controller import ArduinoMEGA
 from instruments_old import Instrument, Microscope, Triax, StageControl, Monochromator #,MillenniaLaser
+from instruments.instrument import Instrument as InstrumentBase
 from instruments.lasers import MillenniaLaser
 from calibration import Calibration
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
@@ -86,26 +87,6 @@ class Interface:
         )
 
 
-        if simulate:
-            # Import s imulation module only when needed
-            from simulation import (SimulatedArduinoController, SimulatedArduinoSerial, SimulatedCamera, SimulatedTriax,
-                                  SimulatedLaser)
-            
-            # Create simulated hardware instances
-            self.controller = ArduinoMEGA(self, com_port=com_port, simulate=True, baud=baud)
-            self.camera = SimulatedCamera(self)
-            self.spectrometer = SimulatedTriax(self)
-            self.laser = SimulatedLaser(self)
-            # self.monochromator_controller = SimulatedMonochromator(self)
-            # self.stage_controller = SimulatedStageControl(self)
-        else:
-            # Create real hardware instances
-            self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=True, dtr=False)
-            self.camera = TucamCamera(self, simulate=False)
-            self.spectrometer = Triax(self, simulate=False)
-            self.laser = MillenniaLaser(self, simulate=False)
-
-
         if len(debug_skip) > 0:
             from simulation import (SimulatedCamera, SimulatedTriax,
                                     SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
@@ -118,7 +99,7 @@ class Interface:
                 self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=True, dtr=False)
                 
             if 'laser' in debug_skip:
-                self.laser = SimulatedLaser(self)
+                self.laser.simulate = True
                 
             if 'camera' in debug_skip:
                 self.camera = SimulatedCamera(self)
@@ -134,42 +115,7 @@ class Interface:
             simulate=simulate
         )
         
-        # These instrument classes provide a domain-specific interface to the hardware
-        # self.stage = StageControl(
-        #     interface=self,
-        #     controller=self.stage_controller,
-        #     simulate=simulate
-        # )
-        
-        # self.monochromator = Monochromator(
-        #     interface=self,
-        #     controller=self.monochromator_controller,
-        #     calibration_service=self.calibration_service,
-        #     simulate=simulate
-        # )
-        
-        # self.laser = MillenniaLaser(
-        #     interface=self,
-        #     simulate=simulate
-        # )
-
         self.command_map = self._generate_command_map()
-
-        # # Scientific attributes
-        # self.grating_steps = None
-        # self.grating_wavelength = None
-        # self.laser_steps = None
-        # self.laser_wavelength = None
-        # self.triax_steps = None
-        # self.triax_wavelength = None
-
-        # self.current_wavelength = None
-        # self.current_shift = 0
-        # self.detector_safety = True
-
-        self.acq_time = 1
-        self.centre_wavelength = 376886
-        self.data = []
 
         self.flag_dict = { 
             'S0': 'ok',
@@ -181,10 +127,8 @@ class Interface:
         # Initialize hardware components in the correct order
         self.spectrometer.initialise()
         self.controller.initialise()
-        
         if not 'camera' in debug_skip:
             self.camera.initialise()
-            
         # Initialize the high-level instrument classes
         self.laser.initialise()
         self.microscope.initialise()  #t be last as it relies on others
@@ -195,7 +139,6 @@ class Interface:
         """Switch from simulated to real TRIAX spectrometer"""
         if self.simulate or 'TRIAX' in self.debug_skip:
             print("Attempting to connect to real TRIAX spectrometer...")
-            from instruments import Triax
             try:
                 self.spectrometer = Triax(self, simulate=False)
                 self.spectrometer.initialise()
@@ -219,7 +162,6 @@ class Interface:
         """Switch from simulated to real laser"""
         if self.simulate or 'laser' in self.debug_skip:
             print("Attempting to connect to real laser...")
-            from instruments.lasers import MillenniaLaser
             try:
                 self.laser = MillenniaLaser(self, simulate=False)
                 self.laser.initialise()
@@ -240,7 +182,6 @@ class Interface:
         """Switch from simulated to real camera"""
         if self.simulate or 'camera' in self.debug_skip or not self.connected_to_camera:
             print("Attempting to connect to real camera...")
-            from tucsen.tucsen_camera_wrapper import TucamCamera
             try:
                 self.camera = TucamCamera(self, simulate=False)
                 self.camera.initialise()
@@ -295,7 +236,9 @@ class Interface:
 
     def _generate_command_map(self):
         '''Dynamically generate a command map from the instruments declared in __init__'''
-        instruments = [self.__getattribute__(attribute) for attribute in dir(self) if isinstance(self.__getattribute__(attribute), Instrument)]
+        instruments = [self.__getattribute__(attribute) for attribute in dir(self) if isinstance(self.__getattribute__(attribute), Instrument) or isinstance(self.__getattribute__(attribute), InstrumentBase)] # TODO: Eventually replace all Instrument with InstrumentBase
+
+        breakpoint()
 
         command_map = {
             funct: (instrument, method)
