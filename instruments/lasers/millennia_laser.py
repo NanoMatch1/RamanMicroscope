@@ -122,6 +122,26 @@ class MillenniaLaser(Laser):
             'enable': self.enable_laser
         })
 
+    def initialise(self):
+        '''Initialise the laser and establish a connection.'''
+        if self.simulate:
+            print("Simulated connection.")
+            return
+        self.connect()
+        setpoint = self.get_power_setpoint()
+        current_power = self.get_power()
+        warmup = self.get_warmup_status()
+
+        print("Laser initialised.")
+        print("Current power setpoint: {}W".format(setpoint))
+        print("Current power: {}W".format(current_power))
+        print("Warmup status: {}%".format(warmup))
+
+        if warmup == 0:
+            self.enable_laser()
+
+        return setpoint, current_power, warmup
+
     @ui_callable
     def connect(self):
         """Establish serial connection to the Millennia laser on the configured port."""
@@ -251,6 +271,11 @@ class MillenniaLaser(Laser):
         self.open_shutter()
         print("Shutter cycled.")
         return True
+    
+    @ui_callable
+    def get_status(self):
+        print("Laser Status: {}".format(self.status))
+        return self.status
 
     @ui_callable
     def laser_diagnosis(self):
@@ -272,9 +297,6 @@ class MillenniaLaser(Laser):
 
     def send_command(self, cmd):
         """Internal helper: send a command string to the laser and return raw response."""
-        if self.simulate:
-            print(f"Simulated send: {cmd}")
-            return 'SIM'
         full = cmd.strip() + '\r\n'
         self.serial.write(full.encode('ascii'))
         time.sleep(0.2)
