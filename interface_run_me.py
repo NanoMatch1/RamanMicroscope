@@ -3,7 +3,8 @@ import os
 import traceback
 
 from controller import ArduinoMEGA
-from instruments import Instrument, Microscope, Triax, StageControl, Monochromator, MillenniaLaser
+from instruments_old import Instrument, Microscope, Triax, StageControl, Monochromator #,MillenniaLaser
+from instruments.lasers import MillenniaLaser
 from calibration import Calibration
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
@@ -61,6 +62,21 @@ class Interface:
         # Create directories first
         self._build_directories()
         self.calibration_service = Calibration()
+
+        # Create hardware instances
+        self.contorller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
+        self.camera = TucamCamera(self, simulate=simulate)
+        self.spectrometer = Triax(self, simulate=simulate)
+        self.laser = MillenniaLaser(self, simulate=simulate)
+
+        self.microscope = Microscope(
+            interface=self, 
+            calibration_service=self.calibration_service,
+            controller=self.controller,
+            camera=self.camera,
+            spectrometer=self.spectrometer,
+            simulate=simulate
+        )
 
 
         if simulate:
@@ -191,6 +207,27 @@ class Interface:
 
     #8.56 -14.81
     #Z #5.35 - 4.1
+
+    def connect_to_laser(self):
+        """Switch from simulated to real laser"""
+        if self.simulate or 'laser' in self.debug_skip:
+            print("Attempting to connect to real laser...")
+            from instruments.lasers import MillenniaLaser
+            try:
+                self.laser = MillenniaLaser(self, simulate=False)
+                self.laser.initialise()
+                print("Successfully connected to real laser")
+                self.command_map = self._generate_command_map()
+            except Exception as e:
+                print(f"Failed to connect to real laser: {e}")
+                # Fallback to simulation
+                from simulation import SimulatedLaser
+                self.laser = SimulatedLaser(self)
+                self.laser.initialise()
+                print("Reverted to simulated laser")
+        else:
+            # Already using real hardware
+            print("Already connected to real laser")
 
     def connect_to_camera(self):
         """Switch from simulated to real camera"""

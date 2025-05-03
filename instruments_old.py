@@ -2967,6 +2967,8 @@ class Monochromator(Instrument):
 #     def home_stage(self):
 #         print("Homing the stage.")
 
+
+
 class MillenniaLaser(Instrument):
     def __init__(self, interface, port='COM13', baudrate=9600, simulate=False):
         super().__init__()

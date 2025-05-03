@@ -1,7 +1,7 @@
 import serial
 import time
 
-from instruments import Instrument, ui_callable
+from instruments_old import Instrument, ui_callable
 
 # class SerialComs:
 #     def __init__(self, com_port='COM10', baud=9600, report=True, dtr=False):
@@ -258,7 +258,7 @@ class ArduinoMEGA:
 
             if self.report is True:
                 print(response)
-                
+
             split_responses = response.split('\r\n')
             for item in split_responses:
                 if item == end_flag:
