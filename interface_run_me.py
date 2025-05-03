@@ -3,9 +3,9 @@ import os
 import traceback
 
 from controller import ArduinoMEGA
-from instruments_old import Instrument, Microscope, Triax, StageControl, Monochromator #,MillenniaLaser
-from instruments.instrument import Instrument as InstrumentBase
-from instruments.lasers import MillenniaLaser
+from instruments_old import Instrument, Microscope
+from instruments.instrument_base import Instrument as InstrumentBase
+from instruments import MillenniaLaser, Triax
 from calibration import Calibration
 # from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:

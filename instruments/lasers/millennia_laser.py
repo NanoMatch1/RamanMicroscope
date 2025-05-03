@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import serial
 import time
-from ..instrument import Instrument
+from ..instrument_base import Instrument
 from ..ui_decorators import ui_callable 
 
 
