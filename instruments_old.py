@@ -349,7 +349,7 @@ class MotionControl:
         return result
 
 
-    def move_motors(self, motor_id_steps: dict, backlash=True):
+    def move_motors(self, motor_id_steps: dict, backlash=True, report=True):
         """
         Move motors by specified steps. Actively waits for motors to stop moving by polling controller. Backlash correction is applied to movements in the negative direction.
         
@@ -374,9 +374,16 @@ class MotionControl:
         # Build command in the format o1X100 1Y-50o
         motor_commands = [f"{motor_id}{steps}" for motor_id, steps in motor_id_steps.items()]
         motion_command = 'o' + ' '.join(motor_commands) + 'o'
+
+        if self.controller.report is True:
+            self.controller.report = False
         
-        response = self.controller.send_command(motion_command)
-        self.wait_for_motors(list(motor_id_steps.keys()))
+            response = self.controller.send_command(motion_command)
+            self.wait_for_motors(list(motor_id_steps.keys()))
+
+        else:
+            response = self.controller.send_command(motion_command)
+            self.wait_for_motors(list(motor_id_steps.keys()))
 
         if backlash:
             motors_for_correction = {motor: steps for motor, steps in motor_id_steps.items() if int(steps) < 0} # Only apply backlash if moving backwards. i.e. forwards direction should already have the backlash taken up
@@ -487,8 +494,6 @@ class Microscope(Instrument):
     
     ]
 
-
-
     def __init__(self, interface, calibration_service=None, controller=None, camera=None, 
                  spectrometer=None, simulate=False):
         super().__init__()
@@ -556,8 +561,8 @@ class Microscope(Instrument):
             'x': self.move_x,
             'y': self.move_y,
             'z': self.move_z,
+            'focus': self.enter_focus_mode,
             'stagepos': self.get_stage_positions_microns,
-
             'stagehome': self.set_stage_home,
             # motor commands
             'laserpos': self.get_laser_motor_positions,
@@ -1145,7 +1150,7 @@ class Microscope(Instrument):
     
     @ui_callable
     def move_x(self, travel_distance):
-        '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers.'''
+        '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers. Note no backlash compensation is applied.'''
         try:
             travel_distance = float(travel_distance)
         except ValueError:
@@ -1153,13 +1158,13 @@ class Microscope(Instrument):
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"x": travel_distance})
-        self.motion_control.move_motors(motor_dict)
+        self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"x": travel_distance})
         print('x stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
-        '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers.'''
+        '''Moves the microcsope sample stage in the Y direction, by travel distance in micrometers. Note no backlash compensation is applied.'''
         try:
             travel_distance = float(travel_distance)
         except ValueError:
@@ -1167,13 +1172,13 @@ class Microscope(Instrument):
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"y": travel_distance})
-        self.motion_control.move_motors(motor_dict)
+        self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"y": travel_distance})
         print('y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
-        '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers.'''
+        '''Moves the microcsope sample stage in the Z direction, by travel distance in micrometers. Note no backlash compensation is applied.'''
         try:
             travel_distance = float(travel_distance)
         except ValueError:
@@ -1181,7 +1186,7 @@ class Microscope(Instrument):
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"z": travel_distance})
-        self.motion_control.move_motors(motor_dict)
+        self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"z": travel_distance})
         print('z stage moved by {} micrometers'.format(travel_distance))
 
@@ -1193,6 +1198,7 @@ class Microscope(Instrument):
             self.stage_positions_microns[key] = 0
         print('Stage home ({}) set to current position'.format(self.acquisition_control.current_stage_coordinates))
 
+    @ui_callable
     def enter_focus_mode(self):
         '''Enters the mode for incrementally adjusting the microscope focus at the sample.'''
         print("Entering focus mode.\nType focus steps in microns.\nType 'exit' to exit focus mode.")

@@ -7,7 +7,7 @@ from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import MillenniaLaser, Triax
 from calibration import Calibration
-# from commands import CommandHandler, MicroscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
+# from commands import CommandHandler, Micr oscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
     from tucsen.tucsen_camera_wrapper import TucamCamera
 except Exception as e:
