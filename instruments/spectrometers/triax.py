@@ -2,7 +2,7 @@ import time
 import pyvisa
 from ..instrument_base import Instrument
 from ..ui_decorators import ui_callable
-from simulated_triax import SimulatedTriaxSerial
+from .simulated_triax import SimulatedTriaxSerial
 
 
 class Triax(Instrument):
@@ -190,7 +190,6 @@ class Triax(Instrument):
         print("Connecting to TRIAX spectrometer...")
         rm = pyvisa.ResourceManager()
         rm.list_resources()
-        breakpoint()
         self.spectrometer = rm.open_resource('GPIB0::1::INSTR')  # Replace with the actual VISA address of your instrument
 
         self.spectrometer.write('WHERE AM I')

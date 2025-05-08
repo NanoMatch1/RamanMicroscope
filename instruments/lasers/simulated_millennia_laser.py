@@ -25,7 +25,6 @@ class SimulatedMillenniaSerial:
             '?IDN': self.get_idn,
             '?C1': self.get_diode1_current,
             '?C2': self.get_diode2_current,
-
         }
 
     def open(self):

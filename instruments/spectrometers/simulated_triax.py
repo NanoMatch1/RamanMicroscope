@@ -4,7 +4,7 @@ class SimulatedTriaxSerial:
         self.triax_steps = 0
 
         self.command_map = {
-        'H0': triax_steps,
+        # 'H0': triax_steps,
         }
         pass
 
