@@ -14,6 +14,8 @@ dirname = os.path.dirname(__file__)
 dataDir = os.path.join(dirname, 'data')
 fileDir = os.path.join(dataDir, series_name)
 
+fileDir = r'C:\Users\Raman\matchbook\RamanMicroscope\data\MoS2-flake-test-12'
+
 if __name__ == '__main__':
     dataSet = DataSet(fileDir, initialise=False)
     dataSet.initialise()
@@ -25,7 +27,7 @@ if __name__ == '__main__':
         )
 
     dataSet.subtract_background_files(show=True)
-    dataSet.plot_current(offset = 1000)
+    dataSet.plot_current(offset = 1000, legend=False)
     dataSet.calibrate_excitation_wavelength(save_cal=True
         # raman_shift=385
         ) 

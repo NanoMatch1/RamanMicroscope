@@ -635,6 +635,7 @@ class Microscope(Instrument):
     def filename(self):
         return self.acquisition_control.filename
     
+    
     # TODO: use setter and getter for stage_pos_microns and update_stage
     @ui_callable
     def get_stage_positions_microns(self):

@@ -251,7 +251,7 @@ class AcquisitionControl:
             'z': target_microns[2]
         }
 
-        motor_dict = self.microscope.calibrations.microns_to_steps(micron_dict)
+        motor_dict = self.microscope.calibration_service.microns_to_steps(micron_dict)
         # self.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
         self.microscope.motion_control.move_motors(motor_dict)
         print("Sent Command {}".format(motor_dict))

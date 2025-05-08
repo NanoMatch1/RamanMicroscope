@@ -1,32 +1,32 @@
 {
   "general_parameters": {
-    "acquisition_time": "7000",
-    "filename": "MoS2-WL-LowFreq2",
+    "acquisition_time": "2000",
+    "filename": "MoS2-flake-test-12",
     "raman_shift": 0.0,
     "laser_power": "4.5",
     "scan_index": 0,
-    "scan_type": "wavelength"
+    "scan_type": "motion"
   },
   "motion_parameters": {
     "start_position": {
-      "x": 0.0,
-      "y": 0.0,
+      "x": 3462.0,
+      "y": 671.4,
       "z": 0.0
     },
     "end_position": {
-      "x": 0.0,
-      "y": 0.0,
+      "x": 3512.0,
+      "y": 671.4,
       "z": 0.0
     },
     "resolution": {
-      "x": 0.0,
+      "x": 1.0,
       "y": 0.0,
       "z": 0.0
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 730.0,
-    "end_wavelength": 870.0,
+    "start_wavelength": 800.0,
+    "end_wavelength": 800.0,
     "resolution": 5.0
   },
   "polarization_parameters": {

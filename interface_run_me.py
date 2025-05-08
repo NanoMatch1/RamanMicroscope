@@ -321,7 +321,7 @@ class Interface:
 
 
 if __name__ == '__main__':
-    interface = Interface(simulate=True, com_port='COM10', debug_skip=[
+    interface = Interface(simulate=False, com_port='COM10', debug_skip=[
         'camera',
         #'laser', 
         'TRIAX'

@@ -132,7 +132,7 @@ class Triax(Instrument):
         
         triax_steps = self.get_triax_steps()
         
-        target_steps = round(self.interface.microscope.calibrations.wl_to_triax(wavelength))
+        target_steps = round(self.interface.microscope.calibration_service.wl_to_triax(wavelength))
         # 
         new_steps = target_steps - triax_steps
         # return if no movement is required
