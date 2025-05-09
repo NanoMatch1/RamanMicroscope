@@ -8,8 +8,11 @@ from tkinter import ttk, messagebox
 import sys
 
 class AcquisitionControl:
+
     def __init__(self, microscope=None):
         self.microscope = microscope
+
+        print("Acquisition Control initialized.")
 
         self.general_parameters = {
             'acquisition_time': 1000.0,
@@ -18,15 +21,16 @@ class AcquisitionControl:
             'laser_power': 4.5,
             'scan_index': 0,
             'scan_type': None,
+            'n_frames': 1,
         }
         self.motion_parameters = {
-            'start': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            'end': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'start_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'end_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'resolution': {'x': 0.0, 'y': 0.0, 'z': 0.0}
         }
         self.wavelength_parameters = {
-            'start': 0.0,
-            'end': 0.0,
+            'start_wavelength': 0.0,
+            'end_wavelength': 0.0,
             'resolution': 1.0
         }
         self.polarization_parameters = {
@@ -47,7 +51,6 @@ class AcquisitionControl:
         }
 
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}
-
         self.load_config()
         
     def update_stage_positions(self):
@@ -179,10 +182,10 @@ class AcquisitionControl:
         except Exception as e:
             print(f"Unexpected error loading Acquisition Control configuration: {e}. Using default parameters.")
 
-        self.general_parameters = config.get('general_parameters', self.general_parameters)
-        self.motion_parameters = config.get('motion_parameters', self.motion_parameters)
-        self.wavelength_parameters = config.get('wavelength_parameters', self.wavelength_parameters)
-        self.polarization_parameters = config.get('polarization_parameters', self.polarization_parameters)
+        self.general_parameters.update(config.get('general_parameters', self.general_parameters))
+        self.motion_parameters.update(config.get('motion_parameters', self.motion_parameters))
+        self.wavelength_parameters.update(config.get('wavelength_parameters', self.wavelength_parameters))
+        self.polarization_parameters.update(config.get('polarization_parameters', self.polarization_parameters))
 
         print("Acquisition Control configuration loaded successfully.")
 
@@ -281,7 +284,7 @@ class AcquisitionControl:
         sequence = self.generate_scan_sequence()
         total_steps = len(sequence)
         start_time = time.time()
-        predicted_time = ((total_steps * float(self.general_parameters['acquisition_time']) / 1000.0)/3600) * 1.2
+        predicted_time = ((total_steps * float(self.general_parameters['acquisition_time']) / 1000.0)/3600) * 1.2 * self.general_parameters['n_frames']
         print(f"Predicted time: {predicted_time:.2f} hours")
         rescan_list = []
 
@@ -300,15 +303,30 @@ class AcquisitionControl:
                 if change is not None:
                     command(change)
             
-            image_data = self.microscope.acquire_one_frame(export_raw=False)
-            if image_data is None:
-                print("Error image data None")
-                status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list.")
-                rescan_list.append([index, step])
-                return
-            
+            for frame in range(self.general_parameters['n_frames']):
+                print("Acquiring frame {}".format(frame + 1))
+
+                new_frame = self.microscope.camera.safe_acquisition(export=False)
+
+                if new_frame is None:
+                    print("Error image data None. Retryig now...")
+
+                    new_frame = self.microscope.camera.safe_acquisition(export=False)
+                    if new_frame is None:
+                        print("Error image data None")
+                        status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
+                        rescan_list.append(index, step)
+                        return
+                    
+                if frame == 0:
+                    image_data = new_frame
+                else:
+                    image_data = np.average([image_data, new_frame], axis=0)
+
+
+                self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+              
             self.save_spectrum(image_data, scan_index=index)
-            self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
         
         if len(rescan_list) > 0:
             for (index, step) in rescan_list:
@@ -322,15 +340,29 @@ class AcquisitionControl:
                     if change is not None:
                         command(change)
                 
-                image_data = self.microscope.acquire_one_frame(export_raw=False)
-                if image_data is None:
-                    print("Error image data None")
-                    status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan.")
-                    rescan_list.append(index, step)
-                    return
-                
+                for frame in range(self.general_parameters['n_frames']):
+                    print("Acquiring frame {}".format(frame))
+
+                    new_frame = self.microscope.acquire_one_frame(export_raw=False)
+
+                    if new_frame is None:
+                        print("Error image data None. Retryig now...")
+
+                        new_frame = self.microscope.acquire_one_frame(export_raw=False)
+                        if new_frame is None:
+                            print("Error image data None")
+                            status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
+                            rescan_list.append(index, step)
+                            return
+                        
+                    if frame == 0:
+                        image_data = new_frame
+                    else:
+                        image_data = np.average([image_data, new_frame], axis=0)
+
+                    self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+                    
                 self.save_spectrum(image_data, scan_index=index)
-                self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
             
         status_callback("Scan complete.")
         progress_callback(total_steps, total_steps, start_time)
@@ -348,7 +380,6 @@ class AcquisitionControl:
             print(f"Saving transient data to {save_path}")
         print(f"Saving transient data to {save_path}")
         np.save(save_path, image_data)
-        # breakpoint()# image data along a new axis
 
     def save_spectrum(self, image_data, **kwargs):
         scan_index     = kwargs.get('scan_index',     self.general_parameters['scan_index'])
@@ -393,6 +424,7 @@ class AcquisitionControl:
 
 class AcquisitionGUI:
     def __init__(self, root, acquisition_params):
+        print("Acquisition GUI initialized.")
         self.root = root
         self.root.title("Acquisition Parameter Setup")
         self.params = acquisition_params
@@ -442,6 +474,10 @@ class AcquisitionGUI:
         self.elapsed_label.pack(pady=2)
         self.estimate_label = tk.Label(self.root, text="Estimated scan time: 0.0s")
         self.estimate_label.pack(pady=2)
+
+        self.update_button = tk.Button(self.root, text="Updata Params", command=self.validate_and_update_parameters)
+        self.update_button.pack(pady=5)
+
 
         self.cancel_button = tk.Button(self.root, text="Cancel Scan", command=self.cancel_scan)
         self.cancel_button.pack(pady=5)
@@ -547,3 +583,33 @@ class AcquisitionGUI:
         self.cancel_event.set()  # Ensure that any scan thread is signalled to stop
         self.root.destroy()
         # sys.exit(0)  # End the application
+
+class DummyMicroscope:
+    def __init__(self):
+        self.stage_positions_microns = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.laser_wavelengths = {'l1': 532.0}
+        self.monochromator_wavelengths = {'g3': 500.0}
+        self.dataDir = os.getcwd()
+        self.motion_control = None
+        self.calibration_service = None
+
+    def get_detector_temperature(self):
+        return -50.0
+
+    def set_acquisition_time(self, time):
+        pass
+
+    def set_laser_power(self, power):
+        pass
+
+    def raman_mode(self):
+        pass
+
+    def acquire_one_frame(self, export_raw=False):
+        return np.random.rand(100, 100)
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    acq = AcquisitionControl(microscope=DummyMicroscope())
+    gui = AcquisitionGUI(root, acq)
+    root.mainloop()

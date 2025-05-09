@@ -177,7 +177,7 @@ class TucamCamera:
         TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
         TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
 
-    def wait_for_image_data(self, report=True, timeout=10000, debug=False):
+    def wait_for_image_data(self, report=True, timeout=100000, debug=False):
 
         try:
             result = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame), timeout)
