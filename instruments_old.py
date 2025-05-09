@@ -723,7 +723,7 @@ class Microscope(Instrument):
         mode_steps = self.get_stage_steps()['mode']
         if -160_000 < mode_steps < -10_000:
             self.microscope_mode = 'ramanmode'
-        elif -10_000 < mode_steps < 10_000:
+        elif -10_000 < mode_steps < 60_000:
             self.microscope_mode = 'imagemode'
 
         else:
