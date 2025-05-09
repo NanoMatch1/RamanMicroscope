@@ -519,7 +519,7 @@ class TucamCamera:
             return
         
         self.allocate_buffer_and_start()
-        n_frames = self.microscope.acquisition_control.general_parameters['n_frames']
+        n_frames = self.interface.microscope.acquisition_control.general_parameters['n_frames']
 
         # Set up for continuous acquisition
         def continuous_task():
@@ -539,7 +539,7 @@ class TucamCamera:
                             # First frame, set up the data array
                             data = new_frame
                         else:
-                            data = np.average(data, new_frame, axis=0)
+                            data = (data + new_frame) / 2
                         
                         # self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
                         wavelengths = self.interface.microscope.wavelength_axis
