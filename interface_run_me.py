@@ -321,7 +321,7 @@ class Interface:
 
 
 if __name__ == '__main__':
-    interface = Interface(simulate=False, com_port='COM10', debug_skip=[
+    interface = Interface(simulate=True, com_port='COM10', debug_skip=[
         'camera',
         #'laser', 
         'TRIAX'
@@ -335,3 +335,8 @@ if __name__ == '__main__':
 # l2: 155 steps
 # l3: 467 steps
 # g1: 16 stepsb
+
+# Dependencies:
+# - pyserial
+# - pyvisa
+# - numpy
