@@ -658,6 +658,7 @@ class Microscope(Instrument):
         root.mainloop()
 
 
+
     @ui_callable
     def run_scan_thread(self):
         '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionControl class.'''
@@ -1502,7 +1503,6 @@ class Microscope(Instrument):
             filename = self.acquisition_control.general_parameters['filename']
 
         image_data = self.camera.safe_acquisition(export=export_raw)
-
 
         self.acquisition_control.save_spectrum(image_data, wavelength_axis=self.wavelength_axis, save_dir='data', filename=filename, scan_index=scan_index)
         self.acquisition_control.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis)

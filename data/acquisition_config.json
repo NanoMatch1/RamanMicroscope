@@ -5,28 +5,39 @@
     "raman_shift": 0.0,
     "laser_power": "4.5",
     "scan_index": 0,
-    "scan_type": "motion"
+    "scan_type": "motion",
+    "n_frames": 3
   },
   "motion_parameters": {
     "start_position": {
-      "x": 3462.0,
-      "y": 671.4,
+      "x": 0.0,
+      "y": 0.0,
       "z": 0.0
     },
     "end_position": {
-      "x": 3512.0,
-      "y": 671.4,
+      "x": 0.0,
+      "y": 0.0,
       "z": 0.0
     },
     "resolution": {
       "x": 1.0,
       "y": 0.0,
       "z": 0.0
+    },
+    "start_pos": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "end_pos": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
     }
   },
   "wavelength_parameters": {
     "start_wavelength": 800.0,
-    "end_wavelength": 800.0,
+    "end_wavelength": 810.0,
     "resolution": 5.0
   },
   "polarization_parameters": {
