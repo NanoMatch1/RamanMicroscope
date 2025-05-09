@@ -321,7 +321,7 @@ class AcquisitionControl:
                 if frame == 0:
                     image_data = new_frame
                 else:
-                    image_data = np.average([image_data, new_frame], axis=0)
+                    image_data = (image_data + new_frame) / 2
 
 
                 self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
@@ -358,7 +358,7 @@ class AcquisitionControl:
                     if frame == 0:
                         image_data = new_frame
                     else:
-                        image_data = np.average([image_data, new_frame], axis=0)
+                        image_data = (image_data + new_frame) / 2
 
                     self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
                     
