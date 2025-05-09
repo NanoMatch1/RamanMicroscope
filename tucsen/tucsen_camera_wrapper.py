@@ -519,6 +519,7 @@ class TucamCamera:
             return
         
         self.allocate_buffer_and_start()
+        n_frames = self.microscope.acquisition_control.general_parameters['n_frames']
 
         # Set up for continuous acquisition
         def continuous_task():
@@ -526,15 +527,24 @@ class TucamCamera:
 
             while not self.stop_flag.is_set():
                 try:
-                    with self.camera_lock:
-                        data = self.wait_for_image_data()
-                    if data is None:
-                        print("Failed to acquire frame.")
-                        break
-                    # self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
-                    wavelengths = self.interface.microscope.wavelength_axis
-                    self.interface.microscope.acquisition_control.save_spectrum_transient(data, wavelengths)
-                    time.sleep(0.001)
+                    for i in range(n_frames):
+                        print(f"Acquiring frame {i+1}/{n_frames}...")
+                        with self.camera_lock:
+                            new_frame = self.wait_for_image_data()
+                        if new_frame is None:
+                            print("Failed to acquire frame.")
+                            break
+
+                        if i == 0:
+                            # First frame, set up the data array
+                            data = new_frame
+                        else:
+                            data = np.average(data, new_frame, axis=0)
+                        
+                        # self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
+                        wavelengths = self.interface.microscope.wavelength_axis
+                        self.interface.microscope.acquisition_control.save_spectrum_transient(data, wavelengths)
+                        time.sleep(0.001)
                 except Exception as e:
                     print(f"Acquisition error: {e}")
                     print(traceback.format_exc())
