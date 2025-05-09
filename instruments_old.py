@@ -593,6 +593,7 @@ class Microscope(Instrument):
             'mopen': self.open_mono_shutter,
             # 'isrun': self.motion_control.wait_for_motors,
             # camera commands
+            'nframe': self.set_number_of_frames,
             'acquire': self.acquire_one_frame,
             'run': self.start_continuous_acquisition,
             'stop': self.stop_continuous_acquisition,
@@ -1496,6 +1497,18 @@ class Microscope(Instrument):
         '''Closes the hardware camera connection. Allows connection via Mosaic UI.'''
         self.camera.close_camera()
         self.interface.debug_skip.append('camera')
+
+    @ui_callable
+    def set_number_of_frames(self, n_frames):
+        '''Sets the number of frames to acquire.'''
+        try:
+            n_frames = int(n_frames)
+        except ValueError:
+            print("Invalid number of frames. Must be an integer.")
+            return
+        
+        self.acquisition_control.general_parameters['n_frames'] = n_frames
+        print('Number of frames set to: ', n_frames)
 
     @ui_callable
     def acquire_one_frame(self, filename=None, scan_index=0, export_raw=False):
