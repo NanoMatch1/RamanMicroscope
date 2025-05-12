@@ -321,7 +321,13 @@ class Interface:
 
 
 if __name__ == '__main__':
-    interface = Interface(simulate=True, com_port='COM10', debug_skip=[
+    import sys
+    if sys.platform == "linux":
+        simulate = True 
+    else:
+        simulate = False
+
+    interface = Interface(simulate=simulate, com_port='COM10', debug_skip=[
         'camera',
         #'laser', 
         'TRIAX'
