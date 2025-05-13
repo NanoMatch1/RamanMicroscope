@@ -1200,7 +1200,9 @@ class Microscope(Instrument):
     @ui_callable
     def set_stage_home(self):
         '''Sets the current stage position as the home position.'''
-        self.motion_control.set_stage_home()
+        motor_dict = {'x': 0, 'y': 0, 'z': 0}
+        self.write_motor_positions(motor_dict=motor_dict)
+
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
         print('Stage home ({}) set to current position'.format(self.acquisition_control.current_stage_coordinates))
