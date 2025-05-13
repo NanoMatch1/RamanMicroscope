@@ -291,9 +291,15 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 - FYI Camera module in "4. Adapters > ThorCam PCB"
 
 
-# Notes adn ToDo:
+# Notes and ToDo:
 
 ## Sam ToDo:
+- change acquisition time to seconds
+- compress file saving!!!
+- Refactor acquisition loop
+    - improve acquisition UI
+    - add linescan interpolation mode
+- build calibrations app - BIG JOB
 - create dummy instrument classes for dependency injection.
 - create unit tests for all
 - Ensure scan parameters updating to metadata
