@@ -564,6 +564,8 @@ class Microscope(Instrument):
             'focus': self.enter_focus_mode,
             'stagepos': self.get_stage_positions_microns,
             'stagehome': self.set_stage_home,
+            'startpos': self.set_start_pos,
+            'endpos': self.set_end_pos,
             # motor commands
             'laserpos': self.get_laser_motor_positions,
             'monopos': self.get_monochromator_motor_positions,
@@ -635,6 +637,19 @@ class Microscope(Instrument):
     @property
     def filename(self):
         return self.acquisition_control.filename
+
+
+    @ui_callable
+    def set_start_pos(self):
+        self.acquisition_control.motion_parameters['start_position'] = self.stage_positions_microns.copy()
+        print("Scan Start position set to {}".format(self.acquisition_control.motion_parameters['start_position']))
+        self.acquisition_control.save_config()
+
+    @ui_callable
+    def set_end_pos(self):
+        self.acquisition_control.motion_parameters['end_position'] = self.stage_positions_microns.copy()
+        print("Scan End position set to {}".format(self.acquisition_control.motion_parameters['end_position']))
+        self.acquisition_control.save_config()
     
     
     # TODO: use setter and getter for stage_pos_microns and update_stage
