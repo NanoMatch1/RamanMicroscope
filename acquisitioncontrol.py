@@ -279,7 +279,7 @@ class AcquisitionControl:
         command_hierarchy = [
             self.move_stage_absolute,
             self.microscope.go_to_polarization_in,
-            self.microscope.go_to_wavelength_all,
+            self .microscope.go_to_wavelength_all,
         ]
         sequence = self.generate_scan_sequence()
         total_steps = len(sequence)
@@ -376,9 +376,9 @@ class AcquisitionControl:
 
         # TODO:add wavelength axis to the image data along a new axis
         save_path = os.path.join(self.microscope.dataDir, 'transient_data', 'transient_data.npy')
-        if kwargs.get('report', False):
-            print(f"Saving transient data to {save_path}")
-        print(f"Saving transient data to {save_path}")
+        # if kwargs.get('report', False):
+        #     print(f"Saving transient data to {save_path}")
+        # print(f"Saving transient data to {save_path}")
         np.save(save_path, image_data)
 
     def save_spectrum(self, image_data, **kwargs):
