@@ -288,8 +288,8 @@ class AcquisitionControl:
         rescan_list = []
 
         self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
-        if self.microscope.detect_microscope_mode() == 'imagemode':
-            self.microscope.raman_mode()
+        # if self.microscope.detect_microscope_mode() == 'imagemode':
+        #     self.microscope.raman_mode()
 
         for index, step in enumerate(sequence):
             self.general_parameters['scan_index'] = index
