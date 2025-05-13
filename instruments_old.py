@@ -2151,6 +2151,8 @@ class Microscope(Instrument):
     def report_all_current_positions(self):
         '''Formats and prints the current positions of the microscope.'''
         stage_steps = self.get_stage_steps()
+        self.detect_microscope_mode()
+
 
         print("---Steps---")
         for motor, position in self.laser_steps.items():
@@ -2181,6 +2183,7 @@ class Microscope(Instrument):
             print(f'{motor}: {position} steps')
         for motor, position in self.stage_positions_microns.items():
             print(f'{motor}: {position} microns')
+        print("Mode: ", self.microscope_mode)
 
         return 
     
