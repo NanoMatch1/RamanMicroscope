@@ -19,10 +19,13 @@ class AcquisitionControl:
             'filename': 'default',
             'raman_shift': 0.0,
             'laser_power': 4.5,
-            'scan_index': 0,
-            'scan_type': None,
             'n_frames': 1,
         }
+
+        self.button_parameters = {
+            'scan_type': 'linescan',
+            }
+        
         self.motion_parameters = {
             'start_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'end_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
@@ -46,7 +49,7 @@ class AcquisitionControl:
             'monochromator_wavelength': 0.0,
             'spectrometer_steps': 0.0,
             'scan_index': 0,
-            'scan_type': None,
+            'scan_type': 'linescan',
             'detector_temperature': 0.0
         }
 
@@ -154,6 +157,7 @@ class AcquisitionControl:
     def save_config(self, filename="acquisition_config.json"):
         config = {
             'general_parameters': self.general_parameters,
+            'button_parameters': self.button_parameters,
             'motion_parameters': self.motion_parameters,
             'wavelength_parameters': self.wavelength_parameters,
             'polarization_parameters': self.polarization_parameters,
@@ -282,6 +286,8 @@ class AcquisitionControl:
             self.motion_parameters['resolution']['z']
         )
 
+        if self.button_parameters['scan_type'] == 'linescan':
+            scan_size = wavelength_list * polarization_list * x_positions
         scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
         print(f"Scan size: {scan_size}")
         
@@ -477,10 +483,11 @@ class AcquisitionGUI:
         self.root.title("Acquisition Parameter Setup")
         self.params = acquisition_params
         self.entries = {}
-        self.scan_mode_enabled = tk.BooleanVar()
+        # self.scan_mode_enabled = tk.BooleanVar()
         self.cancel_event = threading.Event()
         self.scan_thread = None
         self.start_time = None
+        # self.scan_mode = tk.StringVar(value=self.params.buttom_parameters.get('scan_type', 'linescan'))
         self.build_gui()
 
     def build_gui(self):
@@ -501,17 +508,20 @@ class AcquisitionGUI:
         self.build_section(self.wavelength_frame, self.params.wavelength_parameters, section="wavelength")
         self.build_nested_section(self.polarization_frame, self.params.polarization_parameters, section="polarization")
 
-        tk.Checkbutton(self.root, text="Enable Scan Mode", variable=self.scan_mode_enabled,
-                       command=self.toggle_scan_mode).pack(pady=5)
+        # tk.Checkbutton(self.root, text="Enable Scan Mode", variable=self.scan_mode_enabled,
+        #                command=self.toggle_scan_mode).pack(pady=5)
         self.status_label = tk.Label(self.root, text="", fg="red")
         self.status_label.pack()
 
-        self.single_button = tk.Button(self.root, text="Start Single Acquisition", command=self.start_single_acquisition)
+        self.toggle_button = tk.Button(self.root, text=f"Mode: {self.params.general_parameters.get('scan_type', 'linescan')}", command=self.toggle_scan_mode)
+        self.toggle_button.pack(pady=5)
+
+        self.single_button = tk.Button(self.root, text="Single Acquisition", command=self.start_single_acquisition)
         self.single_button.pack(pady=5)
 
         self.scan_button = tk.Button(self.root, text="Start Scan Acquisition", command=self.start_scan_acquisition)
         self.scan_button.pack(pady=5)
-        self.scan_button.config(state="disabled")
+        # self.scan_button.config(state="disabled")
 
         self.scan_status = tk.Label(self.root, text="Idle", fg="blue")
         self.scan_status.pack(pady=5)
@@ -551,15 +561,29 @@ class AcquisitionGUI:
             label.pack(fill='x', pady=5, padx=5)
             self.build_section(label, params, f"{section}.{subgroup}")
 
+    # def toggle_scan_mode(self):
+    #     if self.scan_mode_enabled.get():
+    #         self.scan_button.config(state="normal")
+    #         self.status_label.config(text="Scan mode enabled")
+    #     else:
+    #         self.scan_button.config(state="disabled")
+    #         self.status_label.config(text="")
+
     def toggle_scan_mode(self):
-        if self.scan_mode_enabled.get():
-            self.scan_button.config(state="normal")
-            self.status_label.config(text="Scan mode enabled")
-        else:
-            self.scan_button.config(state="disabled")
-            self.status_label.config(text="")
+        # current = self.scan_mode.get()
+        current = self.params.button_parameters.get('scan_type')
+        new_mode = "linescan" if current == "map" else "map"
+        # self.scan_mode.set(new_mode)
+        self.params.button_parameters['scan_type'] = new_mode
+
+        self.toggle_button.config(text=f"Mode: {new_mode.lower()}")
+        self.status_label.config(text=f"Scan mode set to {new_mode}")
+        self.validate_and_update_parameters()
+
 
     def validate_and_update_parameters(self):
+        self.params.general_parameters['n_frames'] = int(self.params.general_parameters['n_frames'])
+
         for key, (var, expected_type) in self.entries.items():
             val = var.get()
             try:
@@ -573,7 +597,7 @@ class AcquisitionGUI:
             except ValueError:
                 self.status_label.config(text=f"Invalid input for {key}: expected {expected_type.__name__}")
                 return False
-        self.status_label.config(text="")
+        # self.status_label.config(text="")
 
         self.update_scan_estimate()
         self.params.save_config()
