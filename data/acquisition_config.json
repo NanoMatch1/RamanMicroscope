@@ -1,6 +1,6 @@
 {
   "general_parameters": {
-    "acquisition_time": 1000,
+    "acquisition_time": 2000,
     "filename": "MoS2-flake-test-12",
     "raman_shift": 0.0,
     "laser_power": 4.5,
