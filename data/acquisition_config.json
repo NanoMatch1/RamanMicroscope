@@ -1,9 +1,9 @@
 {
   "general_parameters": {
-    "acquisition_time": "2000",
+    "acquisition_time": 1000,
     "filename": "MoS2-flake-test-12",
     "raman_shift": 0.0,
-    "laser_power": "4.5",
+    "laser_power": 4.5,
     "scan_index": 0,
     "scan_type": "motion",
     "n_frames": 3
@@ -21,16 +21,6 @@
     },
     "resolution": {
       "x": 1.0,
-      "y": 0.0,
-      "z": 0.0
-    },
-    "start_pos": {
-      "x": 0.0,
-      "y": 0.0,
-      "z": 0.0
-    },
-    "end_pos": {
-      "x": 0.0,
       "y": 0.0,
       "z": 0.0
     }

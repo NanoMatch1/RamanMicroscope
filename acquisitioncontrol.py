@@ -108,14 +108,12 @@ class AcquisitionControl:
 
 
     def estimate_scan_duration(self):
-        x_range = (self.motion_parameters['end_position']['x'] - self.motion_parameters['start_position']['x']) / self.motion_parameters['resolution']['x']
-        y_range = (self.motion_parameters['end_position']['y'] - self.motion_parameters['start_position']['y']) / self.motion_parameters['resolution']['y']
-        p_range = (self.polarization_parameters['input']['end_angle'] - self.polarization_parameters['input']['start_angle']) / self.polarization_parameters['input']['resolution']
-        w_range = (self.wavelength_parameters['end_wavelength'] - self.wavelength_parameters['start_wavelength']) / self.wavelength_parameters['resolution']
+        '''Estimates the duration of the scan in seconds. This is a rough estimate based on the number of steps in the scan and the acquisition time.'''
 
-        n_steps = max(1, int(x_range + 1)) * max(1, int(y_range + 1)) * max(1, int(p_range + 1)) * max(1, int(w_range + 1))
-        time_per = self.general_parameters['acquisition_time'] / 1000.0
-        return n_steps * time_per * 1.2
+        self.generate_scan_sequence()
+        frames = self.general_parameters['n_frames']
+        acq_time = self.general_parameters['acquisition_time'] / 1000.0
+        return len(self.scan_sequence) * acq_time * frames * 1.2
 
     def prompt_for_cli_parameters(self):
         print("\n--- CLI Parameter Entry ---")
@@ -240,6 +238,8 @@ class AcquisitionControl:
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
+
+        self.scan_sequence = sequence
         return sequence
     
     def move_stage_absolute(self, new_coordinates):
@@ -270,8 +270,6 @@ class AcquisitionControl:
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
         self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
-
-
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
 
         # TODO: FIX motion back to origin, keep track of stage pos better
@@ -282,6 +280,7 @@ class AcquisitionControl:
             self .microscope.go_to_wavelength_all,
         ]
         sequence = self.generate_scan_sequence()
+
         total_steps = len(sequence)
         start_time = time.time()
         predicted_time = ((total_steps * float(self.general_parameters['acquisition_time']) / 1000.0)/3600) * 1.2 * self.general_parameters['n_frames']
@@ -289,7 +288,7 @@ class AcquisitionControl:
         rescan_list = []
 
         self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
-        if self.microscope.microscope_mode != 'ramanmode':
+        if self.microscope.detect_microscope_mode() == 'imagemode':
             self.microscope.raman_mode()
 
         for index, step in enumerate(sequence):
@@ -423,7 +422,8 @@ class AcquisitionControl:
     
 
 class AcquisitionGUI:
-    def __init__(self, root, acquisition_params):
+    def __init__(self, root, acquisition_params, exit_event=None):
+        self.exit_event = exit_event
         print("Acquisition GUI initialized.")
         self.root = root
         self.root.title("Acquisition Parameter Setup")
@@ -475,7 +475,7 @@ class AcquisitionGUI:
         self.estimate_label = tk.Label(self.root, text="Estimated scan time: 0.0s")
         self.estimate_label.pack(pady=2)
 
-        self.update_button = tk.Button(self.root, text="Updata Params", command=self.validate_and_update_parameters)
+        self.update_button = tk.Button(self.root, text="Update Params", command=self.validate_and_update_parameters)
         self.update_button.pack(pady=5)
 
 
@@ -526,6 +526,7 @@ class AcquisitionGUI:
                 self.status_label.config(text=f"Invalid input for {key}: expected {expected_type.__name__}")
                 return False
         self.status_label.config(text="")
+        self.params.generate_scan_sequence()
         self.update_scan_estimate()
         self.params.save_config()
         return True
@@ -533,9 +534,23 @@ class AcquisitionGUI:
     def update_scan_estimate(self):
         try:
             duration = self.params.estimate_scan_duration()
-            self.estimate_label.config(text=f"Estimated scan time: {duration:.1f}s")
-        except Exception:
+
+            if duration > 600:
+                scan_time = {'duration': duration / 60, 'units': 'minutes'}
+            elif duration > 3600:
+                scan_time = {'duration': duration / 3600, 'units': 'hours'}
+            else:
+                scan_time = {'duration': duration, 'units': 'seconds'}
+
+            duration = scan_time['duration']
+            units = scan_time['units']
+
+            self.estimate_label.config(text=f"Estimated scan time: {duration:.1f} {units}")
+            return scan_time
+        except Exception as e:
+            print(f"Error estimating scan time: {e}")
             self.estimate_label.config(text="Estimated scan time: error")
+        
 
     def start_single_acquisition(self):
         if self.validate_and_update_parameters():
@@ -579,17 +594,18 @@ class AcquisitionGUI:
         self.elapsed_label.config(text=f"Elapsed: {elapsed:.1f}s")
     
     def quit_app(self):
-        """Cancel any running scan, close the GUI, and exit the application."""
-        self.cancel_event.set()  # Ensure that any scan thread is signalled to stop
+        """Quit the application and set the exit event."""
+        self.cancel_event.set()
+        if self.exit_event:
+            self.exit_event.set()
         self.root.destroy()
-        # sys.exit(0)  # End the application
 
 class DummyMicroscope:
     def __init__(self):
         self.stage_positions_microns = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         self.laser_wavelengths = {'l1': 532.0}
         self.monochromator_wavelengths = {'g3': 500.0}
-        self.dataDir = os.getcwd()
+        self.dataDir = os.path.join(os.path.dirname(__file__), 'data')
         self.motion_control = None
         self.calibration_service = None
 
@@ -608,8 +624,19 @@ class DummyMicroscope:
     def acquire_one_frame(self, export_raw=False):
         return np.random.rand(100, 100)
 
-if __name__ == '__main__':
+def run_gui(exit_event):
+    """Run the GUI in a separate thread."""
     root = tk.Tk()
     acq = AcquisitionControl(microscope=DummyMicroscope())
     gui = AcquisitionGUI(root, acq)
+    gui.exit_event = exit_event  # Pass the shared event
     root.mainloop()
+
+if __name__ == '__main__':
+    exit_event = threading.Event()
+    threading.Thread(target=run_gui, args=(exit_event,), daemon=True).start()
+
+    while not exit_event.is_set():
+        time.sleep(10)
+        print("Main thread is running. Press QUIT to exit.")
+
