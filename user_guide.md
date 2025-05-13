@@ -291,7 +291,7 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 - FYI Camera module in "4. Adapters > ThorCam PCB"
 
 
-# Notes adn ToDo:
+# Notes and ToDo:
 
 ## Riley's Research plan/literature survey
 The first aim is to identify and characterise defect modes in other TMDs. This analysis is firstly, novel, given that the defect modes of many TMDs are largely unexplored in general, and completely unexplored under indirect resonance conditions. Secondly, the use of the Raman microscope to comprehensively explore these model systems provides a basis for applying the setup to investigate other defect systems and quantum devices by demonstrating the types of defects that can be investigated, and how exactly selection rules are affected/what to expect in other systems.
@@ -301,7 +301,7 @@ We will use the materials avalaible to gain insights sequentially and with incre
 The initial reserach plan is as follows:
 1. Validate the DRR setup by studying MoS2
 - there will be a burn in phase where teething issues and calibration need to be addressed. MoS2 is well understood by the team and will provide a nice benchmark for the setup.
-- Actions:
+- Actions:cd 
     - Defect wavelength scan on MoS2 powder
     - Line scan on MoS2 flakes, oil immersion lens
 2. WSe2 - Fronteer of research
@@ -320,6 +320,12 @@ The initial reserach plan is as follows:
 --> investigate solar materials once the setup is validated.
 
 ## Sam ToDo:
+- change acquisition time to seconds
+- compress file saving!!!
+- Refactor acquisition loop
+    - improve acquisition UI
+    - add linescan interpolation mode
+- build calibrations app - BIG JOB
 - create dummy instrument classes for dependency injection.
 - create unit tests for all
 - Ensure scan parameters updating to metadata
