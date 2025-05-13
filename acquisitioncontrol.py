@@ -50,6 +50,8 @@ class AcquisitionControl:
             'detector_temperature': 0.0
         }
 
+        self.scan_sequence = []
+        self.estimated_scan_time = {'duration': 0.0, 'units': 'seconds'}
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}
         self.load_config()
         
@@ -110,10 +112,9 @@ class AcquisitionControl:
     def estimate_scan_duration(self):
         '''Estimates the duration of the scan in seconds. This is a rough estimate based on the number of steps in the scan and the acquisition time.'''
 
-        self.generate_scan_sequence()
         frames = self.general_parameters['n_frames']
         acq_time = self.general_parameters['acquisition_time'] / 1000.0
-        return len(self.scan_sequence) * acq_time * frames * 1.2
+        return self.scan_size * acq_time * frames * 1.2
 
     def prompt_for_cli_parameters(self):
         print("\n--- CLI Parameter Entry ---")
@@ -242,6 +243,51 @@ class AcquisitionControl:
         self.scan_sequence = sequence
         return sequence
     
+    @property
+    def scan_size(self):
+        '''Returns an extimate of the scan length by calculating the distance between the start and end positions. Used as a quick scan length estimate.'''
+
+        def get_size(start, end, resolution):
+            if resolution == 0 or start == end:
+                return 1
+            try:
+                return (end - start) / resolution
+            except Exception as e:
+                print(f"Error generating array: {e}")
+                return 1
+            
+        wavelength_list = get_size(
+            self.wavelength_parameters['start_wavelength'],
+            self.wavelength_parameters['end_wavelength'],
+            self.wavelength_parameters['resolution']
+        )
+        polarization_list = get_size(
+            self.polarization_parameters['input']['start_angle'],
+            self.polarization_parameters['input']['end_angle'],
+            self.polarization_parameters['input']['resolution']
+        )
+        x_positions = get_size(
+            self.motion_parameters['start_position']['x'],
+            self.motion_parameters['end_position']['x'],
+            self.motion_parameters['resolution']['x']
+        )
+        y_positions = get_size(
+            self.motion_parameters['start_position']['y'],
+            self.motion_parameters['end_position']['y'],
+            self.motion_parameters['resolution']['y']
+        )
+        z_val = get_size(
+            self.motion_parameters['start_position']['z'],
+            self.motion_parameters['end_position']['z'],
+            self.motion_parameters['resolution']['z']
+        )
+
+        scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
+        print(f"Scan size: {scan_size}")
+        
+        return scan_size
+
+
     def move_stage_absolute(self, new_coordinates):
         '''Moves the microcsope sample stage to the specified absolute position in micrometers. Used by the acquisition control to move the stage to the next position in a scan.'''
         
@@ -279,17 +325,19 @@ class AcquisitionControl:
             self.microscope.go_to_polarization_in,
             self .microscope.go_to_wavelength_all,
         ]
+
         sequence = self.generate_scan_sequence()
 
-        total_steps = len(sequence)
-        start_time = time.time()
-        predicted_time = ((total_steps * float(self.general_parameters['acquisition_time']) / 1000.0)/3600) * 1.2 * self.general_parameters['n_frames']
-        print(f"Predicted time: {predicted_time:.2f} hours")
+        print(f"Predicted time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}")
         rescan_list = []
 
         self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
         # if self.microscope.detect_microscope_mode() == 'imagemode':
         #     self.microscope.raman_mode()
+
+        total_steps = len(sequence)
+        start_time = time.time()
+        print(f"Starting scan with {total_steps} steps.")
 
         for index, step in enumerate(sequence):
             self.general_parameters['scan_index'] = index
@@ -526,7 +574,7 @@ class AcquisitionGUI:
                 self.status_label.config(text=f"Invalid input for {key}: expected {expected_type.__name__}")
                 return False
         self.status_label.config(text="")
-        self.params.generate_scan_sequence()
+
         self.update_scan_estimate()
         self.params.save_config()
         return True
@@ -546,6 +594,7 @@ class AcquisitionGUI:
             units = scan_time['units']
 
             self.estimate_label.config(text=f"Estimated scan time: {duration:.1f} {units}")
+            self.estimated_scan_time = scan_time
             return scan_time
         except Exception as e:
             print(f"Error estimating scan time: {e}")
@@ -623,6 +672,19 @@ class DummyMicroscope:
 
     def acquire_one_frame(self, export_raw=False):
         return np.random.rand(100, 100)
+    
+    def go_to_polarization_in(self, angle):
+        print("Setting input polarization angle to {}".format(angle))
+
+    def go_to_polarization_out(self, angle):
+        print("Setting output polarization angle to {}".format(angle))
+    
+    def go_to_wavelength_all(self, wavelength):
+        print("Setting wavelength to {}".format(wavelength))
+    
+    def move_motors(self, motor_dict):
+        for motor, steps in motor_dict.items():
+            print(f"Moving {motor} by {steps} steps")
 
 def run_gui(exit_event):
     """Run the GUI in a separate thread."""
