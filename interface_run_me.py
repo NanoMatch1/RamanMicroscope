@@ -134,6 +134,7 @@ class Interface:
         self.microscope.initialise()  #t be last as it relies on others
         
         self._integrity_checker()
+        
 
     def connect_to_triax(self):
         """Switch from simulated to real TRIAX spectrometer"""
@@ -333,16 +334,3 @@ if __name__ == '__main__':
         'TRIAX'
         ])
     cli(interface)
-
-
-    # laser home (at zero steps) is currently 800nm
-
-# l1: -43 steps
-# l2: 155 steps
-# l3: 467 steps
-# g1: 16 stepsb
-
-# Dependencies:
-# - pyserial
-# - pyvisa
-# - numpy

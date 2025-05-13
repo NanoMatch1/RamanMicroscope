@@ -653,10 +653,14 @@ class Microscope(Instrument):
     
     @ui_callable
     def open_acquisition_gui(self):
-        root = tk.Tk()
-        params = self.acquisition_control
-        app = AcquisitionGUI(root, params)
-        root.mainloop()
+        def run_gui():
+            root = tk.Tk()
+            params = self.acquisition_control
+            app = AcquisitionGUI(root, params)
+            root.mainloop()
+
+        threading.Thread(target=run_gui, daemon=True).start()
+
 
 
 
@@ -727,7 +731,7 @@ class Microscope(Instrument):
             self.microscope_mode = 'imagemode'
 
         else:
-            raise ValueError(f"Unknown mode motor position: {mode_steps}. Please check the motor positions.")
+            raise ValueError(f"Unknown mode motor position: {mode_steps}. Please check the beam splitter assembly positions.")
 
         print("Microscope mode detected: {}".format(self.microscope_mode))
         return self.microscope_mode
@@ -1464,8 +1468,17 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_acquisition_time(self, value):
+        try:
+            value = float(value)
+        except ValueError:
+            print("Invalid acquisition time. Must be a number.")
+            return
+        if value < 0:
+            print("Acquisition time must be positive.")
+            return
+        
         self.acquisition_control.general_parameters['acquisition_time'] = value
-        self.camera.set_acqtime(value)
+        self.camera.set_acqtime(str(value))
 
     @ui_callable
     def set_filename(self, filename):
