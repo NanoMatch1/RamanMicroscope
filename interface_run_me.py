@@ -7,6 +7,9 @@ from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import MillenniaLaser, Triax
 from calibration import Calibration
+from acquisition_control.acquisitioncontrol import AcquisitionControl
+from acquisition_control.pyqtGUI import MainWindow
+from PyQt5.QtWidgets import QApplication
 # from commands import CommandHandler, Micr oscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
     from tucsen.tucsen_camera_wrapper import TucamCamera
@@ -134,6 +137,34 @@ class Interface:
         self.microscope.initialise()  #t be last as it relies on others
         
         self._integrity_checker()
+
+    def process_gui_command(self, command:str):
+        """
+        Process a command from the GUI, mirroring CLI behavior.
+        """
+        cmd = command.strip()
+        if cmd == '':
+            return None
+        if cmd == 'exit':
+            return None
+        if cmd == 'help':
+            self.show_help()
+            return None
+        if cmd == 'debug':
+            print("Debugging")
+            breakpoint()
+            return None
+        if cmd == 'reinit':
+            # Optionally reinitialize interfaces
+            return None
+        # Otherwise send to command handler
+        result = self._command_handler(cmd)
+        try:
+            self.microscope.save_instrument_state()
+        except Exception as e:
+            print(f"Failed to save instrument state: {e}")
+
+        return result
         
 
     def connect_to_triax(self):
@@ -328,9 +359,19 @@ if __name__ == '__main__':
     else:
         simulate = False
 
-    interface = Interface(simulate=simulate, com_port='COM10', debug_skip=[
-        'camera',
-        #'laser', 
-        'TRIAX'
-        ])
-    cli(interface)
+
+def main():
+    # Create your CLI-backed controller
+    cli_interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
+
+    # Wrap its microscope into your acquisition control
+    acq_ctrl = AcquisitionControl(microscope=cli_interface.microscope)
+
+    # Launch Qt
+    app = QApplication(sys.argv)
+    window = MainWindow(acq_ctrl, cli_interface)
+    window.show()
+    sys.exit(app.exec_())
+
+if __name__ == '__main__':
+    main()

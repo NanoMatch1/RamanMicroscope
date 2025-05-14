@@ -50,9 +50,10 @@ class TextConsole(QPlainTextEdit):
 
 # --- Main Application Window ---
 class MainWindow(QMainWindow):
-    def __init__(self, acq_ctrl):
+    def __init__(self, acq_ctrl, cli_interface):
         super().__init__()
         self.acq_ctrl = acq_ctrl
+        self.cli = cli_interface
         self.setWindowTitle("Acquisition GUI")
         self.resize(1200, 800)
         self.param_entries = {}
@@ -60,6 +61,13 @@ class MainWindow(QMainWindow):
         self.stop_pos = [0,0,0]
         self.scan_mode = 'map'
         self.init_ui()
+
+    # Helper to send commands to CLI interface
+    def send_cli_command(self, cmd):
+        print(f">>> {cmd}")
+        result = self.cli.process_gui_command(cmd)
+        if result:
+            print(result)
 
     def init_ui(self):
         central = QWidget()
@@ -75,18 +83,18 @@ class MainWindow(QMainWindow):
 
         # Scan mode toggle
         self.toggle_btn = QPushButton("Mode: Map")
-        self.toggle_btn.clicked.connect(self.toggle_scan_mode)
+        self.toggle_btn.clicked.connect(lambda: self.send_cli_command('toggle_scan_mode'))
         ag_layout.addWidget(self.toggle_btn)
 
         # Checkboxes
         self.chk_sep_res = QCheckBox("Separate Resolution")
         self.chk_sep_res.setChecked(False)
-        self.chk_sep_res.toggled.connect(self.toggle_sep_res)
+        self.chk_sep_res.toggled.connect(lambda en: self.send_cli_command(f'sep_res {en}'))
         ag_layout.addWidget(self.chk_sep_res)
 
         self.chk_z_scan = QCheckBox("Enable Z Scan")
         self.chk_z_scan.setChecked(False)
-        self.chk_z_scan.toggled.connect(self.toggle_z_scan)
+        self.chk_z_scan.toggled.connect(lambda en: self.send_cli_command(f'z_scan {en}'))
         ag_layout.addWidget(self.chk_z_scan)
 
         ag_layout.addWidget(self.tabs)
@@ -103,8 +111,11 @@ class MainWindow(QMainWindow):
         instrument_group = QGroupBox("Instrument Control")
         ig_layout = QHBoxLayout()
         btn_set_home = QPushButton("Set Home")
+        btn_set_home.clicked.connect(lambda: self.send_cli_command('home'))
         btn_set_start = QPushButton("Set Start")
+        btn_set_start.clicked.connect(lambda: self.send_cli_command('set_start'))
         btn_set_stop = QPushButton("Set Stop")
+        btn_set_stop.clicked.connect(lambda: self.send_cli_command('set_stop'))
         ig_layout.addWidget(btn_set_home)
         ig_layout.addWidget(btn_set_start)
         ig_layout.addWidget(btn_set_stop)
@@ -148,19 +159,17 @@ class MainWindow(QMainWindow):
 
         # Stage pos
         stage_pos_group = QGroupBox("Stage Position")
-        pl = QFormLayout()
-        self.lbl_stage_x = QLabel(str(self.acq_ctrl.x_position))
-        self.lbl_stage_y = QLabel(str(self.acq_ctrl.y_position))
-        self.lbl_stage_z = QLabel(str(self.acq_ctrl.z_position))
-        pl.addRow("X:", self.lbl_stage_x)
-        pl.addRow("Y:", self.lbl_stage_y)
-        pl.addRow("Z:", self.lbl_stage_z) 
-        stage_pos_group.setLayout(pl)
+        pl2 = QFormLayout()
+        self.lbl_stage_x = QLabel(str(self.acq_ctrl.microscope.stage_positions_microns['x']))
+        self.lbl_stage_y = QLabel(str(self.acq_ctrl.microscope.stage_positions_microns['y']))
+        self.lbl_stage_z = QLabel(str(self.acq_ctrl.microscope.stage_positions_microns['z']))
+        pl2.addRow("X:", self.lbl_stage_x)
+        pl2.addRow("Y:", self.lbl_stage_y)
+        pl2.addRow("Z:", self.lbl_stage_z)
+        stage_pos_group.setLayout(pl2)
 
         pos_group_layout.addWidget(stage_pos_group)
         right_layout.addLayout(pos_group_layout)
-
-
 
         # Console
         console_group = QGroupBox("Console")
@@ -168,6 +177,7 @@ class MainWindow(QMainWindow):
         self.console = TextConsole()
         cl.addWidget(self.console)
         self.cmd_input = CommandLineEdit()
+        self.cmd_input.enter_pressed.connect(self.handle_command)
         cl.addWidget(self.cmd_input)
         console_group.setLayout(cl)
         right_layout.addWidget(console_group, 1)
@@ -188,96 +198,5 @@ class MainWindow(QMainWindow):
         sys.stdout = self.console
         sys.stderr = self.console
 
-        # Connect signals
-        btn_set_start.clicked.connect(self.set_start)
-        btn_set_stop.clicked.connect(self.set_stop)
-        btn_set_home.clicked.connect(self.set_home_position)  # Dummy 
-        self.cmd_input.enter_pressed.connect(self.handle_command)
-    
-    def toggle_scan_mode(self):
-        new_mode = 'linescan' if self.scan_mode == 'map' else 'map'
-        self.scan_mode = new_mode
-        self.toggle_btn.setText(f"Mode: {new_mode.capitalize()}")
-        print("Scan mode set to", new_mode)
-
-    def toggle_sep_res(self, enabled):
-        print("Separate resolution enabled:", enabled)
-        # TODO: implement dynamic UI rebuild for resolution fields
-
-    def toggle_z_scan(self, enabled):
-        print("Z scan enabled:", enabled)
-        # TODO: implement dynamic UI rebuild for Z fields
-
-    def update_instrument_state(self):
-        # Dummy update: replace with real instrument data
-        self.lbl_laser.setText(f"{self.acq_ctrl.microscope.laser_wavelengths.get('l1',0.0):.1f} nm")
-        self.lbl_grating.setText(f"{self.acq_ctrl.microscope.monochromator_wavelengths.get('g3',0.0):.1f} nm")
-        self.lbl_monochromator.setText("500.0 nm")
-        self.lbl_spectrometer.setText("1.23 nm")
-
-    def build_param_tabs(self):
-        sections = {
-            'General':      self.acq_ctrl.general_parameters,
-            'Motion':       self.acq_ctrl.motion_parameters,
-            'Wavelength':   self.acq_ctrl.wavelength_parameters,
-            'Polarization': self.acq_ctrl.polarization_parameters
-        }
-        for name, params in sections.items():
-            tab = QWidget()
-            vl = QVBoxLayout(tab)
-            self.build_section(vl, params, name.lower())
-            self.tabs.addTab(tab, name)
-
-    def build_section(self, layout, param_dict, prefix):
-        # Flat vs nested
-        if all(not isinstance(v, dict) for v in param_dict.values()):
-            form = QFormLayout()
-            for k, v in param_dict.items():
-                le = QLineEdit(str(v))
-                form.addRow(k, le)
-                self.param_entries[f"{prefix}.{k}"] = le
-            layout.addLayout(form)
-        else:
-            for sub, subdict in param_dict.items():
-                gb = QGroupBox(sub.capitalize())
-                form = QFormLayout(gb)
-                for k, v in subdict.items():
-                    le = QLineEdit(str(v))
-                    form.addRow(k, le)
-                    self.param_entries[f"{prefix}.{sub}.{k}"] = le
-                layout.addWidget(gb)
-
-    def set_start(self):
-        coords = self.acq_ctrl.current_stage_coordinates
-        self.start_pos = coords
-        self.label_start.setText(f"Start: ({coords[0]:.2f}, {coords[1]:.2f}, {coords[2]:.2f})")
-        self.update_instrument_state()
-
-    def set_stop(self):
-        coords = self.acq_ctrl.current_stage_coordinates
-        self.stop_pos = coords
-        self.label_stop.setText(f"Stop: ({coords[0]:.2f}, {coords[1]:.2f}, {coords[2]:.2f})")
-        self.label_est.setText(f"Estimated runtime: {self.acq_ctrl.estimate_scan_duration():.1f}s")
-        self.update_instrument_state()
-
-    def move_axis(self, axis):
-        print(f"Moving axis {axis}")
-        self.update_instrument_state()
-
-    def set_home_position(self):
-        print("Setting home position")
-
-
     def handle_command(self, text):
-        print(f">>> {text}")
-
-
-def main():
-    app = QApplication(sys.argv)
-    acq = AcquisitionControl(microscope=DummyMicroscope())
-    w = MainWindow(acq)
-    w.show()
-    sys.exit(app.exec_())
-
-if __name__ == '__main__':
-    main()
+        self.send_cli_command(text)
