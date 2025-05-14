@@ -1,5 +1,5 @@
-from acquisitioncontrol import AcquisitionControl
-from acquisitiongui import AcquisitionGUI
+from .acqcontrol import AcquisitionControl
+from .acqgui import AcquisitionGUI
 import os
 import threading
 import time
