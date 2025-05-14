@@ -1,17 +1,17 @@
 {
   "general_parameters": {
-    "acquisition_time": 1000,
-    "filename": "MoS2-flake-test-12",
+    "acquisition_time": 100,
+    "filename": "tests2",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 3
   },
   "button_parameters": {
-    "scan_type": "linescan"
+    "scan_mode": "linescan"
   },
   "motion_parameters": {
     "start_position": {
-      "x": 0,
+      "x": 10,
       "y": 0,
       "z": 0
     },

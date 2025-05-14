@@ -122,8 +122,8 @@ class Interface:
 
             if command == 'gui':
                 self.gui()
-                breakpoint()
-                continue
+                return 'gui'
+
 
             if command == 'help':
                 self.show_help()
@@ -145,6 +145,12 @@ class Interface:
             print(result)
 
             self.save_state()
+
+    def parse_command(self, command:str):
+        """
+        Parse a command and send on to the command handler"""
+        pass
+
 
     def gui(self):
         # TODO: Implement thread event monitoring on closure of the GUI to stop the threads
@@ -171,7 +177,6 @@ class Interface:
         """
         cmd = command.strip()
         result = self._command_handler(cmd)
-        
         self.save_state()
 
         return result
@@ -376,6 +381,7 @@ def main():
     interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
     # Start the command line interface
     interface.cli()
+
 
 if __name__ == '__main__':
     main()
