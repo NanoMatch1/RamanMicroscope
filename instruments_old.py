@@ -490,6 +490,7 @@ class Microscope(Instrument):
         'Notes: Use "help" to see available commands. Note than unknown commands are attempted to be passed to the controller for interpretation. If the controller does not recognise the command, it will return an error.',
         '"x", "y" and "z" single letter commands are resered for the stage control, and will call the motion control methods in microscope.',
         'Stage positions in microns are held by the microscope in the stage_positions_microns dictionary. Every move XYZ axis command will update the dictionary and call an AcquisitionControl.update_stage_positions to ensure the stage positions are in sync with the acquisition control, which needs them to calculate scan positions.',
+        'All @ui_callable methods are callable from the GUI and the CLI. Some commands serve as a bridge for the '
         
     
     ]
@@ -501,7 +502,7 @@ class Microscope(Instrument):
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
         self.autocalibrationDir = interface.autocalibrationDir
-        self.acquisitionControlDir = os.path.join(self.scriptDir, 'acquisition_control')
+        self.acquisitionControlDir = os.path.join(self.scriptDir, 'acquisitioncontrol')
         self.controller = controller or interface.controller
         self.camera = camera or interface.camera
         self.spectrometer = spectrometer or interface.spectrometer
@@ -567,6 +568,9 @@ class Microscope(Instrument):
             'stagehome': self.set_stage_home,
             'startpos': self.set_start_pos,
             'endpos': self.set_end_pos,
+            'scanmode': self.toggle_scan_mode,
+            # GUI commands
+            
             # motor commands
             'laserpos': self.get_laser_motor_positions,
             'monopos': self.get_monochromator_motor_positions,
@@ -651,8 +655,12 @@ class Microscope(Instrument):
         self.acquisition_control.motion_parameters['end_position'] = self.stage_positions_microns.copy()
         print("Scan End position set to {}".format(self.acquisition_control.motion_parameters['end_position']))
         self.acquisition_control.save_config()
-    
-    
+
+    @ui_callable
+    def toggle_scan_mode(self):
+        '''Toggle between linescan and map in acquisition control'''
+        self.acquisition_control.toggle_scan_mode()
+
     # TODO: use setter and getter for stage_pos_microns and update_stage
     @ui_callable
     def get_stage_positions_microns(self):

@@ -20,7 +20,7 @@ class AcquisitionControl:
         }
 
         self.button_parameters = {
-            'scan_type': 'linescan',
+            'scan_mode': 'linescan',
             }
         
         self.motion_parameters = {
@@ -56,13 +56,54 @@ class AcquisitionControl:
 
         # Optional/UI-linked parameters
         self.separate_resolution = False
-        self.scan_mode = 'linescan'
         self.z_scan = False
 
         self.scan_sequence = []
         self.estimated_scan_time = {'duration': 0.0, 'units': 'seconds'}
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}
         self.load_config()
+
+    def toggle_scan_mode(self):
+        self.scan_mode = 'linescan' if self.scan_mode == 'map' else 'map'
+
+    @property
+    def scan_mode(self):
+        return self.button_parameters['scan_mode']
+    
+    @scan_mode.setter
+    def scan_mode(self, value):
+        if value in ['linescan', 'fullscan']:
+            self.button_parameters['scan_mode'] = value
+        else:
+            raise ValueError("Invalid scan mode. Choose 'linescan' or 'fullscan'.")
+        
+    @property
+    def start_position(self):
+        return self.motion_parameters['start_position']
+    
+    @start_position.setter
+    def start_position(self, pos_dict):
+        if not isinstance(pos_dict, dict):
+            raise ValueError("Error in AcquisitionControl.start_position: Position should be a dictionary.")
+        for key, value in pos_dict.items():
+            if key in self.motion_parameters['start_position']:
+                self.motion_parameters['start_position'][key] = value
+            else:
+                raise ValueError(f"Invalid position key: {key}")
+            
+    @property
+    def stop_position(self):
+        return self.motion_parameters['end_position']
+    
+    @stop_position.setter
+    def stop_position(self, pos_dict):
+        if not isinstance(pos_dict, dict):
+            raise ValueError("Error in AcquisitionControl.stop_position: Position should be a dictionary.")
+        for key, value in pos_dict.items():
+            if key in self.motion_parameters['end_position']:
+                self.motion_parameters['end_position'][key] = value
+            else:
+                raise ValueError(f"Invalid position key: {key}")
         
     def update_stage_positions(self):
         self.stage_positions = {

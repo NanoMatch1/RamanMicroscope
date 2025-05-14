@@ -71,15 +71,15 @@ class TextConsole(QPlainTextEdit):
 
 # --- Main Application Window ---
 class MainWindow(QMainWindow):
-    def __init__(self, acq_ctrl, cli_interface):
+    def __init__(self, acq_ctrl, interface):
         super().__init__()
         self.acq_ctrl = acq_ctrl
-        self.cli = cli_interface
+        self.interface = interface
         self.setWindowTitle("Acquisition GUI")
         self.resize(1200, 800)
         self.param_entries = {}
-        self.start_pos = [0,0,0]
-        self.stop_pos = [0,0,0]
+        self.start_pos = acq_ctrl.start_position
+        self.stop_pos = acq_ctrl.stop_position
         self.scan_mode = acq_ctrl.scan_mode
         self.separate_resolution = acq_ctrl.separate_resolution
         self.z_scan = acq_ctrl.z_scan
@@ -88,9 +88,11 @@ class MainWindow(QMainWindow):
     # Helper to send commands to CLI interface
     def send_cli_command(self, cmd):
         print(f">>> {cmd}")
-        result = self.cli.process_gui_command(cmd)
+        result = self.interface.process_gui_command(cmd)
         if result:
             print(result)
+        
+        self.refresh_ui()
     
     def build_param_tabs(self):
         """
@@ -207,9 +209,8 @@ class MainWindow(QMainWindow):
         target_dict[param_name] = new_value
 
         # print(self.acq_ctrl.general_parameters)
-        self.send_cli_command('save_parameters') # TODO: implement this in CLI
-        # TODO: consider directly accessing the acq_ctrl object instead of going through CLI
-        # self.refresh_ui()  # refresh UI to show new values
+        # print(self.acq_ctrl.motion_parameters)
+        self.acq_ctrl.save_config()
 
 
     def refresh_ui(self):
@@ -222,7 +223,7 @@ class MainWindow(QMainWindow):
                 d = d[p]
             line_edit.setText(str(d))
         # also refresh dynamic labels, instrument state, etc.
-        self.lbl_mode.setText(self.acq_ctrl.general_parameters['scan_type'].capitalize())
+        self.lbl_mode.setText(self.acq_ctrl.button_parameters['scan_mode'].capitalize())
         # self.update_instrument_state()
         # self.set_start()   # or otherwise update start/stop labels
         # self.set_stop()
@@ -270,11 +271,11 @@ class MainWindow(QMainWindow):
         instrument_group = QGroupBox("Instrument Control")
         ig_layout = QHBoxLayout()
         btn_set_home = QPushButton("Set Home")
-        btn_set_home.clicked.connect(lambda: self.send_cli_command('home'))
+        btn_set_home.clicked.connect(lambda: self.send_cli_command('stagehome'))
         btn_set_start = QPushButton("Set Start")
-        btn_set_start.clicked.connect(lambda: self.send_cli_command('set_start'))
+        btn_set_start.clicked.connect(lambda: self.send_cli_command('startpos'))
         btn_set_stop = QPushButton("Set Stop")
-        btn_set_stop.clicked.connect(lambda: self.send_cli_command('set_stop'))
+        btn_set_stop.clicked.connect(lambda: self.send_cli_command('endpos'))
         ig_layout.addWidget(btn_set_home)
         ig_layout.addWidget(btn_set_start)
         ig_layout.addWidget(btn_set_stop)
@@ -368,6 +369,13 @@ class MainWindow(QMainWindow):
 
     def handle_command(self, text):
         self.send_cli_command(text)
+
+    def closeEvent(self, event):
+        # restore the real streams
+        sys.stdout = self._orig_stdout
+        sys.stderr = self._orig_stderr
+        super().closeEvent(event)
+
 
 
 if __name__ == "__main__":
