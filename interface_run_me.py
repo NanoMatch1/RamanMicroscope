@@ -22,30 +22,7 @@ except Exception as e:
     TucamCamera = SimulatedCamera
 import re
 
-def cli(interface):
-    while True:
-        command = input("Enter a command: ")
-        if command == 'exit':
-            break
 
-        if command == 'help':
-            interface.show_help()
-            continue
-    
-        if command == 'debug':
-            print("Debugging")
-            breakpoint()
-        
-        if command == 'reinit':
-            # interface.camera.close_camera()
-            # interface.microcontroller.
-            # interface.__init__(simulate=interface.simulate, com_port=interface.com_port, baud=interface.baud, debug_skip=interface.debug_skip)
-            # TODO: write close methods for all interfaces, and reinitialise them here
-            continue
-            
-        result = interface._command_handler(command)
-        print(result)
-        interface.microscope.save_instrument_state()
 
 class Interface:
 
@@ -138,31 +115,66 @@ class Interface:
         
         self._integrity_checker()
 
+    def cli(self):
+        '''Command line interface for the microscope control.'''
+        while True:
+            command = input("Enter a command: ")
+            if command == 'exit':
+                break
+
+            if command == 'gui':
+                self.gui()
+                breakpoint()
+                continue
+
+            if command == 'help':
+                self.show_help()
+                continue
+        
+            if command == 'debug':
+                print("Debugging")
+                breakpoint()
+                continue
+            
+            if command == 'reinit':
+                # interface.camera.close_camera()
+                # interface.microcontroller.
+                # interface.__init__(simulate=interface.simulate, com_port=interface.com_port, baud=interface.baud, debug_skip=interface.debug_skip)
+                # TODO: write close methods for all interfaces, and reinitialise them here
+                continue
+                
+            result = self._command_handler(command)
+            print(result)
+
+            self.save_state()
+
+    def gui(self):
+        # TODO: Implement thread event monitoring on closure of the GUI to stop the threads
+        '''Launch the GUI interface for the microscope control.'''
+        # Launch Qt
+        app = QApplication.instance() or QApplication(sys.argv)
+
+        window = MainWindow(self.microscope.acquisition_control, self)
+        window.show()
+        app.exec_()
+
+    def save_state(self):
+        """
+        Save the current state of the microscope and its components.
+        """
+        try:
+            self.microscope.save_instrument_state()
+        except Exception as e:
+            print(f"Failed to save instrument state: {e}")
+
     def process_gui_command(self, command:str):
         """
         Process a command from the GUI, mirroring CLI behavior.
         """
         cmd = command.strip()
-        if cmd == '':
-            return None
-        if cmd == 'exit':
-            return None
-        if cmd == 'help':
-            self.show_help()
-            return None
-        if cmd == 'debug':
-            print("Debugging")
-            breakpoint()
-            return None
-        if cmd == 'reinit':
-            # Optionally reinitialize interfaces
-            return None
-        # Otherwise send to command handler
         result = self._command_handler(cmd)
-        try:
-            self.microscope.save_instrument_state()
-        except Exception as e:
-            print(f"Failed to save instrument state: {e}")
+        
+        self.save_state()
 
         return result
         
@@ -354,7 +366,8 @@ class Interface:
 
 if __name__ == '__main__':
     import sys
-    if sys.platform == "linux":
+    # quick switch for testing
+    if "Users\\Sam" in os.getcwd():
         simulate = True 
     else:
         simulate = False
@@ -362,16 +375,9 @@ if __name__ == '__main__':
 
 def main():
     # Create your CLI-backed controller
-    cli_interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
-
-    # Wrap its microscope into your acquisition control
-    acq_ctrl = AcquisitionControl(microscope=cli_interface.microscope)
-
-    # Launch Qt
-    app = QApplication(sys.argv)
-    window = MainWindow(acq_ctrl, cli_interface)
-    window.show()
-    sys.exit(app.exec_())
+    interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
+    # Start the command line interface
+    interface.cli()
 
 if __name__ == '__main__':
     main()

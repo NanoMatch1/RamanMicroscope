@@ -3,12 +3,13 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget,
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
-    QFrame, QCheckBox
+    QFrame, QCheckBox, QSplitter
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
-from acquisitioncontrol import AcquisitionControl
-from simulation import DummyMicroscope
+
+from .acqcontrol import AcquisitionControl
+from .simulation import DummyMicroscope
 
 
 # --- Command line input with history ---
@@ -59,7 +60,9 @@ class MainWindow(QMainWindow):
         self.param_entries = {}
         self.start_pos = [0,0,0]
         self.stop_pos = [0,0,0]
-        self.scan_mode = 'map'
+        self.scan_mode = acq_ctrl.scan_mode
+        self.separate_resolution = acq_ctrl.separate_resolution
+        self.z_scan = acq_ctrl.z_scan
         self.init_ui()
 
     # Helper to send commands to CLI interface
@@ -68,6 +71,62 @@ class MainWindow(QMainWindow):
         result = self.cli.process_gui_command(cmd)
         if result:
             print(result)
+    
+    def build_param_tabs(self):
+        """
+        Populate self.tabs with one tab per parameter dictionary.
+        Each tab is a QWidget containing a vertical layout with form fields.
+        """
+        # Clear any existing tabs
+        self.tabs.clear()
+
+        # Define the sections and the corresponding dicts
+        sections = {
+            'General':      self.acq_ctrl.general_parameters,
+            'Motion':       self.acq_ctrl.motion_parameters,
+            'Wavelength':   self.acq_ctrl.wavelength_parameters,
+            'Polarization': self.acq_ctrl.polarization_parameters
+        }
+
+        for name, params in sections.items():
+            # Create a new page for this tab
+            tab = QWidget()
+            tab_layout = QVBoxLayout(tab)
+
+            # Build fields based on whether values are nested dicts or flat
+            self.build_section(tab_layout, params, name.lower())
+
+            # Add the tab to the QTabWidget
+            self.tabs.addTab(tab, name)
+
+
+    def build_section(self, layout, param_dict, prefix):
+        """
+        Given a layout and a dict, auto-generate QLineEdits.
+        - If values are simple (not dict), lay them out in a QFormLayout.
+        - If values are nested dicts, create a QGroupBox per subgroup.
+        """
+        # Check if every value is NOT a dict => flat form
+        if all(not isinstance(v, dict) for v in param_dict.values()):
+            form = QFormLayout()
+            for key, val in param_dict.items():
+                le = QLineEdit(str(val))
+                form.addRow(key + ":", le)
+                # Keep track for later retrieval
+                self.param_entries[f"{prefix}.{key}"] = le
+            layout.addLayout(form)
+
+        else:
+            # Nested dict: one group per subgroup
+            for subgroup, subdict in param_dict.items():
+                gb = QGroupBox(subgroup.capitalize())
+                form = QFormLayout()
+                for key, val in subdict.items():
+                    le = QLineEdit(str(val))
+                    form.addRow(key + ":", le)
+                    self.param_entries[f"{prefix}.{subgroup}.{key}"] = le
+                gb.setLayout(form)
+                layout.addWidget(gb)
 
     def init_ui(self):
         central = QWidget()
@@ -180,7 +239,7 @@ class MainWindow(QMainWindow):
         self.cmd_input.enter_pressed.connect(self.handle_command)
         cl.addWidget(self.cmd_input)
         console_group.setLayout(cl)
-        right_layout.addWidget(console_group, 1)
+        # right_layout.addWidget(console_group, 1)
 
         # Plot placeholder
         plot_group = QGroupBox("Plot Area")
@@ -190,7 +249,16 @@ class MainWindow(QMainWindow):
         plot_frame.setLineWidth(1)
         pfl.addWidget(plot_frame)
         plot_group.setLayout(pfl)
-        right_layout.addWidget(plot_group, 1)
+        # right_layout.addWidget(plot_group, 1)
+
+        # Splitter to separate console and plot 
+
+        splitter = QSplitter(Qt.Vertical)
+        splitter.addWidget(console_group)
+        splitter.addWidget(plot_group)
+        splitter.setSizes([400, 200])   # initial pixel sizes: console 400px, plot 200px
+
+        right_layout.addWidget(splitter, 1)
 
         main_layout.addLayout(right_layout, 1)
 
