@@ -7,8 +7,8 @@ from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import MillenniaLaser, Triax
 from calibration import Calibration
-from acquisition_control.acquisitioncontrol import AcquisitionControl
-from acquisition_control.pyqtGUI import MainWindow
+from acquisitioncontrol import AcquisitionControl
+from acquisitioncontrol import MainWindow
 from PyQt5.QtWidgets import QApplication
 # from commands import CommandHandler, Micr oscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
 try:
