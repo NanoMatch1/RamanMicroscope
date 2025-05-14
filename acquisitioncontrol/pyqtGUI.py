@@ -3,13 +3,28 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget,
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
-    QFrame, QCheckBox, QSplitter
+    QFrame, QCheckBox, QSplitter, QMessageBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
 
 from .acqcontrol import AcquisitionControl
 from .simulation import DummyMicroscope
+import sys
+import traceback
+
+# Global exception hook to catch unhandled exceptions in the GUI
+def exception_hook(exc_type, exc_value, exc_tb):
+    # Format traceback
+    tb = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    # Show error dialog
+    QMessageBox.critical(None, "Unhandled Exception", tb)
+    # Call the default hook for logging
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+# Install the exception hook
+sys.excepthook = exception_hook
+
 
 
 # --- Command line input with history ---
@@ -113,7 +128,11 @@ class MainWindow(QMainWindow):
                 le = QLineEdit(str(val))
                 form.addRow(key + ":", le)
                 # Keep track for later retrieval
-                self.param_entries[f"{prefix}.{key}"] = le
+                # capture the original Python type
+                expected_type = type(val)
+                self.param_entries[f"{prefix}.{key}"] = (le, expected_type)
+                le.editingFinished.connect(lambda p=prefix, k=key: self._on_field_edited(p, k))
+
             layout.addLayout(form)
 
         else:
@@ -124,9 +143,63 @@ class MainWindow(QMainWindow):
                 for key, val in subdict.items():
                     le = QLineEdit(str(val))
                     form.addRow(key + ":", le)
-                    self.param_entries[f"{prefix}.{subgroup}.{key}"] = le
+                    expected_type = type(val)
+                    self.param_entries[f"{prefix}.{key}"] = (le, expected_type)
+                    le.editingFinished.connect(lambda p=prefix, k=key: self._on_field_edited(p, k))
                 gb.setLayout(form)
                 layout.addWidget(gb)
+
+    def _on_field_edited(self, full_key):
+        '''Validate and update the parameter when a field is edited.'''
+        # full_key might be "motion.start_position.x"
+        
+        # 1. Split into parts
+        parts = full_key.split('.')  
+        # parts = ["motion", "start_position", "x"]
+
+        # 2. Determine which parameter dict to update
+        #    The first part (e.g. "motion") corresponds to self.acq_ctrl.motion_parameters
+        section_name = parts[0] + "_parameters"
+        param_dict = getattr(self.acq_ctrl, section_name)
+        # param_dict is now your 'motion_parameters' dict
+
+        # 3. Drill down into nested dicts for all but the last key
+        #    parts[1:-1] = ["start_position"]
+        for subgroup_key in parts[1:-1]:
+            param_dict = param_dict[subgroup_key]
+        # Now param_dict is the dict for start_position, e.g. {'x': ..., 'y': ..., 'z': ...}
+
+        # 4. The final part is the actual parameter name (e.g. "x")
+        final_key = parts[-1]
+
+        # 5. Convert the text to the right type (int, float, or str)
+        text_value = self.param_entries[full_key][0].text()
+        expected_type = self.param_entries[full_key][1]
+        if expected_type is float:
+            new_value = float(text_value)
+        elif expected_type is int:
+            new_value = int(text_value)
+        else:
+            new_value = text_value
+
+        # 6. Write it back into the nested dict
+        param_dict[final_key] = new_value
+
+    def refresh_ui(self):
+        # update all parameter textboxes
+        for fullkey, (line_edit, _) in self.param_entries.items():
+            parts = fullkey.split(".")
+            section = parts[0] + "_parameters"
+            d = getattr(self.acq_ctrl, section)
+            for p in parts[1:]:
+                d = d[p]
+            line_edit.setText(str(d))
+        # also refresh dynamic labels, instrument state, etc.
+        self.lbl_mode.setText(self.acq_ctrl.general_parameters['scan_type'].capitalize())
+        # self.update_instrument_state()
+        # self.set_start()   # or otherwise update start/stop labels
+        # self.set_stop()
+
 
     def init_ui(self):
         central = QWidget()

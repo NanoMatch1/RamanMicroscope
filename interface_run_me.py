@@ -20,8 +20,6 @@ except Exception as e:
     from simulation import SimulatedCamera
     print("Using simulated camera instead.")
     TucamCamera = SimulatedCamera
-import re
-
 
 
 class Interface:
