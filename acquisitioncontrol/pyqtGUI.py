@@ -15,16 +15,19 @@ import traceback
 
 # Global exception hook to catch unhandled exceptions in the GUI
 def exception_hook(exc_type, exc_value, exc_tb):
-    # Format traceback
-    tb = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    # Show error dialog
-    QMessageBox.critical(None, "Unhandled Exception", tb)
-    # Call the default hook for logging
-    sys.__excepthook__(exc_type, exc_value, exc_tb)
+    """
+    Catch unhandled exceptions and write the full traceback to stderr.
+    """
+    tb_text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    # Write to stderr, which is redirected to the GUI console
+    try:
+        sys.stderr.write(tb_text)
+    except Exception:
+        # Fallback to default handler if console not available
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
 
 # Install the exception hook
 sys.excepthook = exception_hook
-
 
 
 # --- Command line input with history ---
@@ -200,6 +203,11 @@ class MainWindow(QMainWindow):
         widget.setStyleSheet("background-color: #ccffcc;")  # light green
         # Write it back
         target_dict[param_name] = new_value
+
+        # print(self.acq_ctrl.general_parameters)
+        self.send_cli_command('save_parameters') # TODO: implement this in CLI
+        # TODO: consider directly accessing the acq_ctrl object instead of going through CLI
+        # self.refresh_ui()  # refresh UI to show new values
 
 
     def refresh_ui(self):
