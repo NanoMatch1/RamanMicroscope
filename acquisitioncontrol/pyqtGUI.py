@@ -1,4 +1,7 @@
 import sys
+if __name__ == "__main__":
+    sys.path.insert(0, '..')
+    sys.path.insert(0, '.')
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget,
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
@@ -8,8 +11,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 
 
-from .acqcontrol import AcquisitionControl
-from .simulation import DummyMicroscope
+from acquisitioncontrol.acqcontrol import AcquisitionControl
 import sys
 import traceback
 
@@ -366,3 +368,17 @@ class MainWindow(QMainWindow):
 
     def handle_command(self, text):
         self.send_cli_command(text)
+
+
+if __name__ == "__main__":
+    import os
+    from acquisitioncontrol.simulation import DummyMicroscope, DummyCLI
+    print("### Running Simulated GUI ###")
+    sys.path.insert(0, os.path.dirname(__file__))
+    microscope = DummyMicroscope()
+    app = QApplication(sys.argv)
+    acq_ctrl = AcquisitionControl(microscope=microscope)
+    microscope.acquisition_control = acq_ctrl
+    main_window = MainWindow(acq_ctrl, DummyCLI(microscope))
+    main_window.show()
+    sys.exit(app.exec_())

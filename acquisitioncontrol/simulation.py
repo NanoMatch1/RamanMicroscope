@@ -6,6 +6,72 @@ import time
 import numpy as np
 import tkinter as tk
 
+class DummyCLI:
+
+    def __init__(self, microscope):
+        self.microscope = microscope
+    
+    def cli(self):
+        '''Command line interface for the microscope control.'''
+        while True:
+            command = input("Enter a command: ")
+            if command == 'exit':
+                break
+
+            if command == 'gui':
+                print("GUI not implemented yet.")
+                continue
+
+            if command == 'help':
+                self.show_help()
+                continue
+        
+            if command == 'debug':
+                print("Debugging")
+                breakpoint()
+                continue
+            
+            if command == 'reinit':
+                # interface.camera.close_camera()
+                # interface.microcontroller.
+                # interface.__init__(simulate=interface.simulate, com_port=interface.com_port, baud=interface.baud, debug_skip=interface.debug_skip)
+                # TODO: write close methods for all interfaces, and reinitialise them here
+                continue
+                
+            result = self._command_handler(command)
+            print(result)
+
+            self.save_state()
+
+    def save_state(self):
+        """
+        Save the current state of the microscope and its components.
+        """
+        print("Simulating saving state...")
+        return
+        try:
+            self.microscope.save_instrument_state()
+        except Exception as e:
+            print(f"Failed to save instrument state: {e}")
+
+    def process_gui_command(self, command:str):
+        """
+        Process a command from the GUI, mirroring CLI behavior.
+        """
+        cmd = command.strip()
+        result = self._command_handler(cmd)
+        
+        self.save_state()
+
+        return result
+    
+    def _command_handler(self, command):
+        """Simulated command handler."""
+        print(f"Simulating command: {command}")
+
+        
+
+
 class DummyMicroscope:
     def __init__(self):
         self.stage_positions_microns = {'x': 0.0, 'y': 0.0, 'z': 0.0}
