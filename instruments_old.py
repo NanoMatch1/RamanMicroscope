@@ -38,7 +38,8 @@ from dataclasses import dataclass
 from functools import wraps
 
 from calibration import Calibration, LdrScan
-from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
+from acquisition_control.acquisitioncontrol import AcquisitionControl
+from acquisition_control.acquisitiongui import AcquisitionGUI
 
 # def simulate(expected_value=None, function_handler=None):
 #     """
@@ -501,6 +502,7 @@ class Microscope(Instrument):
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
         self.autocalibrationDir = interface.autocalibrationDir
+        self.acquisitionControlDir = os.path.join(self.scriptDir, 'acquisition_control')
         self.controller = controller or interface.controller
         self.camera = camera or interface.camera
         self.spectrometer = spectrometer or interface.spectrometer
