@@ -38,8 +38,7 @@ from dataclasses import dataclass
 from functools import wraps
 
 from calibration import Calibration, LdrScan
-from acquisition_control.acquisitioncontrol import AcquisitionControl
-from acquisition_control.acquisitiongui import AcquisitionGUI
+from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
 
 # def simulate(expected_value=None, function_handler=None):
 #     """
