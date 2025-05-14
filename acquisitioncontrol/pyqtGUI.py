@@ -115,75 +115,92 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(tab, name)
 
 
-    def build_section(self, layout, param_dict, prefix):
+    def build_section(self, parent_layout, parameters: dict, section_prefix: str):
         """
-        Given a layout and a dict, auto-generate QLineEdits.
-        - If values are simple (not dict), lay them out in a QFormLayout.
-        - If values are nested dicts, create a QGroupBox per subgroup.
+        Auto-generate QLineEdits for a given parameters dict.
+        - Flat dict → one QFormLayout
+        - Nested dict → one QGroupBox + QFormLayout per subgroup
         """
-        # Check if every value is NOT a dict => flat form
-        if all(not isinstance(v, dict) for v in param_dict.values()):
-            form = QFormLayout()
-            for key, val in param_dict.items():
-                le = QLineEdit(str(val))
-                form.addRow(key + ":", le)
-                # Keep track for later retrieval
-                # capture the original Python type
-                expected_type = type(val)
-                self.param_entries[f"{prefix}.{key}"] = (le, expected_type)
-                le.editingFinished.connect(lambda p=prefix, k=key: self._on_field_edited(p, k))
+        # Flat parameters?
+        if all(not isinstance(val, dict) for val in parameters.values()):
+            form_layout = QFormLayout()
+            for param_name, param_value in parameters.items():
+                line_edit = QLineEdit(str(param_value))
+                form_layout.addRow(f"{param_name}:", line_edit)
 
-            layout.addLayout(form)
+                # Store widget + type under a unique full_key
+                full_key = f"{section_prefix}.{param_name}"
+                self.param_entries[full_key] = (line_edit, type(param_value))
 
+                # Capture full_key in the lambda default
+                line_edit.editingFinished.connect(
+                    lambda fkey=full_key: self._on_field_edited(fkey)
+                )
+
+            parent_layout.addLayout(form_layout)
+
+        # Nested parameters
         else:
-            # Nested dict: one group per subgroup
-            for subgroup, subdict in param_dict.items():
-                gb = QGroupBox(subgroup.capitalize())
-                form = QFormLayout()
-                for key, val in subdict.items():
-                    le = QLineEdit(str(val))
-                    form.addRow(key + ":", le)
-                    expected_type = type(val)
-                    self.param_entries[f"{prefix}.{key}"] = (le, expected_type)
-                    le.editingFinished.connect(lambda p=prefix, k=key: self._on_field_edited(p, k))
-                gb.setLayout(form)
-                layout.addWidget(gb)
+            for subgroup_name, subgroup_params in parameters.items():
+                group_box = QGroupBox(subgroup_name.capitalize())
+                subgroup_form = QFormLayout()
 
-    def _on_field_edited(self, full_key):
-        '''Validate and update the parameter when a field is edited.'''
-        # full_key might be "motion.start_position.x"
-        
-        # 1. Split into parts
-        parts = full_key.split('.')  
-        # parts = ["motion", "start_position", "x"]
+                for param_name, param_value in subgroup_params.items():
+                    line_edit = QLineEdit(str(param_value))
+                    subgroup_form.addRow(f"{param_name}:", line_edit)
 
-        # 2. Determine which parameter dict to update
-        #    The first part (e.g. "motion") corresponds to self.acq_ctrl.motion_parameters
-        section_name = parts[0] + "_parameters"
-        param_dict = getattr(self.acq_ctrl, section_name)
-        # param_dict is now your 'motion_parameters' dict
+                    full_key = f"{section_prefix}.{subgroup_name}.{param_name}"
+                    self.param_entries[full_key] = (line_edit, type(param_value))
+                    line_edit.editingFinished.connect(
+                        lambda fkey=full_key: self._on_field_edited(fkey)
+                    )
 
-        # 3. Drill down into nested dicts for all but the last key
-        #    parts[1:-1] = ["start_position"]
-        for subgroup_key in parts[1:-1]:
-            param_dict = param_dict[subgroup_key]
-        # Now param_dict is the dict for start_position, e.g. {'x': ..., 'y': ..., 'z': ...}
+                group_box.setLayout(subgroup_form)
+                parent_layout.addWidget(group_box)
 
-        # 4. The final part is the actual parameter name (e.g. "x")
-        final_key = parts[-1]
 
-        # 5. Convert the text to the right type (int, float, or str)
-        text_value = self.param_entries[full_key][0].text()
-        expected_type = self.param_entries[full_key][1]
-        if expected_type is float:
-            new_value = float(text_value)
-        elif expected_type is int:
-            new_value = int(text_value)
-        else:
-            new_value = text_value
+    def _on_field_edited(self, entry_key: str):
+        """
+        Called when any QLineEdit finishes editing.
+        Parses entry_key like "motion.start_position.x" to
+        update the corresponding value in acq_ctrl.
+        """
+        # Split e.g. ["motion","start_position","x"]
+        key_parts = entry_key.split('.')
 
-        # 6. Write it back into the nested dict
-        param_dict[final_key] = new_value
+        # e.g. "motion" → "motion_parameters"
+        section_attr = f"{key_parts[0]}_parameters"
+        target_dict = getattr(self.acq_ctrl, section_attr)
+
+        # Drill down through any nested dicts (all but last part)
+        for nested_key in key_parts[1:-1]:
+            target_dict = target_dict[nested_key]
+
+        # Final part is the actual parameter name
+        param_name = key_parts[-1]
+
+        # Read the new text and cast to the original type
+        widget, original_type = self.param_entries[entry_key]
+        text = widget.text()
+        # first, try to convert
+        try:
+            if original_type is float:
+                new_value = float(text)
+            elif original_type is int:
+                new_value = int(text)
+            else:
+                new_value = text
+
+        except ValueError:
+            # conversion failed → mark widget red
+            widget.setStyleSheet("background-color: #ffcccc;")  # light red
+            return
+
+        # conversion succeeded → mark widget green
+        widget.setStyleSheet("background-color: #ccffcc;")  # light green
+        # Write it back
+        target_dict[param_name] = new_value
+
 
     def refresh_ui(self):
         # update all parameter textboxes
