@@ -1,101 +1,17 @@
-# # pyqt_gui.py
-
-# from PyQt5.QtWidgets import (
-#     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-#     QPushButton, QRadioButton, QButtonGroup, QTextEdit, QGroupBox
-# )
-# import sys
-
-# class AcquisitionControlUI(QWidget):
-#     def __init__(self):
-#         super().__init__()
-#         self.setWindowTitle("Acquisition Control (PyQt)")
-#         self.init_ui()
-
-#     def init_ui(self):
-#         layout = QVBoxLayout()
-
-#         # General Parameters
-#         general_box = QGroupBox("General Parameters")
-#         general_layout = QVBoxLayout()
-
-#         self.acq_time_input = QLineEdit("1000.0")
-#         self.filename_input = QLineEdit("default")
-
-#         general_layout.addWidget(QLabel("Acquisition Time (ms):"))
-#         general_layout.addWidget(self.acq_time_input)
-#         general_layout.addWidget(QLabel("Filename:"))
-#         general_layout.addWidget(self.filename_input)
-
-#         general_box.setLayout(general_layout)
-#         layout.addWidget(general_box)
-
-#         # Scan Mode Toggle
-#         mode_box = QGroupBox("Scan Mode")
-#         mode_layout = QHBoxLayout()
-#         self.mode_group = QButtonGroup()
-#         self.map_btn = QRadioButton("Map")
-#         self.line_btn = QRadioButton("Line Scan")
-#         self.map_btn.setChecked(True)
-#         self.mode_group.addButton(self.map_btn)
-#         self.mode_group.addButton(self.line_btn)
-#         mode_layout.addWidget(self.map_btn)
-#         mode_layout.addWidget(self.line_btn)
-#         mode_box.setLayout(mode_layout)
-#         layout.addWidget(mode_box)
-
-#         # Buttons
-#         self.start_button = QPushButton("Start Scan")
-#         self.cancel_button = QPushButton("Cancel Scan")
-#         self.start_button.clicked.connect(self.start_scan)
-#         self.cancel_button.clicked.connect(self.cancel_scan)
-#         layout.addWidget(self.start_button)
-#         layout.addWidget(self.cancel_button)
-
-#         # Output log
-#         self.log_box = QTextEdit()
-#         self.log_box.setReadOnly(True)
-#         layout.addWidget(QLabel("Status Log:"))
-#         layout.addWidget(self.log_box)
-
-#         self.setLayout(layout)
-
-#     def start_scan(self):
-#         mode = "map" if self.map_btn.isChecked() else "linescan"
-#         self.log_box.append(f"Starting scan in mode: {mode}")
-#         self.log_box.append(f"Acq time: {self.acq_time_input.text()} ms")
-#         self.log_box.append(f"Filename: {self.filename_input.text()}")
-
-#     def cancel_scan(self):
-#         self.log_box.append("Scan cancelled.")
-
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
-#     gui = AcquisitionControlUI()
-#     gui.show()
-#     sys.exit(app.exec_())
-
-
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget,
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
-    QFrame
+    QFrame, QCheckBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-
-# Import your existing AcquisitionControl and DummyMicroscope
-# from their module (adjust the import path as needed):
-# from acquisition_control import AcquisitionControl, DummyMicroscope
-
-# For demonstration, a minimal DummyMicroscope and AcquisitionControl stub:
 
 from acquisitioncontrol import AcquisitionControl
 from simulation import DummyMicroscope
 
 
-# Command line input with history
+# --- Command line input with history ---
 class CommandLineEdit(QLineEdit):
     enter_pressed = pyqtSignal(str)
     def __init__(self, *args, **kwargs):
@@ -121,7 +37,7 @@ class CommandLineEdit(QLineEdit):
         else:
             super().keyPressEvent(event)
 
-# Text console for stdout/stderr
+# --- Text console for stdout/stderr ---
 class TextConsole(QPlainTextEdit):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -132,6 +48,7 @@ class TextConsole(QPlainTextEdit):
     def flush(self):
         pass
 
+# --- Main Application Window ---
 class MainWindow(QMainWindow):
     def __init__(self, acq_ctrl):
         super().__init__()
@@ -141,6 +58,7 @@ class MainWindow(QMainWindow):
         self.param_entries = {}
         self.start_pos = [0,0,0]
         self.stop_pos = [0,0,0]
+        self.scan_mode = 'map'
         self.init_ui()
 
     def init_ui(self):
@@ -148,39 +66,101 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout(central)
         self.setCentralWidget(central)
 
-        # Left: parameter tabs
+        # --- Left: Acquisition Control ---
         self.tabs = QTabWidget()
         self.build_param_tabs()
-        main_layout.addWidget(self.tabs, 1)
 
-        # Right: controls + console + plot
+        acq_group = QGroupBox("Acquisition Control")
+        ag_layout = QVBoxLayout()
+
+        # Scan mode toggle
+        self.toggle_btn = QPushButton("Mode: Map")
+        self.toggle_btn.clicked.connect(self.toggle_scan_mode)
+        ag_layout.addWidget(self.toggle_btn)
+
+        # Checkboxes
+        self.chk_sep_res = QCheckBox("Separate Resolution")
+        self.chk_sep_res.setChecked(False)
+        self.chk_sep_res.toggled.connect(self.toggle_sep_res)
+        ag_layout.addWidget(self.chk_sep_res)
+
+        self.chk_z_scan = QCheckBox("Enable Z Scan")
+        self.chk_z_scan.setChecked(False)
+        self.chk_z_scan.toggled.connect(self.toggle_z_scan)
+        ag_layout.addWidget(self.chk_z_scan)
+
+        ag_layout.addWidget(self.tabs)
+        acq_group.setLayout(ag_layout)
+        main_layout.addWidget(acq_group, 1)
+
+        # --- Right: Instrument Control + State + Others ---
         right_layout = QVBoxLayout()
 
-        # Stage Control
-        stage_group = QGroupBox("Stage Control")
-        sl = QHBoxLayout()
-        btn_move_x = QPushButton("Move X")
-        btn_move_y = QPushButton("Move Y")
+        # Controls and state side-by-side
+        ctrl_state_layout = QHBoxLayout()
+
+        # Instrument Control
+        instrument_group = QGroupBox("Instrument Control")
+        ig_layout = QHBoxLayout()
+        btn_set_home = QPushButton("Set Home")
         btn_set_start = QPushButton("Set Start")
         btn_set_stop = QPushButton("Set Stop")
-        sl.addWidget(btn_move_x)
-        sl.addWidget(btn_move_y)
-        sl.addWidget(btn_set_start)
-        sl.addWidget(btn_set_stop)
-        stage_group.setLayout(sl)
-        right_layout.addWidget(stage_group)
+        ig_layout.addWidget(btn_set_home)
+        ig_layout.addWidget(btn_set_start)
+        ig_layout.addWidget(btn_set_stop)
+        instrument_group.setLayout(ig_layout)
 
-        # Position Display
-        pos_group = QGroupBox("Positions / Estimate")
-        pl = QVBoxLayout()
-        self.label_start = QLabel("Start: (0.0, 0.0, 0.0)")
-        self.label_stop = QLabel("Stop: (0.0, 0.0, 0.0)")
-        self.label_est = QLabel("Estimated runtime: 0.0s")
-        pl.addWidget(self.label_start)
-        pl.addWidget(self.label_stop)
-        pl.addWidget(self.label_est)
-        pos_group.setLayout(pl)
-        right_layout.addWidget(pos_group)
+        ctrl_state_layout.addWidget(instrument_group)
+
+        # Instrument State
+        state_group = QGroupBox("Instrument State")
+        sg_form = QFormLayout()
+        self.lbl_laser = QLabel("N/A")
+        self.lbl_grating = QLabel("N/A")
+        self.lbl_monochromator = QLabel("N/A")
+        self.lbl_spectrometer = QLabel("N/A")
+        sg_form.addRow("Laser wavelength:", self.lbl_laser)
+        sg_form.addRow("Grating wavelength:", self.lbl_grating)
+        sg_form.addRow("Monochromator wavelength:", self.lbl_monochromator)
+        sg_form.addRow("Spectrometer wavelength:", self.lbl_spectrometer)
+        state_group.setLayout(sg_form)
+
+        ctrl_state_layout.addWidget(state_group)
+
+        right_layout.addLayout(ctrl_state_layout)
+
+        # Scan positions / stage positions
+        pos_group_layout = QHBoxLayout()
+
+        # Scan pos
+        scan_pos_group = QGroupBox("Positions / Estimate")
+        pl = QFormLayout()
+        self.lbl_mode = QLabel(self.scan_mode.capitalize())
+        self.lbl_start = QLabel("Start: (0.0, 0.0, 0.0)")
+        self.lbl_stop = QLabel("Stop: (0.0, 0.0, 0.0)")
+        self.lbl_est = QLabel("Estimated runtime: 0.0s")
+        pl.addRow("Mode:", self.lbl_mode)
+        pl.addRow("Start Pos:", self.lbl_start)
+        pl.addRow("Stop Pos", self.lbl_stop)
+        pl.addRow("Estimated Time:", self.lbl_est)
+        scan_pos_group.setLayout(pl)
+        pos_group_layout.addWidget(scan_pos_group)
+
+        # Stage pos
+        stage_pos_group = QGroupBox("Stage Position")
+        pl = QFormLayout()
+        self.lbl_stage_x = QLabel(str(self.acq_ctrl.x_position))
+        self.lbl_stage_y = QLabel(str(self.acq_ctrl.y_position))
+        self.lbl_stage_z = QLabel(str(self.acq_ctrl.z_position))
+        pl.addRow("X:", self.lbl_stage_x)
+        pl.addRow("Y:", self.lbl_stage_y)
+        pl.addRow("Z:", self.lbl_stage_z) 
+        stage_pos_group.setLayout(pl)
+
+        pos_group_layout.addWidget(stage_pos_group)
+        right_layout.addLayout(pos_group_layout)
+
+
 
         # Console
         console_group = QGroupBox("Console")
@@ -204,22 +184,42 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(right_layout, 1)
 
-        # Redirect prints
+        # Redirect stdout/stderr
         sys.stdout = self.console
         sys.stderr = self.console
 
         # Connect signals
         btn_set_start.clicked.connect(self.set_start)
         btn_set_stop.clicked.connect(self.set_stop)
-        btn_move_x.clicked.connect(lambda: self.move_axis('x'))
-        btn_move_y.clicked.connect(lambda: self.move_axis('y'))
+        btn_set_home.clicked.connect(self.set_home_position)  # Dummy 
         self.cmd_input.enter_pressed.connect(self.handle_command)
+    
+    def toggle_scan_mode(self):
+        new_mode = 'linescan' if self.scan_mode == 'map' else 'map'
+        self.scan_mode = new_mode
+        self.toggle_btn.setText(f"Mode: {new_mode.capitalize()}")
+        print("Scan mode set to", new_mode)
+
+    def toggle_sep_res(self, enabled):
+        print("Separate resolution enabled:", enabled)
+        # TODO: implement dynamic UI rebuild for resolution fields
+
+    def toggle_z_scan(self, enabled):
+        print("Z scan enabled:", enabled)
+        # TODO: implement dynamic UI rebuild for Z fields
+
+    def update_instrument_state(self):
+        # Dummy update: replace with real instrument data
+        self.lbl_laser.setText(f"{self.acq_ctrl.microscope.laser_wavelengths.get('l1',0.0):.1f} nm")
+        self.lbl_grating.setText(f"{self.acq_ctrl.microscope.monochromator_wavelengths.get('g3',0.0):.1f} nm")
+        self.lbl_monochromator.setText("500.0 nm")
+        self.lbl_spectrometer.setText("1.23 nm")
 
     def build_param_tabs(self):
         sections = {
-            'General':    self.acq_ctrl.general_parameters,
-            'Motion':     self.acq_ctrl.motion_parameters,
-            'Wavelength': self.acq_ctrl.wavelength_parameters,
+            'General':      self.acq_ctrl.general_parameters,
+            'Motion':       self.acq_ctrl.motion_parameters,
+            'Wavelength':   self.acq_ctrl.wavelength_parameters,
             'Polarization': self.acq_ctrl.polarization_parameters
         }
         for name, params in sections.items():
@@ -229,7 +229,7 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(tab, name)
 
     def build_section(self, layout, param_dict, prefix):
-        # nested or flat
+        # Flat vs nested
         if all(not isinstance(v, dict) for v in param_dict.values()):
             form = QFormLayout()
             for k, v in param_dict.items():
@@ -251,28 +251,26 @@ class MainWindow(QMainWindow):
         coords = self.acq_ctrl.current_stage_coordinates
         self.start_pos = coords
         self.label_start.setText(f"Start: ({coords[0]:.2f}, {coords[1]:.2f}, {coords[2]:.2f})")
+        self.update_instrument_state()
 
     def set_stop(self):
         coords = self.acq_ctrl.current_stage_coordinates
         self.stop_pos = coords
         self.label_stop.setText(f"Stop: ({coords[0]:.2f}, {coords[1]:.2f}, {coords[2]:.2f})")
-        self.update_estimate()
+        self.label_est.setText(f"Estimated runtime: {self.acq_ctrl.estimate_scan_duration():.1f}s")
+        self.update_instrument_state()
 
     def move_axis(self, axis):
         print(f"Moving axis {axis}")
+        self.update_instrument_state()
+
+    def set_home_position(self):
+        print("Setting home position")
+
 
     def handle_command(self, text):
         print(f">>> {text}")
-        try:
-            self.run_command(text)
-        except Exception as e:
-            print(f"Error: {e}")
-        # self.cmd_input.clear()
-        # raise NotImplementedError("Command handling not implemented yet.")
 
-    def update_estimate(self):
-        est = self.acq_ctrl.estimate_scan_duration()
-        self.label_est.setText(f"Estimated runtime: {est:.1f}s")
 
 def main():
     app = QApplication(sys.argv)
