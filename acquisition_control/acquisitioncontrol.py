@@ -50,6 +50,10 @@ class AcquisitionControl:
             'detector_temperature': 0.0
         }
 
+        self.x_position = self._current_parameters['sample_position']['x']
+        self.y_position = self._current_parameters['sample_position']['y']
+        self.z_position = self._current_parameters['sample_position']['z']
+
         self.scan_sequence = []
         self.estimated_scan_time = {'duration': 0.0, 'units': 'seconds'}
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}

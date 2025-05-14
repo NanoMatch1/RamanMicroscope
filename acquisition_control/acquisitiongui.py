@@ -20,12 +20,9 @@ class AcquisitionGUI:
         self.start_time = None
         # self.scan_mode = tk.StringVar(value=self.params.buttom_parameters.get('scan_type', 'linescan'))
         # GUI features
-        self.separate_resolution_enabled = tk.BooleanVar(value=True)
+        self.separate_resolution_enabled = tk.BooleanVar(value=False)
         self.z_scan_enabled = tk.BooleanVar(value=False)
         self.motion_widgets_frame = None
-        
-
-
         
 
         self.build_gui()
