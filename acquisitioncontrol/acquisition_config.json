@@ -11,13 +11,13 @@
   },
   "motion_parameters": {
     "start_position": {
-      "x": 10,
-      "y": 0,
+      "x": -260.0,
+      "y": 210.0,
       "z": 0
     },
     "end_position": {
-      "x": 10.0,
-      "y": 0,
+      "x": 90.0,
+      "y": 110.0,
       "z": 0
     },
     "resolution": {
