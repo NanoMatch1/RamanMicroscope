@@ -46,7 +46,7 @@ class AcquisitionControl:
             'monochromator_wavelength': 0.0,
             'spectrometer_steps': 0.0,
             'scan_index': 0,
-            'scan_type': 'linescan',
+            'scan_mode': 'linescan',
             'detector_temperature': 0.0
         }
 
@@ -77,33 +77,35 @@ class AcquisitionControl:
         else:
             raise ValueError("Invalid scan mode. Choose 'linescan' or 'fullscan'.")
         
-    @property
+    # @property
     def start_position(self):
-        return self.motion_parameters['start_position']
+        positions = ", ".join(str(value) for value in self.motion_parameters['start_position'].values())
+        return positions
     
-    @start_position.setter
-    def start_position(self, pos_dict):
-        if not isinstance(pos_dict, dict):
-            raise ValueError("Error in AcquisitionControl.start_position: Position should be a dictionary.")
-        for key, value in pos_dict.items():
-            if key in self.motion_parameters['start_position']:
-                self.motion_parameters['start_position'][key] = value
-            else:
-                raise ValueError(f"Invalid position key: {key}")
+    # @start_position.setter
+    # def start_position(self, pos_dict):
+    #     if not isinstance(pos_dict, dict):
+    #         raise ValueError("Error in AcquisitionControl.start_position: Position should be a dictionary.")
+    #     for key, value in pos_dict.items():
+    #         if key in self.motion_parameters['start_position']:
+    #             self.motion_parameters['start_position'][key] = value
+    #         else:
+    #             raise ValueError(f"Invalid position key: {key}")
             
-    @property
+
     def stop_position(self):
-        return self.motion_parameters['end_position']
+        positions = ", ".join(str(value) for value in self.motion_parameters['end_position'].values())
+        return positions
     
-    @stop_position.setter
-    def stop_position(self, pos_dict):
-        if not isinstance(pos_dict, dict):
-            raise ValueError("Error in AcquisitionControl.stop_position: Position should be a dictionary.")
-        for key, value in pos_dict.items():
-            if key in self.motion_parameters['end_position']:
-                self.motion_parameters['end_position'][key] = value
-            else:
-                raise ValueError(f"Invalid position key: {key}")
+    # @stop_position.setter
+    # def stop_position(self, pos_dict):
+    #     if not isinstance(pos_dict, dict):
+    #         raise ValueError("Error in AcquisitionControl.stop_position: Position should be a dictionary.")
+    #     for key, value in pos_dict.items():
+    #         if key in self.motion_parameters['end_position']:
+    #             self.motion_parameters['end_position'][key] = value
+    #         else:
+    #             raise ValueError(f"Invalid position key: {key}")
         
     def update_stage_positions(self):
         self.stage_positions = {
@@ -165,6 +167,32 @@ class AcquisitionControl:
         frames = self.general_parameters['n_frames']
         acq_time = self.general_parameters['acquisition_time'] / 1000.0
         return self.scan_size * acq_time * frames * 1.2
+    
+    def update_scan_estimate(self):
+        try:
+            duration = self.estimate_scan_duration()
+
+
+            if duration > 600:
+                scan_time = duration / 60
+                units = 'minutes'
+            elif duration > 3600:
+                scan_time = duration / 3600
+                units = 'hours'
+            else:
+                scan_time = duration
+                units = 'seconds'
+
+            scan_time = {
+                'duration': round(scan_time, 2),
+                'units': units
+            }
+
+            self.estimated_scan_time = scan_time
+            return scan_time
+        except Exception as e:
+            print(f"Error estimating scan time: {e}")
+        
 
     def prompt_for_cli_parameters(self):
         print("\n--- CLI Parameter Entry ---")
@@ -246,6 +274,7 @@ class AcquisitionControl:
         return relative_motion
 
     def generate_scan_sequence(self):
+        # TODO: Add linescan
         def generate_array(start, end, resolution):
             if resolution == 0 or start == end:
                 return [start]
@@ -333,7 +362,7 @@ class AcquisitionControl:
             self.motion_parameters['resolution']['z']
         )
 
-        if self.button_parameters['scan_type'] == 'linescan':
+        if self.button_parameters['scan_mode'] == 'linescan':
             scan_size = wavelength_list * polarization_list * x_positions
         scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
         print(f"Scan size: {scan_size}")

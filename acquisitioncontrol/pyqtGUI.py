@@ -78,8 +78,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Acquisition GUI")
         self.resize(1200, 800)
         self.param_entries = {}
-        self.start_pos = acq_ctrl.start_position
-        self.stop_pos = acq_ctrl.stop_position
+        self.start_pos = acq_ctrl.start_position()
+        self.stop_pos = acq_ctrl.stop_position()
         self.scan_mode = acq_ctrl.scan_mode
         self.separate_resolution = acq_ctrl.separate_resolution
         self.z_scan = acq_ctrl.z_scan
@@ -214,7 +214,7 @@ class MainWindow(QMainWindow):
 
 
     def refresh_ui(self):
-        # update all parameter textboxes
+        # Update all parameter fields
         for fullkey, (line_edit, _) in self.param_entries.items():
             parts = fullkey.split(".")
             section = parts[0] + "_parameters"
@@ -222,8 +222,19 @@ class MainWindow(QMainWindow):
             for p in parts[1:]:
                 d = d[p]
             line_edit.setText(str(d))
-        # also refresh dynamic labels, instrument state, etc.
-        self.lbl_mode.setText(self.acq_ctrl.button_parameters['scan_mode'].capitalize())
+
+        # Update labels for mode, positions, and estimate
+        self.lbl_mode.setText(self.scan_mode.capitalize())
+        self.lbl_start.setText(self.acq_ctrl.start_position())
+        self.lbl_stop.setText(self.acq_ctrl.stop_position())
+        self.lbl_est.setText(f"Estimated runtime: {self.acq_ctrl.estimate_scan_duration():.2f}s")
+
+        # Stage position update
+        stage_pos = self.acq_ctrl.current_stage_coordinates
+        self.lbl_stage_x.setText(f"{stage_pos[0]:.2f}")
+        self.lbl_stage_y.setText(f"{stage_pos[1]:.2f}")
+        self.lbl_stage_z.setText(f"{stage_pos[2]:.2f}")
+
         # self.update_instrument_state()
         # self.set_start()   # or otherwise update start/stop labels
         # self.set_stop()
@@ -307,9 +318,9 @@ class MainWindow(QMainWindow):
         scan_pos_group = QGroupBox("Positions / Estimate")
         pl = QFormLayout()
         self.lbl_mode = QLabel(self.scan_mode.capitalize())
-        self.lbl_start = QLabel("Start: (0.0, 0.0, 0.0)")
-        self.lbl_stop = QLabel("Stop: (0.0, 0.0, 0.0)")
-        self.lbl_est = QLabel("Estimated runtime: 0.0s")
+        self.lbl_start = QLabel(str(self.start_pos))
+        self.lbl_stop = QLabel(str(self.stop_pos))
+        self.lbl_est = QLabel(self.get_estimated_time())
         pl.addRow("Mode:", self.lbl_mode)
         pl.addRow("Start Pos:", self.lbl_start)
         pl.addRow("Stop Pos", self.lbl_stop)
@@ -366,6 +377,11 @@ class MainWindow(QMainWindow):
         # Redirect stdout/stderr
         sys.stdout = self.console
         sys.stderr = self.console
+
+    def get_estimated_time(self):
+        scan_duration = self.acq_ctrl.update_scan_estimate()
+
+        return f"{scan_duration['duration']} {scan_duration['units']}"
 
     def handle_command(self, text):
         self.send_cli_command(text)
