@@ -57,6 +57,7 @@ class AcquisitionControl:
         # Optional/UI-linked parameters
         self.separate_resolution = False
         self.z_scan = False
+        self.scan_mode_types = ['linescan', 'map']
 
         self.scan_sequence = []
         self.estimated_scan_time = {'duration': 0.0, 'units': 'seconds'}
@@ -65,6 +66,8 @@ class AcquisitionControl:
 
     def toggle_scan_mode(self):
         self.scan_mode = 'linescan' if self.scan_mode == 'map' else 'map'
+        print("Set scan mode to {}".format(self.scan_mode))
+    
 
     @property
     def scan_mode(self):
@@ -72,10 +75,10 @@ class AcquisitionControl:
     
     @scan_mode.setter
     def scan_mode(self, value):
-        if value in ['linescan', 'fullscan']:
+        if value in self.scan_mode_types:
             self.button_parameters['scan_mode'] = value
         else:
-            raise ValueError("Invalid scan mode. Choose 'linescan' or 'fullscan'.")
+            raise ValueError("Invalid scan mode. Choose one of: {}".format(", ".join(self.scan_mode_types)))
         
     # @property
     def start_position(self):
@@ -307,6 +310,9 @@ class AcquisitionControl:
         )
         z_val = self.motion_parameters['start_position']['z']
 
+        if self.scan_mode == 'linescan':
+            self.generate_linescan_sequence()
+
         prev = [self.current_stage_coordinates, None, None]
         for wl in wavelength_list:
             for pol in polarization_list:
@@ -331,7 +337,7 @@ class AcquisitionControl:
             if resolution == 0 or start == end:
                 return 1
             try:
-                return (end - start) / resolution
+                return abs((end - start)) / resolution
             except Exception as e:
                 print(f"Error generating array: {e}")
                 return 1
@@ -365,7 +371,6 @@ class AcquisitionControl:
         if self.button_parameters['scan_mode'] == 'linescan':
             scan_size = wavelength_list * polarization_list * x_positions
         scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
-        print(f"Scan size: {scan_size}")
         
         return scan_size
 
@@ -398,6 +403,10 @@ class AcquisitionControl:
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
         self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
+    def generate_linescan_sequence(self, cancel_event, status_callback, progress_callback):
+        self.separate_resolution
+
+
     def acquire_scan(self, cancel_event, status_callback, progress_callback):
 
         # TODO: FIX motion back to origin, keep track of stage pos better
@@ -408,7 +417,7 @@ class AcquisitionControl:
             self .microscope.go_to_wavelength_all,
         ]
 
-        sequence = self.generate_scan_sequence()
+        sequence = self.generate_map_sequence()
 
         print(f"Predicted time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}")
         rescan_list = []
