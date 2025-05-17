@@ -65,7 +65,7 @@ class TextConsole(QPlainTextEdit):
         self.setReadOnly(True)
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
     def write(self, text):
-        self.appendPlainText(text)
+        self.appendPlainText(text.strip())
     def flush(self):
         pass
 
@@ -223,8 +223,11 @@ class MainWindow(QMainWindow):
                 d = d[p]
             line_edit.setText(str(d))
 
+
+
         # Update labels for mode, positions, and estimate
-        self.lbl_mode.setText(self.scan_mode.capitalize())
+        self.mode_toggle_btn.setText(f"Mode: {self.acq_ctrl.scan_mode.capitalize()}")
+        self.lbl_mode.setText(self.acq_ctrl.scan_mode.capitalize())
         self.lbl_start.setText(self.acq_ctrl.start_position())
         self.lbl_stop.setText(self.acq_ctrl.stop_position())
         self.lbl_est.setText(f"Estimated runtime: {self.acq_ctrl.estimate_scan_duration():.2f}s")
@@ -253,19 +256,19 @@ class MainWindow(QMainWindow):
         ag_layout = QVBoxLayout()
 
         # Scan mode toggle
-        self.toggle_btn = QPushButton("Mode: Map")
-        self.toggle_btn.clicked.connect(lambda: self.send_cli_command('toggle_scan_mode'))
-        ag_layout.addWidget(self.toggle_btn)
+        self.mode_toggle_btn = QPushButton("Mode: Map")
+        self.mode_toggle_btn.clicked.connect(lambda: self.send_cli_command('scanmode'))
+        ag_layout.addWidget(self.mode_toggle_btn)
 
         # Checkboxes
         self.chk_sep_res = QCheckBox("Separate Resolution")
         self.chk_sep_res.setChecked(False)
-        self.chk_sep_res.toggled.connect(lambda en: self.send_cli_command(f'sep_res {en}'))
+        self.chk_sep_res.toggled.connect(lambda en: self.send_cli_command(f'nyi {en}'))
         ag_layout.addWidget(self.chk_sep_res)
 
         self.chk_z_scan = QCheckBox("Enable Z Scan")
         self.chk_z_scan.setChecked(False)
-        self.chk_z_scan.toggled.connect(lambda en: self.send_cli_command(f'z_scan {en}'))
+        self.chk_z_scan.toggled.connect(lambda en: self.send_cli_command(f'nyi {en}'))
         ag_layout.addWidget(self.chk_z_scan)
 
         ag_layout.addWidget(self.tabs)
@@ -284,9 +287,9 @@ class MainWindow(QMainWindow):
         btn_set_home = QPushButton("Set Home")
         btn_set_home.clicked.connect(lambda: self.send_cli_command('stagehome'))
         btn_set_start = QPushButton("Set Start")
-        btn_set_start.clicked.connect(lambda: self.send_cli_command('startpos'))
+        btn_set_start.clicked.connect(lambda: self.send_cli_command('setstart'))
         btn_set_stop = QPushButton("Set Stop")
-        btn_set_stop.clicked.connect(lambda: self.send_cli_command('endpos'))
+        btn_set_stop.clicked.connect(lambda: self.send_cli_command('setstop'))
         ig_layout.addWidget(btn_set_home)
         ig_layout.addWidget(btn_set_start)
         ig_layout.addWidget(btn_set_stop)

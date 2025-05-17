@@ -113,6 +113,17 @@ class Interface:
         
         self._integrity_checker()
 
+    def run_batch(self, commands):
+        """
+        Run a batch of commands from a list.
+        """
+        for command in commands:
+            print(f"Running command: {command}")
+            result = self._command_handler(command)
+            print(result)
+            self.save_state()
+        
+
     def cli(self):
         '''Command line interface for the microscope control.'''
         while True:
@@ -372,16 +383,23 @@ if __name__ == '__main__':
     # quick switch for testing
     if "Users\\Sam" in os.getcwd():
         simulate = True 
+    elif sys.platform == 'linux':
+        simulate = True
     else:
         simulate = False
 
 
-def main():
+def main(startup_commands=[]):
     # Create your CLI-backed controller
+    
     interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
     # Start the command line interface
+    interface.run_batch(startup_commands)
     interface.cli()
 
 
 if __name__ == '__main__':
-    main()
+    startup_commands = [
+        
+    ]
+    main(startup_commands=startup_commands)

@@ -7,21 +7,21 @@
     "n_frames": 3
   },
   "button_parameters": {
-    "scan_mode": "linescan"
+    "scan_mode": "map"
   },
   "motion_parameters": {
     "start_position": {
-      "x": -260.0,
-      "y": 210.0,
+      "x": 0,
+      "y": 0,
       "z": 0
     },
     "end_position": {
-      "x": 90.0,
-      "y": 110.0,
+      "x": 0,
+      "y": 0,
       "z": 0
     },
     "resolution": {
-      "x": 1,
+      "x": 10,
       "y": 1,
       "z": 1
     }

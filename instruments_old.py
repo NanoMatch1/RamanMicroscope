@@ -538,6 +538,7 @@ class Microscope(Instrument):
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
 
         self.command_functions = {
+            'nyi': self.not_yet_implemented,
             # general commands
             'wai': self.where_am_i,
             'rg': self.get_spectrometer_position,
@@ -566,8 +567,8 @@ class Microscope(Instrument):
             'focus': self.enter_focus_mode,
             'stagepos': self.get_stage_positions_microns,
             'stagehome': self.set_stage_home,
-            'startpos': self.set_start_pos,
-            'endpos': self.set_end_pos,
+            'setstart': self.set_start_pos,
+            'setstop': self.set_end_pos,
             'scanmode': self.toggle_scan_mode,
             # GUI commands
             
@@ -638,6 +639,10 @@ class Microscope(Instrument):
         if command not in self.command_functions:
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
+    
+    @ui_callable
+    def not_yet_implemented(self, *args):
+        print("Not yet implemented")
     
     @property
     def filename(self):
