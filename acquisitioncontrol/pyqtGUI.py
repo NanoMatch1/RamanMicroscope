@@ -278,6 +278,47 @@ class MainWindow(QMainWindow):
         # --- Right: Instrument Control + State + Others ---
         right_layout = QVBoxLayout()
 
+        # --- Top Button Row: Acquisition Actions ---
+        top_button_layout = QHBoxLayout()
+
+        # Left button group
+        left_btn_layout = QVBoxLayout()
+        self.btn_run_cont = QPushButton("Run Cont.")
+        self.btn_run_cont.setStyleSheet("background-color: green; color: white;")
+        self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
+
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.setStyleSheet("background-color: red; color: white;")
+        self.btn_stop.clicked.connect(lambda: self.send_cli_command("stop"))
+
+        self.btn_acquire = QPushButton("Acquire")
+        self.btn_acquire.setStyleSheet("background-color: blue; color: white;")
+        self.btn_acquire.clicked.connect(lambda: self.send_cli_command("acquire"))
+
+        left_btn_layout.addWidget(self.btn_run_cont)
+        left_btn_layout.addWidget(self.btn_stop)
+        left_btn_layout.addWidget(self.btn_acquire)
+
+        # Right button group
+        right_btn_layout = QVBoxLayout()
+        self.btn_run_scan = QPushButton("Run Scan")
+        self.btn_run_scan.setStyleSheet("background-color: lightgray;")
+        self.btn_run_scan.clicked.connect(lambda: self.send_cli_command("runscan"))
+
+        self.btn_cancel_scan = QPushButton("Cancel Scan")
+        self.btn_cancel_scan.setStyleSheet("background-color: lightgray;")
+        self.btn_cancel_scan.clicked.connect(lambda: self.send_cli_command("cancelscan"))
+
+        right_btn_layout.addWidget(self.btn_run_scan)
+        right_btn_layout.addWidget(self.btn_cancel_scan)
+
+        top_button_layout.addLayout(left_btn_layout)
+        top_button_layout.addSpacing(20)
+        top_button_layout.addLayout(right_btn_layout)
+
+        # Add to the top of the right_layout
+        right_layout.addLayout(top_button_layout)
+
         # Controls and state side-by-side
         ctrl_state_layout = QHBoxLayout()
 
@@ -354,7 +395,6 @@ class MainWindow(QMainWindow):
         self.cmd_input.enter_pressed.connect(self.handle_command)
         cl.addWidget(self.cmd_input)
         console_group.setLayout(cl)
-        # right_layout.addWidget(console_group, 1)
 
         # Plot placeholder
         plot_group = QGroupBox("Plot Area")
@@ -364,14 +404,12 @@ class MainWindow(QMainWindow):
         plot_frame.setLineWidth(1)
         pfl.addWidget(plot_frame)
         plot_group.setLayout(pfl)
-        # right_layout.addWidget(plot_group, 1)
 
-        # Splitter to separate console and plot 
-
+        # Splitter to separate console and plot
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(console_group)
         splitter.addWidget(plot_group)
-        splitter.setSizes([400, 200])   # initial pixel sizes: console 400px, plot 200px
+        splitter.setSizes([400, 200])
 
         right_layout.addWidget(splitter, 1)
 
@@ -380,6 +418,25 @@ class MainWindow(QMainWindow):
         # Redirect stdout/stderr
         sys.stdout = self.console
         sys.stderr = self.console
+
+        # Disable all buttons initially
+        for btn in [
+            self.btn_run_cont,
+            self.btn_stop,
+            self.btn_acquire,
+            self.btn_run_scan,
+            self.btn_cancel_scan,
+        ]:
+            btn.setEnabled(True)
+
+        # Store for future control
+        self.control_buttons = [
+            self.btn_run_cont,
+            self.btn_stop,
+            self.btn_acquire,
+            self.btn_run_scan,
+            self.btn_cancel_scan,
+        ]
 
     def get_estimated_time(self):
         scan_duration = self.acq_ctrl.update_scan_estimate()
