@@ -262,12 +262,14 @@ class AcquisitionGUI:
     def update_status(self, message):
         self.scan_status.config(text=message)
 
-    def update_progress(self, current, total, start_time):
+    def update_progress(self, current_steps, total_steps, start_time):
         bar_length = 20
-        filled_length = int(bar_length * current // total)
+        filled_length = int(bar_length * current_steps // total_steps)
         bar = '[' + '#' * filled_length + ' ' * (bar_length - filled_length) + ']'
         self.progress_bar.config(text=bar)
         elapsed = time.time() - start_time
+        estimated_remaining = (elapsed / current_steps) * (total_steps - current_steps)
+        # self.estimate_label.config(text=f"Estimated remaining: {estimated_remaining:.1f}s")
         self.elapsed_label.config(text=f"Elapsed: {elapsed:.1f}s")
     
     def quit_app(self):

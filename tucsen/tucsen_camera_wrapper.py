@@ -168,14 +168,16 @@ class TucamCamera:
 
         print('Finished TucsenCamera init')
 
-    def allocate_buffer_and_start(self):
-        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame))
-        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE.value)
+    def open_stream(self):
+        """Allocate buffers and start the engine in the given mode."""
+        TUCAM_Buf_Alloc(self.hCam, pointer(self.tucam_data.m_frame))
+        TUCAM_Cap_Start(self.hCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
 
-    def deallocate_buffer_and_stop(self):
-        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
+    def close_stream(self):
+        """Stop & release, no matter what happens during grabbing."""
+        TUCAM_Buf_AbortWait(self.hCam)
+        TUCAM_Cap_Stop(self.hCam)
+        TUCAM_Buf_Release(self.hCam)
 
     def wait_for_image_data(self, report=True, timeout=100000, debug=False):
 
@@ -462,7 +464,7 @@ class TucamCamera:
             print(f"Failed to set fan speed. Error code: {status}")
 
 
-    def acquire_one_frame(self, save_dir='data', export=True):
+    def acquire_one_frame(self, save_dir='data', filename='default', export=True, timeout=100000):
         """
         acquire a single frame
         """
@@ -472,17 +474,25 @@ class TucamCamera:
             height = self._sim_roi[3] if hasattr(self, '_sim_roi') else 148
             data = self._generate_simulated_image(width, height)
 
-        else:
-            # Real hardware acquisition
-            self.allocate_buffer_and_start()
-            data = self.wait_for_image_data()
 
-            if export is True:
-                self.export_data(data, 'test', overwrite=False, save_dir=os.path.join(self.script_dir, save_dir))
-                time.sleep(0.001)
+        """Open in single-frame or soft-trigger mode, grab one, then close."""
+        self.camera_lock.acquire()
+        try:
+            self.open_stream(self.tucam_data.m_capmode.TUCCM_SEQUENCE)  # or TUCCM_SOFTTRIGGER
+            data = self.wait_for_image_data(timeout=timeout)
+        finally:
+            self.close_stream()
+            self.camera_lock.release()
 
-            self.deallocate_buffer_and_stop()
-            self.set_fan_speed(3, report=False) # TODO: check if this is needed, forces fan to high speed after acquisition to work around temp bug
+        if data is None:
+            print("Acquisition failed - image_data is None.")
+            return None
+        
+        if export is True:
+            # Export the acquired data
+            self.export_data(data, filename='acquired_frame', save_dir=save_dir, overwrite=True)
+
+        # optional export can sit up here; no more fan hacks
         return data
     
     def acquire_transient(self, save_dir='transient', export=True):
@@ -711,8 +721,8 @@ class TucamCamera:
 
         filepath = os.path.join(save_dir, filename)
         np.save(filepath, data)
-        if save_dir != 'transient':
-            print('Data saved to %s' % filepath)
+        # if save_dir != 'transient':
+        #     print('Data saved to %s' % filepath)
 
     def camera_info(self):
         """Prints the camera info obtained by get_camera_parameters."""

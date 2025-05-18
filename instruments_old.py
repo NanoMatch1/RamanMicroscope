@@ -2314,6 +2314,8 @@ class Microscope(Instrument):
         self.camera.stop_continuous_acquisition()
 
 
+
+
 class Camera(Instrument):
     def __init__(self, interface, simulate=False):
         super().__init__()

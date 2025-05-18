@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget,
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
-    QFrame, QCheckBox, QSplitter, QMessageBox
+    QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -14,6 +14,8 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from acquisitioncontrol.acqcontrol import AcquisitionControl
 import sys
 import traceback
+import time
+import threading
 
 # Global exception hook to catch unhandled exceptions in the GUI
 def exception_hook(exc_type, exc_value, exc_tb):
@@ -83,7 +85,52 @@ class MainWindow(QMainWindow):
         self.scan_mode = acq_ctrl.scan_mode
         self.separate_resolution = acq_ctrl.separate_resolution
         self.z_scan = acq_ctrl.z_scan
+
+        self.cancel_event = threading.Event()
+
         self.init_ui()
+
+    # def confirm_scan(self, status_callback, cancel_event):
+    #         # Show confirmation dialog with scan parameters
+    #     try:
+            
+    #         # Format scan parameters for display
+    #         scan_params = (
+    #             f"Scan mode: {self.button_parameters['scan_mode']}\n"
+    #             f"Total steps: {total_steps}\n"
+    #             f"Estimated time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}\n"
+    #             f"Acquisition time: {self.general_parameters['acquisition_time']} ms\n"
+    #             f"Frames per step: {self.general_parameters['n_frames']}\n"
+    #             f"Laser power: {self.general_parameters['laser_power']} mW\n"
+    #             f"Start position: X={self.motion_parameters['start_position']['x']:.2f}, Y={self.motion_parameters['start_position']['y']:.2f}, Z={self.motion_parameters['start_position']['z']:.2f}\n"
+    #             f"End position: X={self.motion_parameters['end_position']['x']:.2f}, Y={self.motion_parameters['end_position']['y']:.2f}, Z={self.motion_parameters['end_position']['z']:.2f}\n"
+    #             f"Resolution: X={self.motion_parameters['resolution']['x']:.2f}, Y={self.motion_parameters['resolution']['y']:.2f}, Z={self.motion_parameters['resolution']['z']:.2f}"
+    #         )
+            
+    #         # Create temporary root window
+    #         root = tk.Tk()
+    #         root.withdraw()  # Hide the root window
+            
+    #         # Show confirmation dialog
+    #         if not messagebox.askokcancel("Confirm Scan", f"Start scan with the following parameters?\n\n{scan_params}"):
+    #             status_callback("Scan cancelled by user.")
+    #             cancel_event.set()
+    #             root.destroy()
+    #             return
+            
+    #         root.destroy()
+    #     except ImportError:
+    #         print("Tkinter not available. Proceeding with console confirmation.")
+    #         if not input("Proceed with scan? (y/n): ").lower().startswith('y'):
+    #             status_callback("Scan cancelled by user.")
+    #             cancel_event.set()
+    #             return
+    #     except Exception as e:
+    #         print(f"Error showing confirmation dialog: {e}")
+    #         if not input("Proceed with scan? (y/n): ").lower().startswith('y'):
+    #             status_callback("Scan cancelled by user.")
+    #             cancel_event.set()
+    #             return
 
     # Helper to send commands to CLI interface
     def send_cli_command(self, cmd):
@@ -93,6 +140,98 @@ class MainWindow(QMainWindow):
             print(result)
         
         self.refresh_ui()
+
+    def confirm_scan(self, scan_sequence):
+        '''Create a popup window to confirm the scan sequence.'''
+        estimated_time = self.acq_ctrl.estimate_scan_duration()
+
+        # Format the scan sequence for display
+        scan_details = (
+            f"Scan mode: {self.acq_ctrl.scan_mode}\n"
+            f"Start position: {self.acq_ctrl.start_position()}\n"
+            f"Stop position: {self.acq_ctrl.stop_position()}\n"
+            f"Estimated time: {estimated_time['duration']:.2f} {estimated_time['units']}\n"
+            f"Acquisition time: {self.acq_ctrl.general_parameters['acquisition_time']} ms\n"
+            f"Frames per step: {self.acq_ctrl.general_parameters['n_frames']}\n"
+            f"Laser power: {self.acq_ctrl.general_parameters['laser_power']} mW\n"
+            f"Filename: {self.acq_ctrl.general_parameters['filename']}\n"
+        )
+
+        # Create a message box
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Confirm Scan")
+        msg_box.setText("Please confirm the scan parameters:")
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        msg_box.setDefaultButton(QMessageBox.Ok)
+        msg_box.setDetailedText(scan_details)
+        msg_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        msg_box.setStyleSheet("QMessageBox { min-width: 400px; }")
+        # Show the message box and wait for user response
+        result = msg_box.exec_()
+        if result == QMessageBox.Ok:
+            # User confirmed the scan
+            print("Scan confirmed.")
+            self.acq_ctrl._acquire_scan()
+        else:
+            # User cancelled the scan
+            print("Scan cancelled.")
+            return
+
+    def cancel_scan(self):
+        """
+        Cancel the scan. This method is called when the user clicks the "Cancel Scan" button.
+        """
+        self.cancel_event.set()
+        # self.scan_status.config(text="Scan cancelled.")
+        # Re-enable buttons
+        for btn in self.control_buttons:
+            btn.setEnabled(True)
+        self.btn_cancel_scan.setEnabled(False)
+    
+    def initiate_scan(self):
+        """
+        Initiate the scan protocols. Calls methods to build the scan, confirm settings with the user, then call the acquisition loop. 
+        This method is called when the user clicks the "Run Scan" button.
+        """
+
+        scan_sequence = self.acq_ctrl.build_scan_sequence()
+        self.confirm_scan(scan_sequence)
+        self.cancel_event.clear()
+        # self.scan_status.config(text="Scan started...")
+        # Disable all buttons
+        for btn in self.control_buttons:
+            btn.setEnabled(False)
+
+        self.btn_cancel_scan.setEnabled(True)
+
+        self.start_time = time.time()
+        self.scan_thread = threading.Thread(
+                target=self.acq_ctrl._acquire_scan,
+                args=(self.cancel_event, self.update_status, self.update_progress)
+            )
+        
+        # Re-enable buttons after scan is complete
+        for btn in self.control_buttons:
+            btn.setEnabled(True)
+        self.btn_cancel_scan.setEnabled(False)
+
+    def update_status(self, status):
+        '''UI callback to update the status of the scan.'''
+        self.console.write(status)
+    
+
+    def update_progress(self, current_steps, total_steps, start_time):
+        '''Updates the progress bar and status label.'''
+        pass
+        # bar_length = 20
+        # filled_length = int(bar_length * current_steps // total_steps)
+        # bar = '[' + '#' * filled_length + ' ' * (bar_length - filled_length) + ']'
+        # self.progress_bar.config(text=bar)
+        # elapsed = time.time() - start_time
+        # estimated_remaining = (elapsed / current_steps) * (total_steps - current_steps)
+        # # self.estimate_label.config(text=f"Estimated remaining: {estimated_remaining:.1f}s")
+        # self.elapsed_label.config(text=f"Elapsed: {elapsed:.1f}s")
     
     def build_param_tabs(self):
         """
@@ -303,11 +442,11 @@ class MainWindow(QMainWindow):
         right_btn_layout = QVBoxLayout()
         self.btn_run_scan = QPushButton("Run Scan")
         self.btn_run_scan.setStyleSheet("background-color: lightgray;")
-        self.btn_run_scan.clicked.connect(lambda: self.send_cli_command("runscan"))
+        self.btn_run_scan.clicked.connect(lambda: self.initiate_scan())
 
         self.btn_cancel_scan = QPushButton("Cancel Scan")
         self.btn_cancel_scan.setStyleSheet("background-color: lightgray;")
-        self.btn_cancel_scan.clicked.connect(lambda: self.send_cli_command("cancelscan"))
+        self.btn_cancel_scan.clicked.connect(lambda: self.cancel_scan())
 
         right_btn_layout.addWidget(self.btn_run_scan)
         right_btn_layout.addWidget(self.btn_cancel_scan)
@@ -420,14 +559,6 @@ class MainWindow(QMainWindow):
         sys.stderr = self.console
 
         # Disable all buttons initially
-        for btn in [
-            self.btn_run_cont,
-            self.btn_stop,
-            self.btn_acquire,
-            self.btn_run_scan,
-            self.btn_cancel_scan,
-        ]:
-            btn.setEnabled(True)
 
         # Store for future control
         self.control_buttons = [
@@ -437,6 +568,9 @@ class MainWindow(QMainWindow):
             self.btn_run_scan,
             self.btn_cancel_scan,
         ]
+
+        # initially disable scan cancel
+        self.btn_cancel_scan.setEnabled(False)
 
     def get_estimated_time(self):
         scan_duration = self.acq_ctrl.update_scan_estimate()
