@@ -198,6 +198,8 @@ class MainWindow(QMainWindow):
         scan_sequence = self.acq_ctrl.build_scan_sequence()
         self.confirm_scan(scan_sequence)
         self.cancel_event.clear()
+        # TODO: Check if scan time needs updating here
+        self.console.write("Scan started...")
         # self.scan_status.config(text="Scan started...")
         # Disable all buttons
         for btn in self.control_buttons:
@@ -350,6 +352,7 @@ class MainWindow(QMainWindow):
         # print(self.acq_ctrl.general_parameters)
         # print(self.acq_ctrl.motion_parameters)
         self.acq_ctrl.save_config()
+        self.refresh_ui()
 
 
     def refresh_ui(self):
