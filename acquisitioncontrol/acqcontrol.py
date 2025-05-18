@@ -161,7 +161,7 @@ class CameraScanner:
             self.camera.open_stream()
 
             for idx, step in enumerate(self.acq_ctrl.scan_sequence):
-                self.acq_ctrl.general_parameters['scan_index'] = idx
+                self.acq_ctrl.hidden_parameters['scan_index'] = idx
 
                 if cancel_event.is_set():
                     status_cb("Scan cancelled.")
@@ -253,7 +253,6 @@ class AcquisitionControl:
             self.microscope.go_to_wavelength_all,
         ]
 
-
         self.general_parameters = {
             'acquisition_time': 1000.0,
             'filename': 'default',
@@ -262,20 +261,23 @@ class AcquisitionControl:
             'n_frames': 1,
         }
 
-        self.button_parameters = {
+        self.hidden_parameters = {
             'scan_mode': 'linescan',
-            }
+            'scan_index': 0,
+        }
         
         self.motion_parameters = {
             'start_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'end_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'resolution': {'x': 0.0, 'y': 0.0, 'z': 0.0}
         }
+        
         self.wavelength_parameters = {
             'start_wavelength': 0.0,
             'end_wavelength': 0.0,
             'resolution': 1.0
         }
+
         self.polarization_parameters = {
             'input': {'start': 0.0, 'end': 0.0, 'resolution': 1.0},
             'output': {'start': 0.0, 'end': 0.0, 'resolution': 1.0}
@@ -302,7 +304,6 @@ class AcquisitionControl:
         self.z_scan = False
         self.scan_mode_types = ['linescan', 'map']
 
-
         self.scan_sequence = []
         self.estimated_scan_time = {'duration': 0.0, 'units': 'seconds'}
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}
@@ -313,16 +314,15 @@ class AcquisitionControl:
     def toggle_scan_mode(self):
         self.scan_mode = 'linescan' if self.scan_mode == 'map' else 'map'
         print("Set scan mode to {}".format(self.scan_mode))
-    
 
     @property
     def scan_mode(self):
-        return self.button_parameters['scan_mode']
+        return self.hidden_parameters['scan_mode']
     
     @scan_mode.setter
     def scan_mode(self, value):
         if value in self.scan_mode_types:
-            self.button_parameters['scan_mode'] = value
+            self.hidden_parameters['scan_mode'] = value
         else:
             raise ValueError("Invalid scan mode. Choose one of: {}".format(", ".join(self.scan_mode_types)))
         
@@ -342,7 +342,7 @@ class AcquisitionControl:
             'z': self.microscope.stage_positions_microns['z']
         }
         self._current_parameters['sample_position'] = self.stage_positions
-        
+
     @property
     def current_stage_coordinates(self):
         current_coords = [
@@ -460,7 +460,7 @@ class AcquisitionControl:
     def save_config(self, filename="acquisition_config.json"):
         config = {
             'general_parameters': self.general_parameters,
-            'button_parameters': self.button_parameters,
+            'hidden_parameters': self.hidden_parameters,
             'motion_parameters': self.motion_parameters,
             'wavelength_parameters': self.wavelength_parameters,
             'polarization_parameters': self.polarization_parameters,
@@ -593,11 +593,11 @@ class AcquisitionControl:
             self.motion_parameters['resolution']['z']
         )
 
-        if self.button_parameters['scan_mode'] == 'linescan':
+        if self.hidden_parameters['scan_mode'] == 'linescan':
             length = math.hypot(x_positions, y_positions)
             num_steps = max(1, int(length / self.motion_parameters['resolution']['x']))
             scan_size = wavelength_list * polarization_list * num_steps
-        elif self.button_parameters['scan_mode'] == 'map':
+        elif self.hidden_parameters['scan_mode'] == 'map':
             scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
         
         return scan_size
@@ -639,20 +639,28 @@ class AcquisitionControl:
         self.scan_sequence = sequence_generator.generate_scan_sequence()
 
         return self.scan_sequence
-
-    def acquire_once(self):
-        '''Acquires a single frame and saves it.'''
+    
+    def _acquire_one_frame(self):
+        '''Acquires a single frame and returns it without saving'''
         camera_scanner = CameraScanner(self)
         image_data = camera_scanner._acquire_once()
         if image_data is None:
             print("Error: image data is None. Aborting acquisition.")
             return
-        
+        return image_data
+
+    def acquire_once(self, filename=None):
+        '''Acquires a single frame and saves it.'''
+        if filename is not None:
+            self.general_parameters['filename'] = filename
+        self.prepare_acquisition_params()  # ensures acqtime is set correctly at camera level
+        image_data = self._acquire_one_frame()
+
         self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=True)
         index = len([file for file in os.listdir(self.microscope.dataDir) if self.acq_ctrl.general_parameters['filename'] in file]) # autoincrement the scan index based on the number of files in the directory matching the filename
         self.save_spectrum(image_data, scan_index=index)
 
-        print("Acquisition complete.")    
+        print("Acquisition complete.")  
 
 
     def acquire_scan(self, cancel_event, status_callback, progress_callback, timeout=100000):
@@ -789,7 +797,7 @@ class AcquisitionControl:
         np.save(save_path, image_data)
 
     def save_spectrum(self, image_data, **kwargs):
-        scan_index     = kwargs.get('scan_index',     self.general_parameters['scan_index'])
+        scan_index     = kwargs.get('scan_index',     self.hidden_parameters['scan_index'])
         wavelength_axis = kwargs.get('wavelength_axis', self.microscope.wavelength_axis)
         filename       = kwargs.get('filename',       self.general_parameters['filename'])
         save_dir       = kwargs.get('save_dir',       self.microscope.dataDir)

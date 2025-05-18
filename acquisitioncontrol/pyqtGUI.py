@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
     def send_cli_command(self, cmd):
         print(f">>> {cmd}")
         result = self.interface.process_gui_command(cmd)
-        if result:
+        if result is not None:
             print(result)
         
         self.refresh_ui()
@@ -599,7 +599,7 @@ if __name__ == "__main__":
     microscope = DummyMicroscope()
     app = QApplication(sys.argv)
     acq_ctrl = AcquisitionControl(microscope=microscope)
-    microscope.acquisition_control = acq_ctrl
+    microscope.acq_ctrl = acq_ctrl
     main_window = MainWindow(acq_ctrl, DummyCLI(microscope))
     main_window.show()
     sys.exit(app.exec_())

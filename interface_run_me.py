@@ -169,7 +169,7 @@ class Interface:
         # Launch Qt
         app = QApplication.instance() or QApplication(sys.argv)
 
-        window = MainWindow(self.microscope.acquisition_control, self)
+        window = MainWindow(self.microscope.acq_ctrl, self)
         window.show()
         app.exec_()
 
