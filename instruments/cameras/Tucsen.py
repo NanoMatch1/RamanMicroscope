@@ -72,6 +72,11 @@ class TucsenCamera(Camera):
         """
         Initialize the camera driver (but do not open a specific camera yet).
         """
+        self.simulate = kwargs.get('simulate', False)
+        if self.simulate is True:
+            from instruments.cameras.simulated_camera import SimulatedCameraInterface
+            return SimulatedCameraInterface(self)
+        
         self.interface = interface
         self.save_transient_spectrum_cb = interface.acq_ctrl.save_spectrum_transient
 
