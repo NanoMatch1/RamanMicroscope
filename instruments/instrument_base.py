@@ -44,4 +44,6 @@ class Instrument(ABC):
 
         print(f"{self.__class__} integrity check passed")
 
+    
+
 

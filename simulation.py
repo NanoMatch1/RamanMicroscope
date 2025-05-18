@@ -11,6 +11,7 @@ import numpy as np
 import serial
 import os
 import threading
+import traceback
 import ctypes
 from random import randint
 from typing import List, Tuple, Dict, Any, Optional, Union
@@ -19,25 +20,32 @@ class SimulatedCameraInterface():
 
     """Simulated camera interface for testing without hardware"""
     
-    def __init__(self, interface=None, report=False):
+    def __init__(self, interface, **kwargs):
         self.interface = interface
-        self.report = report
-        self.camera = None  # Placeholder for the camera object
-        self.simulate = True  # Flag to indicate simulation 
-                # For simulation, set up simulated camera properties
-        self._sim_temperature = -5.0
-        self._sim_exposure = self.acqtime
-        self._sim_roi = self.roi_new
-        self._sim_binning = 1
-        self._sim_gain = 0
-        self._sim_img_mode = 1
-        print("Initialized simulated camera")
-        return
+        # acquisition parameters
+        self.acqtime = 0.5 # seconds
+        self.roi = (0, 1220, 2048, 148)
+        self.is_running = False
+        self.save_transient_spectrum_cb = interface.acq_ctrl.save_spectrum_transient
+        self.stop_flag = threading.Event()
+        self.camera_lock = threading.Lock()
+
+        self.command_functions = {
+            'set_acqtime': self.set_exposure_time,
+            'set_roi': self.set_roi,
+        }
 
     def initialise(self):
         """Initialize the simulated camera"""
         print("Simulated camera initialized")
-        return "Simulated camera initialized"
+
+    def set_exposure_time(self, exposure_time):
+        """Set the camera's exposure time"""
+        try:
+            self.acqtime = float(exposure_time)
+            print(f"Set exposure time to {self.acqtime} seconds")
+        except ValueError:
+            print("Invalid exposure time value")
 
     def _generate_simulated_image(self, width=2048, height=148):
         """
@@ -79,8 +87,69 @@ class SimulatedCameraInterface():
         
         return sim_frame
     
-    def acquire_one_frame(self, save_dir='data', filename='default', export=True, timeout=100000):        
+    def grab_frame(self, save_dir='data', filename='default', export=True, timeout=100000):        
         image_data = self._generate_simulated_image()
+        # Simulate acquisition time
+        time.sleep(self.acqtime)
+
+    def open_stream(self):
+        """Open the camera stream (simulated)"""
+        # print("Simulated camera stream opened")
+        pass
+    
+    def close_stream(self):
+        """Close the camera stream (simulated)"""
+        # print("Simulated camera stream closed")
+        pass
+
+    def start_continuous_acquisition(self):
+        """
+        Start a continuous acquisition thread until told to stop via stop_continuous_acquisition().
+        Each frame is saved as .npy into self.transient_dir.
+        """
+        if self.is_running:
+            print("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
+            return
+        
+        self.open_stream()
+
+        n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
+        # Set up for continuous acquisition
+        def continuous_task():
+            self.stop_flag.clear()
+
+            while not self.stop_flag.is_set():
+                try:
+                    for index in range(n_frames):
+                        print(f"Acquiring frame {index+1}/{n_frames}...")
+
+                        new_frame = self.grab_frame(timeout=100000)
+                        if new_frame is None:
+                            print("Failed to acquire frame.")
+                            break
+
+                        if index == 0:
+                            # First frame, set up the data array
+                            data = new_frame
+                        else:
+                            data = (data + new_frame) / 2
+
+                        wavelengths = self.interface.microscope.wavelength_axis
+                        self.save_transient_spectrum_cb(data, wavelengths)
+                        time.sleep(0.01)
+
+                except Exception as e:
+                    print(f"Acquisition error: {e}")
+                    print(traceback.format_exc())
+                    break
+
+        acq_thread = threading.Thread(target=continuous_task, daemon=True)
+        acq_thread.start()
+
+        self.is_running = True
+        print("Started continuous acquisition.")
+
+
 
     # if export is True:
 
