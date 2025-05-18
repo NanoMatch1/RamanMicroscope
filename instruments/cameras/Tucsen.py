@@ -48,10 +48,11 @@ from tucsen.TUCam import (
     
 )
 
+from instruments.cameras.base_camera import Camera
 
 class TucamData:
 
-    def __init__(self, camera, filename=None, save_dir=None):
+    def __init__(self, camera):
         self.camera = camera
         self.data = None
 
@@ -66,18 +67,20 @@ class TucamData:
 
         self.m_fs.nSaveFmt = self.m_format.TUFMT_TIF.value
 
-class TucsenCamera:
-    def __init__(self, interface=None, simulate=False, report=False):
+class TucsenCamera(Camera):
+    def __init__(self, interface, **kwargs):
         """
         Initialize the camera driver (but do not open a specific camera yet).
         """
         self.interface = interface
+        self.save_transient_spectrum_cb = interface.acq_ctrl.save_spectrum_transient
 
         # acquisition parameters
         self.acqtime = 500 # milliseconds
         self.full_roi = (0, 0, 2048, 2048)
         self.roi = (0, 1220, 2048, 148)
 
+        self.timeout = kwargs.get('timeout', 100000)
         # self.roi = (0, 0, 1000, 1000)
 
         self.camera_parameters = {}
@@ -89,36 +92,8 @@ class TucsenCamera:
         self.is_running = False
 
         self.command_functions = {
-            "acquire": self.safe_acquisition,
-            "acqnow": self.acquire_one_frame,
-            "transient": self.acquire_transient,
-            "runcam": self.start_continuous_acquisition,
-            "stopcam": self.stop_continuous_acquisition,
-            "refresh": self.refresh,
-            "roi": self.set_roi,
-            "acqtime": self.set_acqtime,
-            "gain": self.set_gain,
-            "gain_info": self.get_gain_attributes,
-            "cam-cal": self.calibrate_best_signal,
-            # "high_signal": self.set_high_signal_boost,
-            "params": self.print_camera_params,
-            "info": self.camera_info,
-            "getinfo": self.get_camera_parameters,
-            "debug": self.debug,
-            "temp": self.check_camera_temperature,
-            # "longexp": self.set_long_exposure_mode,
-            "fan": self.set_fan_speed,
-            'logtemp': self.log_camera_temperature,
-            'logfan': self.test_fan_speeds,
-            'setbin': self.set_hardware_binning,
-            'setmode': self.set_acquire_mode,
-            'setgain': self.set_image_and_gain,
-            'setres': self.set_resolution,
-            'setlft': self.set_lft,
-            'setrgt': self.set_rgt,
-            'closecam': self.close_camera_connection,
-            # "safe": self.safe_acquisition,
-
+            'set_acqtime': self.set_exposure_time,
+            'set_roi': self.set_roi,
         }
 
         self.tucam_data = TucamData(self)
@@ -137,28 +112,77 @@ class TucsenCamera:
 
         self._open_camera()
         self._set_hardware_binning()
-        self.set_acqtime(self.acqtime)
-        self.set_image_processing(0)
-        self.set_resolution(1)
+        self.set_exposure_time(self.acqtime)
+        self._set_image_processing(0)
+        self._set_resolution(1)
         # self.set_denoise(0)
-        self.set_image_and_gain()
+        self._set_image_and_gain()
         self.set_roi(self.roi_new)
         self.set_fan_speed(3)
 
-
-    def set_acqtime(self, value):
+    def set_fan_speed(self, speed=3, report=True):
         """
-        Set camera exposure time to 'value' (in microseconds or ms—depends on the camera).
+        Adjusts the fan speed to enhance cooling.
+        Speed Levels:
+        0 - Off
+        1 - Low
+        2 - Medium
+        3 - High (Recommended for cooling)
+        """
+        status = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, speed)
+
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            if report:
+                print(f"Fan speed set to {speed} (High Recommended for Cooling).")
+        else:
+            print(f"Failed to set fan speed. Error code: {status}")
+
+    def _set_image_processing(self, value=0):
+        '''# TUIDC_ENABLEIMGPRO
+        Legacy and testing code
+        '''
+
+        status = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEIMGPRO.value, value)
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            print(f"Image processing set to {value}.")
+        else:
+            print(f"Failed to set image processing. Error code: {status}")
+
+    def _set_denoise(self, value=0):
+        ''' # TUIDC_DENOISE
+        enable or disable denoise. Legacy and testing code
+        '''
+
+        status = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEDENOISE.value, value)
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            print(f"Denoise set to {value}.")
+        else:
+            print(f"Failed to set denoise. Error code: {status}")
+        
+    def _set_resolution(self, resolution=1):
+        """
+        Set the camera resolution. Required to define the high gain mode.
+        """
+        status = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, resolution)
+
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            print(f"Resolution set to {resolution}.")
+        else:
+            print(f"Failed to set resolution. Error code: {status}")
+
+    def set_exposure_time(self, value):
+        """
+        Set camera exposure time to 'value' in seconds.
         """
         try:
-            value = float(value)
+            value = float(value) * 1000  # Convert to milliseconds
         except ValueError:
             print("Exposure time must be a number.")
             return
         
         TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
         TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
-        print(f"Set exposure to {value}")
+        print(f"Set exposure to {value/1000} seconds.")
     
 
     def _set_hardware_binning(self, binning_level=1):
@@ -214,21 +238,21 @@ class TucsenCamera:
             self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
             print("Close the camera success")
 
-    def uninit_api(self):
+    def _uninit_api(self):
         """
         Uninitialize the TUCam API. Call this once you are done with all operations.
         """
         TUCAM_Api_Uninit()
 
-    def close_camera_connection(self):
+    def close_camera(self):
         """
         Close the camera and uninitialize the API.
         """
         self._close_camera()
-        self.uninit_api()
+        self._uninit_api()
         print("Camera connection closed and API uninitialized.")
 
-    def _safe_acquisition(self, target_temp=-5, export=True):
+    def safe_acquisition(self, target_temp=-5, timeout=100000):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
@@ -238,51 +262,50 @@ class TucsenCamera:
 
             if temp.value < target_temp:
                 print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
-                data = self.acquire_one_frame(export=export)
+                data = self.grab_frame()
                 return data
             else:
                 print(f"Camera too hot ({temp.value}°C). Waiting...")
                 time.sleep(5)  # Wait before checking temperature again
 
-    def _acquire_one_frame(self, timeout=100000):
-        """Low level command. Open in single-frame or soft-trigger mode, grab one, then close."""
+    # def acquire_one_frame(self, timeout=100000):
+    #     """Medium level command. Open in single-frame or soft-trigger mode, grab one, then close."""
 
-        if self.is_running:
-            print("Camera is already running. Please stop the acquisition before starting a new one.")
-            return None
+    #     if self.is_running:
+    #         print("Camera is already running. Please stop the acquisition before starting a new one.")
+    #         return None
 
-        self.camera_lock.acquire()
-        try:
-            self._open_stream(self.tucam_data.m_capmode.TUCCM_SEQUENCE)  # or TUCCM_SOFTTRIGGER
-            image_data = self._grab_frame(timeout=timeout)
-        finally:
-            self._close_stream()
-            self.camera_lock.release()
+    #     try:
+    #         self.open_stream(self.tucam_data.m_capmode.TUCCM_SEQUENCE)  # or TUCCM_SOFTTRIGGER
+    #         image_data = self.grab_frame(timeout=timeout)
+    #     finally:
+    #         self.close_stream()
+    #         self.camera_lock.release()
 
-        if image_data is None:
-            print("Acquisition failed - image_data is None.")
-            return None
+    #     if image_data is None:
+    #         print("Acquisition failed - image_data is None.")
+    #         return None
         
         # optional export can sit up here; no more fan hacks
         return image_data
     
-    def _grab_frame(self, timeout=100000):
+    def grab_frame(self, timeout=100000):
         """Low level command. While the camera stream is open, grab one frame."""
         if self.is_running is False:
             print("Camera is not running. Please start the acquisition before grabbing a frame.")
             return None
         
-        image_data = self.wait_for_image_data(timeout=timeout)
+        image_data = self._wait_for_image_data(timeout=timeout)
         return image_data
 
-    def _open_stream(self):
+    def open_stream(self):
         """Allocate buffers and start the engine in the given mode."""
         self.camera_lock.acquire()
         self.is_running = True
         TUCAM_Buf_Alloc(self.hCam, pointer(self.tucam_data.m_frame))
         TUCAM_Cap_Start(self.hCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
 
-    def _close_stream(self):
+    def close_stream(self):
         """Stop & release, no matter what happens during grabbing."""
         TUCAM_Buf_AbortWait(self.hCam)
         TUCAM_Cap_Stop(self.hCam)
@@ -290,7 +313,7 @@ class TucsenCamera:
         self.camera_lock.release()
         self.is_running = False
 
-    def wait_for_image_data(self, report=True, timeout=100000, debug=False):
+    def _wait_for_image_data(self, report=True, timeout=100000, debug=False):
 
         try:
             result = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame), timeout)
@@ -342,9 +365,9 @@ class TucsenCamera:
             print("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
             return
         
-        self._open_stream()
+        self.open_stream()
 
-        n_frames = self.interface.microscope.acquisition_control.general_parameters['n_frames']
+        n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
         # Set up for continuous acquisition
         def continuous_task():
             self.stop_flag.clear()
@@ -352,9 +375,9 @@ class TucsenCamera:
             while not self.stop_flag.is_set():
                 try:
                     for index in range(n_frames):
-                        print(f"Acquiring frame {i+1}/{n_frames}...")
+                        print(f"Acquiring frame {index+1}/{n_frames}...")
 
-                        new_frame = self._grab_frame(timeout=100000)
+                        new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
                             print("Failed to acquire frame.")
                             break
@@ -366,7 +389,7 @@ class TucsenCamera:
                             data = (data + new_frame) / 2
 
                         wavelengths = self.interface.microscope.wavelength_axis
-                        self.interface.acq_ctrl.save_spectrum_transient(data, wavelengths)
+                        self.save_transient_spectrum_cb(data, wavelengths)
                         time.sleep(0.01)
 
                 except Exception as e:
@@ -380,11 +403,62 @@ class TucsenCamera:
         self.is_running = True
         print("Started continuous acquisition.")
 
+
     def stop_continuous_acquisition(self):
         """
         Stop the continuous acquisition thread.
         """
         self.stop_flag.set()
         self.is_running = False
-        self._close_stream()
+        self.close_stream()
         print("Continuous acquisition stopped.")
+
+    def set_roi(self, roi_tuple=(0, 0, 2048, 2048)):
+        """
+        Set camera ROI; expects a tuple: (HOffset, VOffset, Width, Height).
+        """
+        if roi_tuple == 'full':
+            roi_tuple = self.full_roi
+
+
+        elif isinstance(roi_tuple, list):
+            try:
+                roi_tuple = roi_tuple[0].split(',')
+                roi_tuple = tuple([int(x) for x in roi_tuple])
+            except ValueError:
+                print("ROI values must be integers.")
+        
+        elif isinstance(roi_tuple, str):
+            try:
+                roi_tuple = roi_tuple.split(',')
+                roi_tuple = tuple([int(x) for x in roi_tuple])
+            except ValueError:
+                print("ROI values must be integers.")
+
+        if len(roi_tuple) != 4:
+            print("ROI must be a 4-element tuple: (HOffset, VOffset, Width, Height)")
+            return
+
+        roi = TUCAM_ROI_ATTR()
+        roi.bEnable = 1
+        roi.nHOffset, roi.nVOffset, roi.nWidth, roi.nHeight = roi_tuple
+
+        try:
+            TUCAM_Cap_SetROI(self.TUCAMOPEN.hIdxTUCam, roi)
+            print(
+                "Set ROI success: HOffset={}, VOffset={}, Width={}, Height={}".format(
+                    roi.nHOffset, roi.nVOffset, roi.nWidth, roi.nHeight
+                )
+            )
+            
+        except Exception as e:
+            error_details = traceback.format_exc()
+            result = f" > Error: {e}\n{error_details}"
+            print(result)
+            print(
+                "Set ROI failure: HOffset={}, VOffset={}, Width={}, Height={}".format(
+                    roi.nHOffset, roi.nVOffset, roi.nWidth, roi.nHeight
+                )
+            )
+
+        self.roi = roi_tuple
