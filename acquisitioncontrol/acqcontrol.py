@@ -2,6 +2,136 @@ import os
 import time
 import json
 import numpy as np
+import tkinter as tk
+
+class CameraScanner:
+
+    def __init__(self, acq_ctrl, timeout=100000):
+        self.acq_ctrl = acq_ctrl
+        self.microscope = acq_ctrl.microscope
+        self.camera = acq_ctrl.microscope.camera
+        self.timeout = timeout
+
+    def _acquire_once(self):
+        """acquires a single frame and saves it."""
+        self.camera.camera_lock.acquire()
+        try:
+            self.camera.open_stream()
+            image_data = None
+            n_frames = self.acq_ctrl.general_parameters['n_frames']
+
+            for frame_idx in range(n_frames):
+                new_frame = self.camera.wait_for_image_data(timeout=self.timeout)
+                if new_frame is None:
+                    new_frame = self._retry_frame(self.timeout, 2)
+
+                if new_frame is None:
+                    print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
+                    return None
+
+                image_data = new_frame if frame_idx == 0 else (image_data + new_frame) / 2
+
+            return image_data
+        
+        finally:
+            self.camera.close_stream()
+            self.camera.camera_lock.release()
+
+
+    def _acquire_scan(self, cancel_event, status_cb, progress_cb, timeout=100000):
+        """
+        Acquire a series of averaged frames according to self.scan_sequence.
+        Opens stream once, iterates steps, and cleans up safely.
+        Returns a list of (step_index, step) for any failed steps.
+        """
+        total_steps = len(self.scan_sequence)
+        start_time = time.time()
+        failed_steps = []
+
+        # Lock camera and open stream
+        self.camera.camera_lock.acquire()
+        try:
+            self.camera.open_stream()
+
+            for idx, step in enumerate(self.acq_ctrl.scan_sequence):
+                self.acq_ctrl.general_parameters['scan_index'] = idx
+
+                if cancel_event.is_set():
+                    status_cb("Scan cancelled.")
+                    break
+
+                # Report progress
+                self._report_step(idx, step, total_steps, start_time, status_cb, progress_cb)
+
+                # Execute hardware commands and grab frames
+                success, image_data = self._execute_step(step, timeout)
+                if not success:
+                    failed_steps.append((idx, step))
+                    continue
+
+                # Save transient spectrum for this step
+                self.acq_ctrl.save_spectrum_transient(
+                    image_data,
+                    wavelength_axis=self.wavelength_axis,
+                    report=False
+                )
+
+                self.acq_ctrl.save_spectrum(image_data, scan_index=idx)
+
+        except Exception as e:
+            status_cb(f"Scan aborted due to unexpected error: {e}")
+
+        finally:
+            self.microscope.camera.close_stream()
+            self.camera_lock.release()
+
+        return failed_steps
+
+    def _report_step(self, idx, step, total, start_time, status_cb, progress_cb):
+        """
+        Helper to update UI callbacks at the start of each scan step.
+        """
+        status_cb(f"Running step {idx + 1}/{total}: {step}")
+        progress_cb(idx + 1, total, start_time)
+
+    def _execute_step(self, step, timeout, retries=5):
+        """
+        Apply scan commands for a step, then grab and average frames.
+        Returns (True, averaged_image) or (False, None).
+        """
+        # 1) Apply hardware commands
+        for command, change in zip(self.acq_ctrl.command_hierarchy, step):
+            if change is not None:
+                command(change)
+
+        # 2) Acquire frames and average
+        image_data = None
+        n_frames = self.acq_ctrl.general_parameters['n_frames']
+        for frame_idx in range(n_frames):
+            new_frame = self.camera.wait_for_image_data(timeout=timeout)
+            if new_frame is None:
+                new_frame = self._retry_frame(timeout, retries)
+
+            if new_frame is None:
+                print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
+                return False, None
+
+            image_data = new_frame if frame_idx == 0 else (image_data + new_frame) / 2
+
+        return True, image_data
+
+    def _retry_frame(self, timeout, retries):
+        """
+        Retry wait_for_image_data up to `retries` times. Returns first non-None frame or None.
+        """
+        for attempt in range(1, retries + 1):
+            print(f"Retry {attempt}/{retries} for image data...")
+            frame = self.camera.wait_for_image_data(timeout=timeout)
+            if frame is not None:
+                return frame
+        return None
+
+
 
 class AcquisitionControl:
 
@@ -9,7 +139,14 @@ class AcquisitionControl:
         self.microscope = microscope
         self.acquisitionControlDir = microscope.acquisitionControlDir
 
-        print("Acquisition Control initialized.")
+        # define the command hierarchy for the scan here
+        self.scan_command_hierarchy = [
+            self.move_stage_absolute,
+            self.microscope.go_to_polarization_in,
+            self.microscope.go_to_wavelength_all,
+        ]
+
+        self.scan_type_dict = {'linescan': self.generate_linescan_sequence, 'map': self.generate_map_sequence}
 
         self.general_parameters = {
             'acquisition_time': 1000.0,
@@ -59,10 +196,13 @@ class AcquisitionControl:
         self.z_scan = False
         self.scan_mode_types = ['linescan', 'map']
 
+
         self.scan_sequence = []
         self.estimated_scan_time = {'duration': 0.0, 'units': 'seconds'}
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}
         self.load_config()
+
+        print("Acquisition Control initialized.")
 
     def toggle_scan_mode(self):
         self.scan_mode = 'linescan' if self.scan_mode == 'map' else 'map'
@@ -85,31 +225,10 @@ class AcquisitionControl:
         positions = ", ".join(str(value) for value in self.motion_parameters['start_position'].values())
         return positions
     
-    # @start_position.setter
-    # def start_position(self, pos_dict):
-    #     if not isinstance(pos_dict, dict):
-    #         raise ValueError("Error in AcquisitionControl.start_position: Position should be a dictionary.")
-    #     for key, value in pos_dict.items():
-    #         if key in self.motion_parameters['start_position']:
-    #             self.motion_parameters['start_position'][key] = value
-    #         else:
-    #             raise ValueError(f"Invalid position key: {key}")
-            
-
     def stop_position(self):
         positions = ", ".join(str(value) for value in self.motion_parameters['end_position'].values())
         return positions
     
-    # @stop_position.setter
-    # def stop_position(self, pos_dict):
-    #     if not isinstance(pos_dict, dict):
-    #         raise ValueError("Error in AcquisitionControl.stop_position: Position should be a dictionary.")
-    #     for key, value in pos_dict.items():
-    #         if key in self.motion_parameters['end_position']:
-    #             self.motion_parameters['end_position'][key] = value
-    #         else:
-    #             raise ValueError(f"Invalid position key: {key}")
-        
     def update_stage_positions(self):
         self.stage_positions = {
             'x': self.microscope.stage_positions_microns['x'],
@@ -403,108 +522,153 @@ class AcquisitionControl:
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
         self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
-    def generate_linescan_sequence(self, cancel_event, status_callback, progress_callback):
+    def generate_linescan_sequence(self):
         self.separate_resolution
 
+    def generate_map_sequence(self):
+        '''Generates a map scan sequence based on the current parameters. This is a placeholder function and should be implemented based on the specific requirements of the microscope and acquisition system.'''
+        pass
 
-    def acquire_scan(self, cancel_event, status_callback, progress_callback):
+    def build_scan_sequence(self):
+        '''Builds the scan sequence from GUI parameters. Confirms parameters then calls the scan sequence.'''
+        self.scan_sequence = self.scan_type_dict[self.scan_mode]()
+        self.update_scan_estimate()
+        return self.scan_sequence
 
-        # TODO: FIX motion back to origin, keep track of stage pos better
-
-        command_hierarchy = [
-            self.move_stage_absolute,
-            self.microscope.go_to_polarization_in,
-            self .microscope.go_to_wavelength_all,
-        ]
-
-        sequence = self.generate_map_sequence()
-
-        print(f"Predicted time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}")
-        rescan_list = []
-
-        self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
-        # if self.microscope.detect_microscope_mode() == 'imagemode':
-        #     self.microscope.raman_mode()
-
-        total_steps = len(sequence)
-        start_time = time.time()
-        print(f"Starting scan with {total_steps} steps.")
-
-        for index, step in enumerate(sequence):
-            self.general_parameters['scan_index'] = index
-            if cancel_event.is_set():
-                status_callback("Scan cancelled.")
-                return
-            status_callback(f"Running step {index}: {step}")
-            progress_callback(index + 1, total_steps, start_time)
-            for command, change in zip(command_hierarchy, step):
-                if change is not None:
-                    command(change)
-            
-            for frame in range(self.general_parameters['n_frames']):
-                print("Acquiring frame {}".format(frame + 1))
-
-                new_frame = self.microscope.camera.safe_acquisition(export=False)
-
-                if new_frame is None:
-                    print("Error image data None. Retryig now...")
-
-                    new_frame = self.microscope.camera.safe_acquisition(export=False)
-                    if new_frame is None:
-                        print("Error image data None")
-                        status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
-                        rescan_list.append(index, step)
-                        return
-                    
-                if frame == 0:
-                    image_data = new_frame
-                else:
-                    image_data = (image_data + new_frame) / 2
-
-
-                self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
-              
-            self.save_spectrum(image_data, scan_index=index)
+    def acquire_once(self):
+        '''Acquires a single frame and saves it.'''
+        camera_scanner = CameraScanner(self)
+        image_data = camera_scanner._acquire_once()
+        if image_data is None:
+            print("Error: image data is None. Aborting acquisition.")
+            return
         
-        if len(rescan_list) > 0:
-            for (index, step) in rescan_list:
-                self.general_parameters['scan_index'] = index
-                if cancel_event.is_set():
-                    status_callback("Scan cancelled.")
-                    return
-                status_callback(f"Running step {index}: {step}")
-                progress_callback(index + 1, total_steps, start_time)
-                for command, change in zip(command_hierarchy, step):
-                    if change is not None:
-                        command(change)
-                
-                for frame in range(self.general_parameters['n_frames']):
-                    print("Acquiring frame {}".format(frame))
+        self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=True)
+        index = len([file for file in os.listdir(self.microscope.dataDir) if self.acq_ctrl.general_parameters['filename'] in file]) # autoincrement the scan index based on the number of files in the directory matching the filename
+        self.save_spectrum(image_data, scan_index=index)
 
-                    new_frame = self.microscope.acquire_one_frame(export_raw=False)
+        print("Acquisition complete.")    
 
-                    if new_frame is None:
-                        print("Error image data None. Retryig now...")
 
-                        new_frame = self.microscope.acquire_one_frame(export_raw=False)
-                        if new_frame is None:
-                            print("Error image data None")
-                            status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
-                            rescan_list.append(index, step)
-                            return
-                        
-                    if frame == 0:
-                        image_data = new_frame
-                    else:
-                        image_data = (image_data + new_frame) / 2
+    def acquire_scan(self, cancel_event, status_callback, progress_callback, timeout=100000):
+        """Acquires a confirmed scan sequence. Should only be called from the UI after completing the confirmation dialogue."""
 
-                    self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
-                    
-                self.save_spectrum(image_data, scan_index=index)
-            
-        status_callback("Scan complete.")
-        progress_callback(total_steps, total_steps, start_time)
+        camera_scanner = CameraScanner(self)
+        failed_steps = camera_scanner._acquire_scan(cancel_event, status_callback, progress_callback, timeout)
+
         print("Scan complete.")
+
+        if failed_steps:
+            record_failed_steps = json.dumps(failed_steps)
+            status_dir = os.path.join(self.microscope.dataDir, 'status')
+            if not os.path.exists(status_dir):
+                os.makedirs(status_dir)
+            with open(os.path.join(status_dir, 'failed_steps.json'), 'w') as f:
+                json.dump(failed_steps, f, indent=2)
+            print(f"Failed steps recorded in {os.path.join(status_dir, 'failed_steps.json')}")
+        else:
+            print("All steps completed successfully.")
+        status_callback("Scan complete.")
+        
+
+    # def acquire_scan_old(self, cancel_event, status_callback, progress_callback):
+
+    #     # TODO: FIX motion back to origin, keep track of stage pos better
+
+    #     command_hierarchy = [
+    #         self.move_stage_absolute,
+    #         self.microscope.go_to_polarization_in,
+    #         self .microscope.go_to_wavelength_all,
+    #     ]
+
+    #     sequence = self.generate_map_sequence()
+
+    #     print(f"Predicted time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}")
+    #     rescan_list = []
+
+    #     self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
+    #     # if self.microscope.detect_microscope_mode() == 'imagemode':
+    #     #     self.microscope.raman_mode()
+
+    #     total_steps = len(sequence)
+    #     start_time = time.time()
+    #     print(f"Starting scan with {total_steps} steps.")
+
+    #     for index, step in enumerate(sequence):
+    #         self.general_parameters['scan_index'] = index
+    #         if cancel_event.is_set():
+    #             status_callback("Scan cancelled.")
+    #             return
+    #         status_callback(f"Running step {index}: {step}")
+    #         progress_callback(index + 1, total_steps, start_time)
+    #         for command, change in zip(command_hierarchy, step):
+    #             if change is not None:
+    #                 command(change)
+            
+    #         for frame in range(self.general_parameters['n_frames']):
+    #             print("Acquiring frame {}".format(frame + 1))
+
+    #             new_frame = self.microscope.camera.safe_acquisition(export=False)
+
+    #             if new_frame is None:
+    #                 print("Error image data None. Retryig now...")
+
+    #                 new_frame = self.microscope.camera.safe_acquisition(export=False)
+    #                 if new_frame is None:
+    #                     print("Error image data None")
+    #                     status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
+    #                     rescan_list.append(index, step)
+    #                     return
+                    
+    #             if frame == 0:
+    #                 image_data = new_frame
+    #             else:
+    #                 image_data = (image_data + new_frame) / 2
+
+
+    #             self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+              
+    #         self.save_spectrum(image_data, scan_index=index)
+        
+    #     if len(rescan_list) > 0:
+    #         for (index, step) in rescan_list:
+    #             self.general_parameters['scan_index'] = index
+    #             if cancel_event.is_set():
+    #                 status_callback("Scan cancelled.")
+    #                 return
+    #             status_callback(f"Running step {index}: {step}")
+    #             progress_callback(index + 1, total_steps, start_time)
+    #             for command, change in zip(command_hierarchy, step):
+    #                 if change is not None:
+    #                     command(change)
+                
+    #             for frame in range(self.general_parameters['n_frames']):
+    #                 print("Acquiring frame {}".format(frame))
+
+    #                 new_frame = self.microscope.acquire_one_frame(export_raw=False)
+
+    #                 if new_frame is None:
+    #                     print("Error image data None. Retryig now...")
+
+    #                     new_frame = self.microscope.acquire_one_frame(export_raw=False)
+    #                     if new_frame is None:
+    #                         print("Error image data None")
+    #                         status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
+    #                         rescan_list.append(index, step)
+    #                         return
+                        
+    #                 if frame == 0:
+    #                     image_data = new_frame
+    #                 else:
+    #                     image_data = (image_data + new_frame) / 2
+
+    #                 self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
+                    
+    #             self.save_spectrum(image_data, scan_index=index)
+            
+    #     status_callback("Scan complete.")
+    #     progress_callback(total_steps, total_steps, start_time)
+    #     print("Scan complete.")
 
     # def save_transient_spectrum(self, image_data, wavelength_axis, **kwargs):
     def save_spectrum_transient(self, image_data, wavelength_axis=None, **kwargs):
@@ -525,7 +689,6 @@ class AcquisitionControl:
         filename       = kwargs.get('filename',       self.general_parameters['filename'])
         save_dir       = kwargs.get('save_dir',       self.microscope.dataDir)
 
-        # write compressed data to temporary file
         file_path = os.path.join(save_dir, f"{filename}", f"{filename}_{scan_index:06d}.npz")
         if not os.path.exists(os.path.dirname(file_path)):
             os.makedirs(os.path.dirname(file_path))
