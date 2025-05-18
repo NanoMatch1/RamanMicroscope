@@ -4,6 +4,113 @@ import json
 import numpy as np
 import tkinter as tk
 
+import numpy as np
+import math
+
+class ScanSequenceGenerator:
+
+    def __init__(self, acq_ctrl):
+        self.acq_ctrl = acq_ctrl
+        self.scan_mode = acq_ctrl.scan_mode
+        self.motion_parameters = acq_ctrl.motion_parameters
+        self.wavelength_parameters = acq_ctrl.wavelength_parameters
+        self.polarization_parameters = acq_ctrl.polarization_parameters
+
+    def _generate_array(self, start, end, step):
+        """
+        Return a list from start to end (exclusive) in increments of step.
+        If step <= 0 or start == end, returns [start].
+        """
+        if step <= 0 or start == end:
+            return [start]
+        try:
+            return np.arange(start, end, step).tolist()
+        except Exception as e:
+            print(f"Error generating array from {start} to {end} step {step}: {e}")
+            return [start]
+
+    def generate_map_sequence(self):
+        """
+        Build a 3D map scan sequence over X, Y with varying polarization and wavelength.
+        Uses X resolution for both X and Y as a temporary workaround.
+        Returns list of [position, polarization, wavelength] entries, with None for unchanged values.
+        """
+        # Unpack parameters
+        wl_params = self.wavelength_parameters
+        pol_params = self.polarization_parameters['input']
+        motion = self.motion_parameters
+        z0 = motion['start_position']['z']
+        x_res = motion['resolution']['x']
+        y_res = x_res  # workaround: use X resolution for Y
+
+        # Generate axes
+        wl_list = self._generate_array(wl_params['start_wavelength'], wl_params['end_wavelength'], wl_params['resolution'])
+        pol_list = self._generate_array(pol_params['start_angle'], pol_params['end_angle'], pol_params['resolution'])
+        x_list = self._generate_array(motion['start_position']['x'], motion['end_position']['x'], x_res)
+        y_list = self._generate_array(motion['start_position']['y'], motion['end_position']['y'], y_res)
+
+        sequence = []
+        prev = [None, None, None]
+
+        for wl in wl_list:
+            for pol in pol_list:
+                for y in y_list:
+                    for x in x_list:
+                        pos = [x, y, z0]
+                        entry = [
+                            pos   if pos != prev[0] else None,
+                            pol   if pol != prev[1] else None,
+                            wl    if wl  != prev[2] else None
+                        ]
+                        sequence.append(entry)
+                        prev = [pos, pol, wl]
+
+        return sequence
+
+    def generate_linescan_sequence(self):
+        """
+        Build a linescan sequence between start and end XY positions.
+        Points are spaced by X resolution along the line. Z is fixed.
+        Returns list of [position, None, None] entries.
+        """
+        motion = self.motion_parameters
+        start = motion['start_position']
+        end   = motion['end_position']
+        step  = motion['resolution']['x']
+        z0    = start['z']
+
+        # Compute number of segments
+        dx = end['x'] - start['x']
+        dy = end['y'] - start['y']
+        length = math.hypot(dx, dy)
+        num_steps = max(1, int(length / step))
+
+        # Generate line points
+        xs = np.linspace(start['x'], end['x'], num_steps + 1)
+        ys = np.linspace(start['y'], end['y'], num_steps + 1)
+
+        sequence = []
+        prev_pos = None
+        for x, y in zip(xs, ys):
+            pos = [x, y, z0]
+            entry = [pos if pos != prev_pos else None, None, None]
+            sequence.append(entry)
+            prev_pos = pos
+
+        return sequence
+
+    def generate_scan_sequence(self):
+        """
+        Dispatch to the appropriate scan sequence generator based on scan_mode.
+        """
+        if self.scan_mode == 'linescan':
+            return self.generate_linescan_sequence()
+        elif self.scan_mode == 'map':
+            return self.generate_map_sequence()
+        else:
+            raise ValueError(f"Not yet implemented: {self.scan_mode}. Supported modes are 'linescan' and 'map'.")
+
+
 class CameraScanner:
 
     def __init__(self, acq_ctrl, timeout=100000):
@@ -146,7 +253,6 @@ class AcquisitionControl:
             self.microscope.go_to_wavelength_all,
         ]
 
-        self.scan_type_dict = {'linescan': self.generate_linescan_sequence, 'map': self.generate_map_sequence}
 
         self.general_parameters = {
             'acquisition_time': 1000.0,
@@ -488,8 +594,11 @@ class AcquisitionControl:
         )
 
         if self.button_parameters['scan_mode'] == 'linescan':
-            scan_size = wavelength_list * polarization_list * x_positions
-        scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
+            length = math.hypot(x_positions, y_positions)
+            num_steps = max(1, int(length / self.motion_parameters['resolution']['x']))
+            scan_size = wavelength_list * polarization_list * num_steps
+        elif self.button_parameters['scan_mode'] == 'map':
+            scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val
         
         return scan_size
 
@@ -522,17 +631,13 @@ class AcquisitionControl:
         self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
         self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
-    def generate_linescan_sequence(self):
-        self.separate_resolution
-
-    def generate_map_sequence(self):
-        '''Generates a map scan sequence based on the current parameters. This is a placeholder function and should be implemented based on the specific requirements of the microscope and acquisition system.'''
-        pass
 
     def build_scan_sequence(self):
         '''Builds the scan sequence from GUI parameters. Confirms parameters then calls the scan sequence.'''
-        self.scan_sequence = self.scan_type_dict[self.scan_mode]()
-        self.update_scan_estimate()
+
+        sequence_generator = ScanSequenceGenerator(self)
+        self.scan_sequence = sequence_generator.generate_scan_sequence()
+
         return self.scan_sequence
 
     def acquire_once(self):

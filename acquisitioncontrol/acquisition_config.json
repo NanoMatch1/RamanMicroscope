@@ -1,13 +1,13 @@
 {
   "general_parameters": {
-    "acquisition_time": 100,
+    "acquisition_time": 1000,
     "filename": "tests2",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 3
   },
   "button_parameters": {
-    "scan_mode": "map"
+    "scan_mode": "linescan"
   },
   "motion_parameters": {
     "start_position": {
@@ -16,12 +16,12 @@
       "z": 0
     },
     "end_position": {
-      "x": 0,
-      "y": 0,
+      "x": 100.0,
+      "y": 0.0,
       "z": 0
     },
     "resolution": {
-      "x": 10,
+      "x": 1,
       "y": 1,
       "z": 1
     }
