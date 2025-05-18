@@ -532,7 +532,7 @@ class Microscope(Instrument):
             self.motor_map.update(group)
 
         # acquisition parameters
-        self.acquisition_control = AcquisitionControl(self)
+        self.acq_ctrl = AcquisitionControl(self)
 
         # Motion control
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
@@ -602,7 +602,7 @@ class Microscope(Instrument):
             # 'isrun': self.motion_control.wait_for_motors,
             # camera commands
             'nframe': self.set_number_of_frames,
-            'acquire': self.acquire_one_frame,
+            'acquire': self.acquire_once,
             'run': self.start_continuous_acquisition,
             'stop': self.stop_continuous_acquisition,
             'roi': self.set_roi,
@@ -646,25 +646,26 @@ class Microscope(Instrument):
     
     @property
     def filename(self):
-        return self.acquisition_control.filename
+        return self.acq_ctrl.filename
 
 
     @ui_callable
     def set_start_pos(self):
-        self.acquisition_control.motion_parameters['start_position'] = self.stage_positions_microns.copy()
-        print("Scan Start position set to {}".format(self.acquisition_control.motion_parameters['start_position']))
-        self.acquisition_control.save_config()
+        self.acq_ctrl.motion_parameters['start_position'] = self.stage_positions_microns.copy()
+        print("Scan Start position set to {}".format(self.acq_ctrl.motion_parameters['start_position']))
+        self.acq_ctrl.save_config()
 
     @ui_callable
     def set_end_pos(self):
-        self.acquisition_control.motion_parameters['end_position'] = self.stage_positions_microns.copy()
-        print("Scan End position set to {}".format(self.acquisition_control.motion_parameters['end_position']))
-        self.acquisition_control.save_config()
+        self.acq_ctrl.motion_parameters['end_position'] = self.stage_positions_microns.copy()
+        print("Scan End position set to {}".format(self.acq_ctrl.motion_parameters['end_position']))
+        self.acq_ctrl.save_config()
 
     @ui_callable
     def toggle_scan_mode(self):
         '''Toggle between linescan and map in acquisition control'''
-        self.acquisition_control.toggle_scan_mode()
+        self.acq_ctrl.toggle_scan_mode()
+
 
     # TODO: use setter and getter for stage_pos_microns and update_stage
     @ui_callable
@@ -684,7 +685,7 @@ class Microscope(Instrument):
     def open_acquisition_gui(self):
         def run_gui():
             root = tk.Tk()
-            params = self.acquisition_control
+            params = self.acq_ctrl
             app = AcquisitionGUI(root, params)
             root.mainloop()
 
@@ -698,7 +699,7 @@ class Microscope(Instrument):
         '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionControl class.'''
         self.cancel_event = threading.Event()
 
-        self.scan_thread = threading.Thread(target=self.acquisition_control.acquire_scan, args=(self, self.cancel_event))
+        self.scan_thread = threading.Thread(target=self.acq_ctrl.acquire_scan, args=(self, self.cancel_event))
         self.scan_thread.start()
         return self.scan_thread
 
@@ -1166,7 +1167,7 @@ class Microscope(Instrument):
             else:
                 raise ValueError(f"Invalid stage position: {key}")
             
-        self.acquisition_control.update_stage_positions()
+        self.acq_ctrl.update_stage_positions()
         
     # def move_stage(self, motor_steps):
     #     '''Moves the microcsope sample stage in steps in the X, Y and Z directions'''
@@ -1182,7 +1183,7 @@ class Microscope(Instrument):
     #         self.move_z(motion_dict['Z'])
     #     self.update_stage_positions(motion_dict)
 
-    #     print('Stage moved to {}'.format(self.acquisition_control.current_stage_coordinates))
+    #     print('Stage moved to {}'.format(self.acq_ctrl.current_stage_coordinates))
     
     @ui_callable
     def move_x(self, travel_distance):
@@ -1234,7 +1235,7 @@ class Microscope(Instrument):
 
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
-        print('Stage home ({}) set to current position'.format(self.acquisition_control.current_stage_coordinates))
+        print('Stage home ({}) set to current position'.format(self.acq_ctrl.current_stage_coordinates))
 
     @ui_callable
     def enter_focus_mode(self):
@@ -1508,24 +1509,24 @@ class Microscope(Instrument):
             print("Acquisition time must be positive.")
             return
         
-        self.acquisition_control.general_parameters['acquisition_time'] = value
+        self.acq_ctrl.general_parameters['acquisition_time'] = value
         self.camera.set_acqtime(str(value))
 
     @ui_callable
     def set_filename(self, filename):
-        self.acquisition_control.general_parameters['filename'] = filename
+        self.acq_ctrl.general_parameters['filename'] = filename
         print("Filename set to: ", filename)
 
     @ui_callable
     def set_laser_power(self, value):
         self.interface.laser.set_power(value)
-        self.acquisition_control.general_parameters['laser_power'] = value
+        self.acq_ctrl.general_parameters['laser_power'] = value
 
     @ui_callable
     def set_raman_shift(self, value):
         self.current_shift = value
         self.go_to_wavenumber(value)
-        self.acquisition_control.general_parameters['raman_shift'] = value
+        self.acq_ctrl.general_parameters['raman_shift'] = value
 
     @ui_callable
     def set_camera_binning(self, value):
@@ -1551,20 +1552,13 @@ class Microscope(Instrument):
             print("Invalid number of frames. Must be an integer.")
             return
         
-        self.acquisition_control.general_parameters['n_frames'] = n_frames
+        self.acq_ctrl.general_parameters['n_frames'] = n_frames
         print('Number of frames set to: ', n_frames)
 
     @ui_callable
-    def acquire_one_frame(self, filename=None, scan_index=0, export_raw=False):
-        if filename is None:
-            filename = self.acquisition_control.general_parameters['filename']
-
-        image_data = self.camera.safe_acquisition(export=export_raw)
-
-        self.acquisition_control.save_spectrum(image_data, wavelength_axis=self.wavelength_axis, save_dir='data', filename=filename, scan_index=scan_index)
-        self.acquisition_control.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis)
-
-        return image_data
+    def acquire_once(self, filename=None):
+        self.acq_ctrl.acquire_once(filename)
+        return
     
     # @ui_callable
     
@@ -1585,7 +1579,7 @@ class Microscope(Instrument):
     #     np.savez_compressed(out_path,
     #                         image=image_data,
     #                         wavelength=self.wavelength_axis,
-    #                         metadata=json.dumps(self.acquisition_control.metadata))
+    #                         metadata=json.dumps(self.acq_ctrl.metadata))
     @ui_callable
     def allocate_camera_buffer(self):
         '''Allocates the camera buffer for the acquisition.'''
@@ -1599,7 +1593,7 @@ class Microscope(Instrument):
 
     def prepare_dataset_acquisition(self):
         '''Prepares the dataset acquisition by setting the parameters.'''
-        self.acquisition_control.prepare_acquisition()
+        self.acq_ctrl.prepare_acquisition()
     
     def acquire_dataset(self):
         '''Prepares and executes a multidimensional dataset acquisition.'''
@@ -2279,30 +2273,30 @@ class Microscope(Instrument):
         print(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
 
-    def acquire_spectrum(self, overwrite=False, save=True):
-        '''Acquires a single spectrum and saves it in the saved_data directory.'''
+    # def acquire_spectrum(self, overwrite=False, save=True):
+    #     '''Acquires a single spectrum and saves it in the saved_data directory.'''
 
-        print("Acquiring...")
-        data = self.interface.camera.acquire_one_frame()
-        np.save(os.path.join(self.interface.transientDir, "transient_data.npy"), data) # save to transient dir for immediate plotting/viewing
+    #     print("Acquiring...")
+    #     data = self.interface.camera.acquire_one_frame()
+    #     np.save(os.path.join(self.interface.transientDir, "transient_data.npy"), data) # save to transient dir for immediate plotting/viewing
 
-        data = np.array(data, dtype=np.int32) # convert to numpy array for fast saving
-        if overwrite is False:
-            file_index = len([x for x in os.listdir(self.saveDir) if x.split('_')[0] == self.filename])
-        else:
-            file_index = 0
+    #     data = np.array(data, dtype=np.int32) # convert to numpy array for fast saving
+    #     if overwrite is False:
+    #         file_index = len([x for x in os.listdir(self.saveDir) if x.split('_')[0] == self.filename])
+    #     else:
+    #         file_index = 0
 
-        filename = os.path.join(self.saveDir, f'{self.filename}_{file_index}.npy')
+    #     filename = os.path.join(self.saveDir, f'{self.filename}_{file_index}.npy')
         
-        while True:
-            try:
-                if save is True:
-                    np.save(filename, data)
-                return data
-            except PermissionError:
-                print('File in use. Waiting 0.1 s...')
-                time.sleep(0.1)
-                continue
+    #     while True:
+    #         try:
+    #             if save is True:
+    #                 np.save(filename, data)
+    #             return data
+    #         except PermissionError:
+    #             print('File in use. Waiting 0.1 s...')
+    #             time.sleep(0.1)
+    #             continue
 
     def continuous_acquire(self):
         '''Runs the continuous acquisition of the camera and saves the data to the transient directory.'''
@@ -2344,211 +2338,211 @@ class Camera(Instrument):
     def connect_to_camera(self):
         return serial.Serial
 
-    def acquire_one_frame(self):
-        '''Acquires a single frame from the camera.'''
-        return self.acquire_frame()
+    # def acquire_one_frame(self):
+    #     '''Acquires a single frame from the camera.'''
+    #     return self.acquire_frame()
     
-class TucsenCamera(Camera):
-    def __init__(self, interface, simulate=False, set_ROI=(0, 0, 2048, 2048)):
-        self.simulate = simulate
-        self.scriptDir = interface.scriptDir
-        self.transientDir = interface.transientDir
-        self.set_ROI = set_ROI
+# class TucsenCamera(Camera):
+#     def __init__(self, interface, simulate=False, set_ROI=(0, 0, 2048, 2048)):
+#         self.simulate = simulate
+#         self.scriptDir = interface.scriptDir
+#         self.transientDir = interface.transientDir
+#         self.set_ROI = set_ROI
 
-        self.camera_lock = threading.Lock()
-        self.stop_flag = threading.Event()
-        self.is_running = False
+#         self.camera_lock = threading.Lock()
+#         self.stop_flag = threading.Event()
+#         self.is_running = False
 
-        self.command_functions = {
-            'acquire_one_frame': self.acquire_one_frame,
-            'start_continuous_acquire': self.start_continuous_acquisition,
-            'stop_continuous_acquire': self.stop_continuous_acquisition
-        }
+#         self.command_functions = {
+#             'acquire_one_frame': self.acquire_one_frame,
+#             'start_continuous_acquire': self.start_continuous_acquisition,
+#             'stop_continuous_acquire': self.stop_continuous_acquisition
+#         }
 
-    def connect(self):
-        print("Connecting to Tucsen...")
-        self.TUCAMINIT = TUCAM_INIT(0, self.scriptDir.encode('utf-8'))
-        self.TUCAMOPEN = TUCAM_OPEN(0, 0)
-        self.handle = self.TUCAMOPEN.hIdxTUCam
-        TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
-        print("Connected to Tucsen.")
+#     def connect(self):
+#         print("Connecting to Tucsen...")
+#         self.TUCAMINIT = TUCAM_INIT(0, self.scriptDir.encode('utf-8'))
+#         self.TUCAMOPEN = TUCAM_OPEN(0, 0)
+#         self.handle = self.TUCAMOPEN.hIdxTUCam
+#         TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
+#         print("Connected to Tucsen.")
         
-        # self.open_camera(0)
-        # self.SetROI(set_ROI=self.set_ROI)
+#         # self.open_camera(0)
+#         # self.SetROI(set_ROI=self.set_ROI)
 
-    @ui_callable
-    def acquire_one_frame(self):
-        self.open_camera(0)
-        self.SetROI(set_ROI=(0, 0, 2048, 2048))
-        self.SetExposure(200)
-        dataDict = self.WaitForImageData(nframes=1)
-        self.close_camera()
-        return dataDict[0] if dataDict else None
+#     @ui_callable
+#     def acquire_one_frame(self):
+#         self.open_camera(0)
+#         self.SetROI(set_ROI=(0, 0, 2048, 2048))
+#         self.SetExposure(200)
+#         dataDict = self.WaitForImageData(nframes=1)
+#         self.close_camera()
+#         return dataDict[0] if dataDict else None
 
-    @ui_callable
-    def continuous_acquisition(self):
-        self.stop_flag.clear()
-        self.open_camera(0)
-        self.SetROI(set_ROI=(0, 0, 2048, 2048))
-        self.SetExposure(200)
-        self.write_dir = self.transientDir
+#     @ui_callable
+#     def continuous_acquisition(self):
+#         self.stop_flag.clear()
+#         self.open_camera(0)
+#         self.SetROI(set_ROI=(0, 0, 2048, 2048))
+#         self.SetExposure(200)
+#         self.write_dir = self.transientDir
 
-        while not self.stop_flag.is_set():
-            try:
-                with self.camera_lock:
-                    dataDict = self.WaitForImageData(nframes=1)
-                if not dataDict:
-                    continue
-                data = dataDict[0]
-                np.save(os.path.join(self.transientDir, "transient_data.npy"), data)
-                time.sleep(0.001)
-            except Exception as e:
-                print(f"Acquisition error: {e}")
-                break
+#         while not self.stop_flag.is_set():
+#             try:
+#                 with self.camera_lock:
+#                     dataDict = self.WaitForImageData(nframes=1)
+#                 if not dataDict:
+#                     continue
+#                 data = dataDict[0]
+#                 np.save(os.path.join(self.transientDir, "transient_data.npy"), data)
+#                 time.sleep(0.001)
+#             except Exception as e:
+#                 print(f"Acquisition error: {e}")
+#                 break
 
-        self.close_camera()
+#         self.close_camera()
 
-    @ui_callable
-    def start_continuous_acquisition(self):
-        acq_thread = threading.Thread(target=self.continuous_acquisition)
-        acq_thread.daemon = True
-        acq_thread.start()
-        print("Started continuous acquisition.")
-        self.is_running = True
+#     @ui_callable
+#     def start_continuous_acquisition(self):
+#         acq_thread = threading.Thread(target=self.continuous_acquisition)
+#         acq_thread.daemon = True
+#         acq_thread.start()
+#         print("Started continuous acquisition.")
+#         self.is_running = True
 
-    def stop_continuous_acquisition(self):
-        print("Stopping continuous acquisition.")
-        self.stop_flag.set()
-        self.is_running = False
+#     def stop_continuous_acquisition(self):
+#         print("Stopping continuous acquisition.")
+#         self.stop_flag.set()
+#         self.is_running = False
 
-    def open_camera(self, Idx):
+#     def open_camera(self, Idx):
 
-        if  Idx >= self.TUCAMINIT.uiCamCount:
-            return
+#         if  Idx >= self.TUCAMINIT.uiCamCount:
+#             return
 
-        self.TUCAMOPEN = TUCAM_OPEN(Idx, 0)
+#         self.TUCAMOPEN = TUCAM_OPEN(Idx, 0)
 
-        TUCAM_Dev_Open(pointer(self.TUCAMOPEN))
+#         TUCAM_Dev_Open(pointer(self.TUCAMOPEN))
 
-        if 0 == self.TUCAMOPEN.hIdxTUCam:
-            print('Open the camera failure!')
-            return
-        else:
-            print('Open the camera success!')
+#         if 0 == self.TUCAMOPEN.hIdxTUCam:
+#             print('Open the camera failure!')
+#             return
+#         else:
+#             print('Open the camera success!')
 
-    def close_camera(self):
-        if 0 != self.TUCAMOPEN.hIdxTUCam:
-            TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
-        print('Close the camera success')
+#     def close_camera(self):
+#         if 0 != self.TUCAMOPEN.hIdxTUCam:
+#             TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
+#         print('Close the camera success')
 
-    def UnInitApi(self):
-        TUCAM_Api_Uninit()
+#     def UnInitApi(self):
+#         TUCAM_Api_Uninit()
 
-    def SetROI(self, set_ROI=(0, 0, 2048, 2048)):
-        if len(set_ROI) != 4:
-            print('ROI must be a tuple of 4 elements, (HOffset, VOffset, Width, Height)')
-            return
-        roi = TUCAM_ROI_ATTR()
-        roi.bEnable  = 1
-        roi.nHOffset = set_ROI[0]
-        roi.nVOffset = set_ROI[1]
-        roi.nWidth   = set_ROI[2]
-        roi.nHeight  = set_ROI[3]
+#     def SetROI(self, set_ROI=(0, 0, 2048, 2048)):
+#         if len(set_ROI) != 4:
+#             print('ROI must be a tuple of 4 elements, (HOffset, VOffset, Width, Height)')
+#             return
+#         roi = TUCAM_ROI_ATTR()
+#         roi.bEnable  = 1
+#         roi.nHOffset = set_ROI[0]
+#         roi.nVOffset = set_ROI[1]
+#         roi.nWidth   = set_ROI[2]
+#         roi.nHeight  = set_ROI[3]
 
-        try:
-           TUCAM_Cap_SetROI(self.TUCAMOPEN.hIdxTUCam, roi)
-           print('Set ROI state success, HOffset:%#d, VOffset:%#d, Width:%#d, Height:%#d'%(roi.nHOffset,
-                    roi.nVOffset, roi.nWidth, roi.nHeight))
-        except Exception:
-            print('Set ROI state failure, HOffset:%#d, VOffset:%#d, Width:%#d, Height:%#d' % (roi.nHOffset,
-                    roi.nVOffset, roi.nWidth,roi.nHeight))
+#         try:
+#            TUCAM_Cap_SetROI(self.TUCAMOPEN.hIdxTUCam, roi)
+#            print('Set ROI state success, HOffset:%#d, VOffset:%#d, Width:%#d, Height:%#d'%(roi.nHOffset,
+#                     roi.nVOffset, roi.nWidth, roi.nHeight))
+#         except Exception:
+#             print('Set ROI state failure, HOffset:%#d, VOffset:%#d, Width:%#d, Height:%#d' % (roi.nHOffset,
+#                     roi.nVOffset, roi.nWidth,roi.nHeight))
 
-    def convert_to_numpy(self, m_frame):
-        # Convert buffer to list
-        buffer = ctypes.cast(m_frame.pBuffer, ctypes.POINTER(ctypes.c_ubyte))
-        buffer_list = list(buffer[:m_frame.uiImgSize])
-        # Create numpy array from buffer list
-        np_array = np.array(buffer_list, dtype=np.uint8)
-        # Reshape array to match image dimensions
-        np_array = np_array.reshape((m_frame.usHeight, m_frame.usWidth, m_frame.ucElemBytes))
-        return np_array
-        # return buffer_list
+#     def convert_to_numpy(self, m_frame):
+#         # Convert buffer to list
+#         buffer = ctypes.cast(m_frame.pBuffer, ctypes.POINTER(ctypes.c_ubyte))
+#         buffer_list = list(buffer[:m_frame.uiImgSize])
+#         # Create numpy array from buffer list
+#         np_array = np.array(buffer_list, dtype=np.uint8)
+#         # Reshape array to match image dimensions
+#         np_array = np_array.reshape((m_frame.usHeight, m_frame.usWidth, m_frame.ucElemBytes))
+#         return np_array
+#         # return buffer_list
 
-    def WaitForImageData(self, nframes=10):
-        dataDict = {}
-        m_frame = TUCAM_FRAME()
-        m_format = TUIMG_FORMATS
-        m_frformat = TUFRM_FORMATS
-        m_capmode = TUCAM_CAPTURE_MODES
+#     def WaitForImageData(self, nframes=10):
+#         dataDict = {}
+#         m_frame = TUCAM_FRAME()
+#         m_format = TUIMG_FORMATS
+#         m_frformat = TUFRM_FORMATS
+#         m_capmode = TUCAM_CAPTURE_MODES
 
-        m_frame.pBuffer = 0;
-        m_frame.ucFormatGet = m_frformat.TUFRM_FMT_USUAl.value
-        m_frame.uiRsdSize = 1
+#         m_frame.pBuffer = 0;
+#         m_frame.ucFormatGet = m_frformat.TUFRM_FMT_USUAl.value
+#         m_frame.uiRsdSize = 1
 
-        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(m_frame))
-        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, m_capmode.TUCCM_SEQUENCE.value)
+#         TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(m_frame))
+#         TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, m_capmode.TUCCM_SEQUENCE.value)
 
-        for i in range(nframes):
-            try:
-                result = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(m_frame), 1000)
+#         for i in range(nframes):
+#             try:
+#                 result = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(m_frame), 1000)
 
-                # print("Buffer as list:", buffer_list)
-                print(
-                    "Grab the frame success, index number is %#d, width:%d, height:%#d, channel:%#d, elembytes:%#d, image size:%#d"%(i, m_frame.usWidth, m_frame.usHeight, m_frame.ucChannels,
-                    m_frame.ucElemBytes, m_frame.uiImgSize)
-                    )
-            except Exception:
-                print('Grab the frame failure, index number is %#d',  i)
-                continue
-                # Convert buffer to list
-            # buffer = ctypes.cast(m_frame.pBuffer, ctypes.POINTER(ctypes.c_ubyte))
-            try:
-                data = self.convert_to_numpy(m_frame)
-            # dataDict[i] = data
-            # buffer_list = list(buffer[:m_frame.uiImgSize])
-                dataDict[i] = data
-            except Exception as e:
-                print(e)
-                print('Convert to numpy failed')
-                continue
+#                 # print("Buffer as list:", buffer_list)
+#                 print(
+#                     "Grab the frame success, index number is %#d, width:%d, height:%#d, channel:%#d, elembytes:%#d, image size:%#d"%(i, m_frame.usWidth, m_frame.usHeight, m_frame.ucChannels,
+#                     m_frame.ucElemBytes, m_frame.uiImgSize)
+#                     )
+#             except Exception:
+#                 print('Grab the frame failure, index number is %#d',  i)
+#                 continue
+#                 # Convert buffer to list
+#             # buffer = ctypes.cast(m_frame.pBuffer, ctypes.POINTER(ctypes.c_ubyte))
+#             try:
+#                 data = self.convert_to_numpy(m_frame)
+#             # dataDict[i] = data
+#             # buffer_list = list(buffer[:m_frame.uiImgSize])
+#                 dataDict[i] = data
+#             except Exception as e:
+#                 print(e)
+#                 print('Convert to numpy failed')
+#                 continue
 
-        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
+#         TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
+#         TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
+#         TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
 
-        return dataDict
+#         return dataDict
     
-    def export_data(self, data, filename='default', spectrum=False):
-        self.save_dir = os.path.join(self.scriptDir, 'data')
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
+#     def export_data(self, data, filename='default', spectrum=False):
+#         self.save_dir = os.path.join(self.scriptDir, 'data')
+#         if not os.path.exists(self.save_dir):
+#             os.makedirs(self.save_dir)
     
-            # plt.plot(data[:, 0], data[:, 1])
-        filepath = os.path.join(self.save_dir, filename)
-        np.save(filepath, data)
-        if not 'transient_data' in filename:
-            print('Data saved to %s' % filepath)
+#             # plt.plot(data[:, 0], data[:, 1])
+#         filepath = os.path.join(self.save_dir, filename)
+#         np.save(filepath, data)
+#         if not 'transient_data' in filename:
+#             print('Data saved to %s' % filepath)
 
-    def SetExposure(self, value):
+#     def SetExposure(self, value):
 
-        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
-        TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0);
-        print("Set exposure:", value)
-        # self.ShowAverageGray()
+#         TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
+#         TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0);
+#         print("Set exposure:", value)
+#         # self.ShowAverageGray()
 
-    def get_camera_info(self):
-        from tucsen.TUCam import get_camera_gain_attributes
+#     def get_camera_info(self):
+#         from tucsen.TUCam import get_camera_gain_attributes
 
-        gain = get_camera_gain_attributes(self.handle)
-        print(gain)
-        self.gain = gain
+#         gain = get_camera_gain_attributes(self.handle)
+#         print(gain)
+#         self.gain = gain
 
-    def refresh_camera(self):
-        print("refreshing camera")
-        self.close_camera()
-        self.open_camera(0)
-        # demo.get_camera_info()
-        self.get_camera_info()
+#     def refresh_camera(self):
+#         print("refreshing camera")
+#         self.close_camera()
+#         self.open_camera(0)
+#         # demo.get_camera_info()
+#         self.get_camera_info()
 
 
 
