@@ -168,6 +168,27 @@ class TucamCamera:
 
         print('Finished TucsenCamera init')
 
+    def initialise(self):
+        print("Initialising TUCam API...")
+        # Prepare TUCAM structures
+        self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
+        self.TUCAMOPEN = TUCAM_OPEN(0, 0)
+        self.handle = self.TUCAMOPEN.hIdxTUCam
+        
+        # Real hardware initialization
+        TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
+        print("TUCam API initialized.")
+
+        self.open_camera()
+        self.set_hardware_binning()
+        self.set_acqtime(self.acqtime)
+        self.set_image_processing(0)
+        self.set_resolution(1)
+        # self.set_denoise(0)
+        self.set_image_and_gain()
+        self.set_roi(self.roi_new)
+        self.set_fan_speed(3)
+
     def open_stream(self):
         """Allocate buffers and start the engine in the given mode."""
         TUCAM_Buf_Alloc(self.hCam, pointer(self.tucam_data.m_frame))
@@ -289,78 +310,7 @@ class TucamCamera:
         self.initialise()
         print("Camera refresh complete.")
 
-    def _generate_simulated_image(self, width=2048, height=148):
-        """
-        Generate simulated image data with a Gaussian peak in the center.
-        Used for simulation mode to return realistic-looking spectral data.
-        """
-        # Create a 2D array of zeros with the specified dimensions
-        img = np.zeros((height, width), dtype=np.uint16)
 
-        # Create a 1D Gaussian peak profile for spectral data
-        x = np.arange(width)
-        center = width // 2
-        sigma = width // 40  # Width of the peak
-        amplitude = 40000  # Height of the peak (16-bit so max is 65535)
-        
-        # Calculate Gaussian
-        gaussian = amplitude * np.exp(-(x - center)**2 / (2 * sigma**2))
-        
-        # Add some noise
-        noise_level = 800
-        noise = np.random.normal(0, noise_level, width)
-        
-        # Create the spectral line (same for all rows)
-        spectral_line = gaussian + noise
-        spectral_line = np.clip(spectral_line, 0, 65535).astype(np.uint16)
-        
-        # Fill all rows with this spectral line, with slight variations
-        for i in range(height):
-            row_noise = np.random.normal(0, noise_level * 0.2, width)
-            img[i, :] = np.clip(spectral_line + row_noise, 0, 65535).astype(np.uint16)
-            
-        # Add a simulated peak shift based on instance parameters
-        # In simulation, we can modify the peak position based on internal state
-        # For example, the current simulated wavelength setting
-        
-        # For a multi-channel image (like RGB), expand dimensions
-        # This simulates a single-channel image for now
-        sim_frame = np.expand_dims(img, axis=2)
-        
-        return sim_frame
-
-    # @simulate(function_handler=lambda self, *args, **kwargs: 'Simulated camera initialized')
-    def initialise(self):
-        print("Initialising TUCam API...")
-        # Prepare TUCAM structures
-        self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
-        self.TUCAMOPEN = TUCAM_OPEN(0, 0)
-        self.handle = self.TUCAMOPEN.hIdxTUCam
-        
-        # For simulation, set up simulated camera properties
-        if self.simulate:
-            self._sim_temperature = -5.0
-            self._sim_exposure = self.acqtime
-            self._sim_roi = self.roi_new
-            self._sim_binning = 1
-            self._sim_gain = 0
-            self._sim_img_mode = 1
-            print("Initialized simulated camera")
-            return
-        
-        # Real hardware initialization
-        TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
-        print("TUCam API initialized.")
-
-        self.open_camera()
-        self.set_hardware_binning()
-        self.set_acqtime(self.acqtime)
-        self.set_image_processing(0)
-        self.set_resolution(1)
-        # self.set_denoise(0)
-        self.set_image_and_gain()
-        self.set_roi(self.roi_new)
-        self.set_fan_speed(3)
 
     def open_camera(self, Idx=0):
 
@@ -468,11 +418,11 @@ class TucamCamera:
         """
         acquire a single frame
         """
-        if self.simulate:
-            # Generate a simulated frame based on current settings
-            width = self._sim_roi[2] if hasattr(self, '_sim_roi') else 2048
-            height = self._sim_roi[3] if hasattr(self, '_sim_roi') else 148
-            data = self._generate_simulated_image(width, height)
+        # if self.simulate:
+        #     # Generate a simulated frame based on current settings
+        #     width = self._sim_roi[2] if hasattr(self, '_sim_roi') else 2048
+        #     height = self._sim_roi[3] if hasattr(self, '_sim_roi') else 148
+        #     data = self._generate_simulated_image(width, height)
 
 
         """Open in single-frame or soft-trigger mode, grab one, then close."""
