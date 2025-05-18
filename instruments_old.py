@@ -1510,7 +1510,7 @@ class Microscope(Instrument):
             return
         
         self.acq_ctrl.general_parameters['acquisition_time'] = value
-        self.camera.set_acqtime(str(value))
+        self.camera.set_exposure_time(str(value))
 
     @ui_callable
     def set_filename(self, filename):

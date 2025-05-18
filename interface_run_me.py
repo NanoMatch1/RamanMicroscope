@@ -64,10 +64,10 @@ class Interface:
             simulate=simulate
         )
 
+        self.acq_ctrl = AcquisitionControl(microscope=self.microscope)
 
         if len(debug_skip) > 0:
-            from simulation import (SimulatedCamera, SimulatedTriax,
-                                    SimulatedLaser, SimulatedMonochromator, SimulatedStageControl)
+            from simulation import (SimulatedTriax)
                 
                 # Replace individual components with simulated versions as specified in debug_skip
             if 'TRIAX' in debug_skip:
@@ -80,7 +80,8 @@ class Interface:
                 self.laser.simulate = True
                 
             if 'camera' in debug_skip:
-                self.camera = SimulatedCamera(self)
+                from instruments.cameras.simulated_camera import SimulatedCameraInterface
+                self.camera = SimulatedCameraInterface(self)
             
         # Create instrument wrapper classes with dependency injection
         # Microscope is a mediator that coordinates the other instruments
@@ -400,6 +401,5 @@ def main(startup_commands=[]):
 
 if __name__ == '__main__':
     startup_commands = [
-        
     ]
     main(startup_commands=startup_commands)
