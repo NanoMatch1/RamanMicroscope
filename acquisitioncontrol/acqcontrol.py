@@ -7,6 +7,8 @@ import tkinter as tk
 import numpy as np
 import math
 
+import traceback
+
 class ScanSequenceGenerator:
 
     def __init__(self, acq_ctrl):
@@ -117,8 +119,9 @@ class CameraScanner:
     def __init__(self, acq_ctrl, timeout=100000):
         self.acq_ctrl = acq_ctrl
         self.microscope = acq_ctrl.interface.microscope
-        self.camera = acq_ctrl.interface.microscope.camera
+        self.camera = acq_ctrl.interface.camera
         self.timeout = timeout
+        self.logger = acq_ctrl.interface.logger.getChild('camera_scanner')
 
     def _acquire_once(self):
         """acquires a single frame and saves it."""
@@ -153,7 +156,7 @@ class CameraScanner:
         Opens stream once, iterates steps, and cleans up safely.
         Returns a list of (step_index, step) for any failed steps.
         """
-        total_steps = len(self.scan_sequence)
+        total_steps = len(self.acq_ctrl.scan_sequence)
         start_time = time.time()
         failed_steps = []
 
@@ -181,18 +184,21 @@ class CameraScanner:
                 # Save transient spectrum for this step
                 self.acq_ctrl.save_spectrum_transient(
                     image_data,
-                    wavelength_axis=self.wavelength_axis,
+                    wavelength_axis=self.microscope.wavelength_axis,
                     report=False
                 )
 
                 self.acq_ctrl.save_spectrum(image_data, scan_index=idx)
 
         except Exception as e:
+            # get the traceback
+            tb = traceback.format_exc()
+            self.logger.error(f"Unexpected error during scan: {tb}")
             status_cb(f"Scan aborted due to unexpected error: {e}")
 
         finally:
-            self.microscope.camera.close_stream()
-            self.camera_lock.release()
+            self.camera.close_stream()
+            self.camera.camera_lock.release()
 
         return failed_steps
 
@@ -209,7 +215,7 @@ class CameraScanner:
         Returns (True, averaged_image) or (False, None).
         """
         # 1) Apply hardware commands
-        for command, change in zip(self.acq_ctrl.command_hierarchy, step):
+        for command, change in zip(self.acq_ctrl.scan_command_hierarchy, step):
             if change is not None:
                 command(change)
 
@@ -225,7 +231,8 @@ class CameraScanner:
                 print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                 return False, None
 
-            image_data = new_frame if frame_idx == 0 else (image_data + new_frame) / 2
+            image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
+
 
         return True, image_data
 
@@ -670,6 +677,22 @@ class AcquisitionControl:
 
         self.logger.info("Acquisition complete.")  
 
+    def cli_acquire_scan(self):
+        """Acquires a scan sequence from the command line. Should only be called from the CLI after completing the confirmation dialogue."""
+        self.prepare_acquisition_params()
+        self.logger.info("Acquiring scan...")
+        self.build_scan_sequence()
+
+        class CancelEvent:
+            def is_set(self):
+                return False
+
+        self.acquire_scan(
+            cancel_event=CancelEvent(),
+            status_callback=lambda msg: print(msg),
+            progress_callback=lambda step, total, start_time: print(f"Step {step}/{total} completed in {time.time() - start_time:.2f} seconds") 
+        )
+        self.logger.info("Scan complete.")
 
     def acquire_scan(self, cancel_event, status_callback, progress_callback, timeout=100000):
         """Acquires a confirmed scan sequence. Should only be called from the UI after completing the confirmation dialogue."""
@@ -696,7 +719,7 @@ class AcquisitionControl:
 
     #     # TODO: FIX motion back to origin, keep track of stage pos better
 
-    #     command_hierarchy = [
+    #     scan_command_hierarchy = [
     #         self.move_stage_absolute,
     #         self.interface.microscope.go_to_polarization_in,
     #         self .microscope.go_to_wavelength_all,
@@ -722,7 +745,7 @@ class AcquisitionControl:
     #             return
     #         status_callback(f"Running step {index}: {step}")
     #         progress_callback(index + 1, total_steps, start_time)
-    #         for command, change in zip(command_hierarchy, step):
+    #         for command, change in zip(scan_command_hierarchy, step):
     #             if change is not None:
     #                 command(change)
             
@@ -759,7 +782,7 @@ class AcquisitionControl:
     #                 return
     #             status_callback(f"Running step {index}: {step}")
     #             progress_callback(index + 1, total_steps, start_time)
-    #             for command, change in zip(command_hierarchy, step):
+    #             for command, change in zip(scan_command_hierarchy, step):
     #                 if change is not None:
     #                     command(change)
                 
