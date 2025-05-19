@@ -310,13 +310,13 @@ class TucsenCamera(Camera):
     #         print("Acquisition failed - image_data is None.")
     #         return None
         
-        # optional export can sit up here; no more fan hacks
-        return image_data
+        # # optional export can sit up here; no more fan hacks
+        # return image_data
     
     def grab_frame(self, timeout=100000):
         """Low level command. While the camera stream is open, grab one frame."""
         if self.is_running is False:
-            print("Camera is not running. Please start the acquisition before grabbing a frame.")
+            self.logger.info("Camera is not running. Please open stream before grabbing a frame.")
             return None
         
         image_data = self._wait_for_image_data(timeout=timeout)
@@ -386,7 +386,7 @@ class TucsenCamera(Camera):
         Each frame is saved as .npy into self.transient_dir.
         """
         if self.is_running:
-            print("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
+            self.logger.info("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
             return
         
         self.open_stream()
@@ -399,33 +399,33 @@ class TucsenCamera(Camera):
             while not self.stop_flag.is_set():
                 try:
                     for index in range(n_frames):
-                        print(f"Acquiring frame {index+1}/{n_frames}...")
+                        self.logger.info(f"Acquiring frame {index+1}/{n_frames}...")
 
                         new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
-                            print("Failed to acquire frame.")
+                            self.logger.error("Failed to acquire frame.")
                             break
 
                         if index == 0:
                             # First frame, set up the data array
-                            data = new_frame
+                            data = new_frame.astype(np.float32) # NOTE: The conversion to float32 is important for averaging across n_frames > 10. It prevents overflow, but we're also going to save as float32 to prevent quantization noise upon conversion to uint16.
                         else:
-                            data = (data + new_frame) / 2
+                            data = (data + new_frame.astype(np.float32)) / 2
 
                         wavelengths = self.interface.microscope.wavelength_axis
                         self.save_transient_spectrum_cb(data, wavelengths)
                         time.sleep(0.01)
 
                 except Exception as e:
-                    print(f"Acquisition error: {e}")
-                    print(traceback.format_exc())
+                    self.logger.error(f"Acquisition error: {e}")
+                    self.logger.error(traceback.format_exc())
                     break
 
         acq_thread = threading.Thread(target=continuous_task, daemon=True)
         acq_thread.start()
 
         self.is_running = True
-        print("Started continuous acquisition.")
+        self.logger.info("Started continuous acquisition.")
 
 
     def stop_continuous_acquisition(self):
@@ -435,7 +435,9 @@ class TucsenCamera(Camera):
         self.stop_flag.set()
         self.is_running = False
         self.close_stream()
-        print("Continuous acquisition stopped.")
+        self.logger.info("Continuous acquisition stopped.")
+
+
 
     def set_roi(self, roi_tuple=(0, 0, 2048, 2048)):
         """
