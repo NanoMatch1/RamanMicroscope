@@ -14,17 +14,7 @@ from PyQt5.QtWidgets import QApplication
 
 import logging
 
-
-try:
-    from tucsen.tucsen_camera_wrapper import TucamCamera
-except Exception as e:
-    print(f"Failed to import TucamCamera: {e}")
-    # Handle the case where the camera is not available
-    # You might want to set self.camera to None or a simulated version
-    from simulation import SimulatedCamera
-    print("Using simulated camera instead.")
-    TucamCamera = SimulatedCamera
-
+from instruments.cameras.tucsen import TucsenCamera
 from logging_utils import LoggerInterface
 
 class Interface:
@@ -53,12 +43,12 @@ class Interface:
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         
         self._build_directories()
-
         self.calibration_service = Calibration()
+
 
         # Create hardware instances
         self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
-        self.camera = TucamCamera(self, simulate=simulate)
+        self.camera = TucsenCamera(self, simulate=simulate)
         self.spectrometer = Triax(self, simulate=simulate)
         self.laser = MillenniaLaser(self, simulate=simulate)
 
@@ -89,18 +79,7 @@ class Interface:
             if 'camera' in debug_skip:
                 from instruments.cameras.simulated_camera import SimulatedCameraInterface
                 self.camera = SimulatedCameraInterface(self)
-            
-        # Create instrument wrapper classes with dependency injection
-        # Microscope is a mediator that coordinates the other instruments
-        self.microscope = Microscope(
-            interface=self, 
-            calibration_service=self.calibration_service,
-            controller=self.controller,
-            camera=self.camera,
-            spectrometer=self.spectrometer,
-            simulate=simulate
-        )
-        
+                    
         self.command_map = self._generate_command_map()
 
         self.flag_dict = { 
@@ -258,7 +237,7 @@ class Interface:
         if self.simulate or 'camera' in self.debug_skip or not self.connected_to_camera:
             self.logger.info("Attempting to connect to real camera...")
             try:
-                self.camera = TucamCamera(self, simulate=False)
+                self.camera = TucsenCamera(self, simulate=False)
                 self.camera.initialise()
                 self.logger.info("Successfully connected to real camera")
                 self.debug_skip.remove('camera')
@@ -400,6 +379,17 @@ class Interface:
         self.logger.info("Microscope integrity check passed")
         pass
 
+def main(startup_commands=[]):
+    # Create your CLI-backed controller
+    
+    interface = Interface(simulate=simulate, com_port='COM10', debug_skip=[
+        #'camera', 
+        'TRIAX'
+        ])
+    # Start the command line interface
+    interface.run_batch(startup_commands)
+    # interface.modify_handler('all', logging.INFO)
+    interface.cli()
 
 if __name__ == '__main__':
     import sys
@@ -411,18 +401,6 @@ if __name__ == '__main__':
     else:
         simulate = False
 
-
-def main(startup_commands=[]):
-    # Create your CLI-backed controller
-    
-    interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
-    # Start the command line interface
-    interface.run_batch(startup_commands)
-    # interface.modify_handler('all', logging.INFO)
-    interface.cli()
-
-
-if __name__ == '__main__':
     startup_commands = [
     ]
     main(startup_commands=startup_commands)

@@ -1028,15 +1028,6 @@ class Microscope(Instrument):
 
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
-        # Use the injected calibration service
-        # Update calibrations with auto-calibration data if available
-        # self.calibration_service.ammend_calibrations()
-        # finally, update with the monochromator calibrations
-        # self.calibration_service.update_monochromator_calibrations()
-
-        # TODO: Remove unnecessary calibrations later
-        # One calibration to rule them all
-        self.calibration_service.generate_master_calibration(microsteps=32)
 
         # load the previous known state of the instrument from file
         self.load_instrument_state()
