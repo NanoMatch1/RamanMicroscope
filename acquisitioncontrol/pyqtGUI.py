@@ -134,7 +134,7 @@ class MainWindow(QMainWindow):
     #     self.console.append(txt)
 
     # Helper to send commands to CLI interface
-    @run_in_thread_and_refresh
+    # @run_in_thread_and_refresh
     def send_cli_command(self, cmd):
         self.logger.cmd(f"{cmd}")
         result = self.interface.process_gui_command(cmd)
@@ -145,7 +145,7 @@ class MainWindow(QMainWindow):
 
     def confirm_scan(self, scan_sequence):
         '''Create a popup window to confirm the scan sequence.'''
-        estimated_time = self.acq_ctrl.estimate_scan_duration()
+        estimated_time = self.acq_ctrl.update_scan_estimate()
 
         # Format the scan sequence for display
         scan_details = (
@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
             f"Start position: {self.acq_ctrl.start_position()}\n"
             f"Stop position: {self.acq_ctrl.stop_position()}\n"
             f"Estimated time: {estimated_time['duration']:.2f} {estimated_time['units']}\n"
-            f"Acquisition time: {self.acq_ctrl.general_parameters['acquisition_time']} ms\n"
+            f"Acquisition time: {self.acq_ctrl.general_parameters['acquisition_time']} seconds\n"
             f"Frames per step: {self.acq_ctrl.general_parameters['n_frames']}\n"
             f"Laser power: {self.acq_ctrl.general_parameters['laser_power']} mW\n"
             f"Filename: {self.acq_ctrl.general_parameters['filename']}\n"
@@ -174,11 +174,11 @@ class MainWindow(QMainWindow):
         if result == QMessageBox.Ok:
             # User confirmed the scan
             self.logger.info("Scan confirmed.")
-            self.acq_ctrl._acquire_scan()
+            return True
         else:
             # User cancelled the scan
             self.logger.info("Scan cancelled.")
-            return
+            return False
 
     def cancel_scan(self):
         """
@@ -198,31 +198,36 @@ class MainWindow(QMainWindow):
         """
 
         scan_sequence = self.acq_ctrl.build_scan_sequence()
-        self.confirm_scan(scan_sequence)
+        confirm = self.confirm_scan(scan_sequence)
+        if confirm is False:
+            return
+        self.logger.info(f"Scan starting")
         self.cancel_event.clear()
-        # TODO: Check if scan time needs updating here
-        self.console.write("Scan started...")
-        # self.scan_status.config(text="Scan started...")
-        # Disable all buttons
+        self.logger.info(f"A")
+
         for btn in self.control_buttons:
             btn.setEnabled(False)
 
+        self.logger.info(f"B")
         self.btn_cancel_scan.setEnabled(True)
 
+        self.logger.info(f"C")
         self.start_time = time.time()
         self.scan_thread = threading.Thread(
-                target=self.acq_ctrl._acquire_scan,
+                target=self.acq_ctrl.acquire_scan,
                 args=(self.cancel_event, self.update_status, self.update_progress)
             )
         
+        self.logger.info(f"D")
         # Re-enable buttons after scan is complete
         for btn in self.control_buttons:
             btn.setEnabled(True)
         self.btn_cancel_scan.setEnabled(False)
+        self.logger.info(f"E")
 
     def update_status(self, status):
         '''UI callback to update the status of the scan.'''
-        self.console.write(status)
+        self.logger.info(status)
     
 
     def update_progress(self, current_steps, total_steps, start_time):
@@ -431,7 +436,7 @@ class MainWindow(QMainWindow):
         self.btn_run_cont = QPushButton("Run Cont.")
         self.btn_run_cont.setStyleSheet("background-color: green; color: white;")
         # self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
-        self.btn_run_cont.clicked.connect(lambda: self.interface.microscope.start_continuous_acquisition())
+        self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
 
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setStyleSheet("background-color: red; color: white;")

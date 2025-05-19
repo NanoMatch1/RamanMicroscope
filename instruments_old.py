@@ -573,6 +573,8 @@ class Microscope(Instrument):
             'setstart': self.set_start_pos,
             'setstop': self.set_end_pos,
             'scanmode': self.toggle_scan_mode,
+            'acquirescan': self.cli_acquire_scan,
+
             # GUI commands
             
             # motor commands
@@ -669,6 +671,11 @@ class Microscope(Instrument):
         '''Toggle between linescan and map in acquisition control'''
         self.interface.acq_ctrl.toggle_scan_mode()
 
+    @ui_callable
+    def cli_acquire_scan(self):
+        '''CLI command to acquire a scan.'''
+        self.interface.acq_ctrl.cli_acquire_scan()
+        return
 
     # TODO: use setter and getter for stage_pos_microns and update_stage
     @ui_callable
