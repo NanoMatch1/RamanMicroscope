@@ -324,7 +324,6 @@ class TucsenCamera(Camera):
 
     def open_stream(self):
         """Allocate buffers and start the engine in the given mode."""
-        self.camera_lock.acquire()
         self.is_running = True
         TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame))
         TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE.value)
@@ -334,7 +333,6 @@ class TucsenCamera(Camera):
         TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
         TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
         TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
-        self.camera_lock.release()
         self.is_running = False
 
     def _wait_for_image_data(self, report=True, timeout=100000, debug=False):
@@ -379,6 +377,24 @@ class TucsenCamera(Camera):
         except Exception as e:
             print("Reshape failed:", e)
             return None
+        
+    def check_camera_temperature(self, report=True):
+        """
+        Checks and prints the current camera temperature.
+        """
+        temp = ctypes.c_double()
+        status = TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
+
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            if report:
+                print(f"Camera Temperature: {round(temp.value, 2)}°C")
+            if temp.value > 80:
+                print("WARNING: Camera is overheating! Exposure time may be reduced automatically.")
+        else:
+            print(f"Failed to retrieve temperature. Error code: {status}")
+
+        return temp.value
+
 
     def start_continuous_acquisition(self):
         """
