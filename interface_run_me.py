@@ -45,8 +45,8 @@ class Interface:
         self.autocalibrationDir = os.path.join(self.scriptDir, 'autocalibration')
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         
-        # Create directories first
         self._build_directories()
+
         self.calibration_service = Calibration()
 
         # Create hardware instances
@@ -64,7 +64,7 @@ class Interface:
             simulate=simulate
         )
 
-        self.acq_ctrl = AcquisitionControl(microscope=self.microscope)
+        self.acq_ctrl = AcquisitionControl(self)
 
         if len(debug_skip) > 0:
             from simulation import (SimulatedTriax)
@@ -128,35 +128,40 @@ class Interface:
     def cli(self):
         '''Command line interface for the microscope control.'''
         while True:
-            command = input("Enter a command: ")
-            if command == 'exit':
-                break
+            try:
+                command = input("Enter a command: ")
+                if command == 'exit':
+                    break
 
-            if command == 'gui':
-                self.gui()
-                return 'gui'
+                if command == 'gui':
+                    self.gui()
+                    return 'gui'
 
 
-            if command == 'help':
-                self.show_help()
-                continue
-        
-            if command == 'debug':
-                print("Debugging")
-                breakpoint()
-                continue
+                if command == 'help':
+                    self.show_help()
+                    continue
             
-            if command == 'reinit':
-                # interface.camera.close_camera()
-                # interface.microcontroller.
-                # interface.__init__(simulate=interface.simulate, com_port=interface.com_port, baud=interface.baud, debug_skip=interface.debug_skip)
-                # TODO: write close methods for all interfaces, and reinitialise them here
-                continue
+                if command == 'debug':
+                    print("Debugging")
+                    breakpoint()
+                    continue
                 
-            result = self._command_handler(command)
-            print(result)
+                if command == 'reinit':
+                    # interface.camera.close_camera()
+                    # interface.microcontroller.
+                    # interface.__init__(simulate=interface.simulate, com_port=interface.com_port, baud=interface.baud, debug_skip=interface.debug_skip)
+                    # TODO: write close methods for all interfaces, and reinitialise them here
+                    continue
+                    
+                result = self._command_handler(command)
+                print(result)
 
-            self.save_state()
+                self.save_state()
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                error_details = traceback.format_exc()
+                print(error_details)
 
     def parse_command(self, command:str):
         """
@@ -170,7 +175,7 @@ class Interface:
         # Launch Qt
         app = QApplication.instance() or QApplication(sys.argv)
 
-        window = MainWindow(self.microscope.acq_ctrl, self)
+        window = MainWindow(self.acq_ctrl, self)
         window.show()
         app.exec_()
 
