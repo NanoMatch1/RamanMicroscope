@@ -79,6 +79,7 @@ class TucsenCamera(Camera):
         
         self.interface = interface
         self.logger = interface.logger.getChild('TucsenCamera')
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
         # acquisition parameters
         self.acqtime = 500 # milliseconds
         self.full_roi = (0, 0, 2048, 2048)
@@ -107,10 +108,10 @@ class TucsenCamera(Camera):
         self.save_transient_spectrum_cb = self.interface.acq_ctrl.save_spectrum_transient
         print("Initialising TUCam API...")
         # Prepare TUCAM structures
-        self.TUCAMINIT = TUCAM_INIT(0, os.path.join(self.interface.scriptDir, 'tucsen').encode('utf-8'))
+        self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
         self.TUCAMOPEN = TUCAM_OPEN(0, 0)
-        self.handle = self.TUCAMOPEN.hIdxTUCam
-        
+        # self.handle = self.TUCAMOPEN.hIdxTUCam
+
         # Real hardware initialization
         TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
         print("TUCam API initialized.")
@@ -124,6 +125,14 @@ class TucsenCamera(Camera):
         self._set_image_and_gain()
         self.set_roi(self.roi)
         self.set_fan_speed(3)
+
+    def refresh(self):
+        """
+        Refresh the camera settings and parameters.
+        """
+        self._close_camera()
+        self._uninit_api()
+        self.initialise()
 
     def _set_image_and_gain(self, img_mode=1, gain_level=0):
         '''Sets the image mode and gain mode to tbe best signal to noise option. Following testing, this is img_mode=1 and gain_level=0 (corresponding to the setting options in the props and capas document from tucsen).'''
@@ -253,7 +262,7 @@ class TucsenCamera(Camera):
         """
         if self.TUCAMOPEN.hIdxTUCam != 0 and self.TUCAMOPEN.hIdxTUCam is not None:
             TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
-            self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
+            # self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
             print("Close the camera success")
 
     def _uninit_api(self):
@@ -320,14 +329,14 @@ class TucsenCamera(Camera):
         """Allocate buffers and start the engine in the given mode."""
         self.camera_lock.acquire()
         self.is_running = True
-        TUCAM_Buf_Alloc(self.handle, pointer(self.tucam_data.m_frame))
-        TUCAM_Cap_Start(self.handle, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
+        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame))
+        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE.value)
 
     def close_stream(self):
         """Stop & release, no matter what happens during grabbing."""
-        TUCAM_Buf_AbortWait(self.handle)
-        TUCAM_Cap_Stop(self.handle)
-        TUCAM_Buf_Release(self.handle)
+        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
         self.camera_lock.release()
         self.is_running = False
 
