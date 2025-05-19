@@ -34,3 +34,44 @@ AttributeError: 'Interface' object has no attribute 'qt_handler'
           ^^^^^^
 NameError: name 'logger' is not defined
 
+2025-05-19 14:44:25,105 interface [ERROR] An error occurred: wrapped C/C++ object of type QtLogHandler has been deleted
+2025-05-19 14:44:25,109 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 153, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 194, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 95, in __init__
+    self.interface.logger.qt_handler.logMessage.connect(self.console.write) # connect the log handler to the console
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QtLogHandler has been deleted
+
+2025-05-19 14:50:25,410 interface [ERROR] An error occurred: 'Logger' object has no attribute 'setFormatter'
+2025-05-19 14:50:25,412 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 153, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 194, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 105, in __init__
+    self.logger.setFormatter(logging.Formatter('%(message)s'))
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\logging_utils.py", line 94, in __getattr__
+    return getattr(self.logger, attr)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Logger' object has no attribute 'setFormatter'
+
+2025-05-19 14:51:41,931 interface [ERROR] An error occurred: 'MainWindow' object has no attribute 'qt_landler'
+2025-05-19 14:51:41,931 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 153, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 194, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 100, in __init__
+    self.qt_landler.setFormatter(logging.Formatter('%(message)s'))
+    ^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'qt_landler'
+
+2025-05-19 14:51:59,799 interface.MainWindow [ERROR] Error disconnecting log handler: 'Logger' object has no attribute 'qt_handler'
+2025-05-19 14:52:50,452 interface.MainWindow [ERROR] Error disconnecting log handler: 'Logger' object has no attribute 'qt_handler'

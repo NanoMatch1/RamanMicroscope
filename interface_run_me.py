@@ -11,6 +11,8 @@ from acquisitioncontrol import AcquisitionControl
 from acquisitioncontrol import MainWindow
 from PyQt5.QtWidgets import QApplication
 
+import logging
+
 
 try:
     from tucsen.tucsen_camera_wrapper import TucamCamera
@@ -149,7 +151,7 @@ class Interface:
 
                 if command == 'gui':
                     self.gui()
-                    return 'gui'
+                    continue
 
 
                 if command == 'help':
@@ -415,6 +417,7 @@ def main(startup_commands=[]):
     interface = Interface(simulate=simulate, com_port='COM10', debug_skip=['camera', 'TRIAX'])
     # Start the command line interface
     interface.run_batch(startup_commands)
+    # interface.modify_handler('all', logging.INFO)
     interface.cli()
 
 
