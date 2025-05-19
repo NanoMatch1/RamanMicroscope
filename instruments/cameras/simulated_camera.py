@@ -3,11 +3,6 @@ import threading
 import numpy as np
 import traceback
 
-import logging
-
-logger = logging.getLogger(__name__)
-# (optional) give it a default level here, or set it globally elsewhere
-logger.setLevel(logging.INFO)
 
 # everywhere you have `print("…")`, replace with:
 # logger.info("Acquiring frame %d/%d…", i+1, n_frames)

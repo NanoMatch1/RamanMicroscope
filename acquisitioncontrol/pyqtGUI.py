@@ -16,6 +16,7 @@ import sys
 import traceback
 import time
 import threading
+import logging
 
 # Global exception hook to catch unhandled exceptions in the GUI
 def exception_hook(exc_type, exc_value, exc_tb):
@@ -31,7 +32,7 @@ def exception_hook(exc_type, exc_value, exc_tb):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
 
 # Install the exception hook
-sys.excepthook = exception_hook
+# sys.excepthook = exception_hook
 
 
 # --- Command line input with history ---
@@ -91,6 +92,10 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self.refresh_ui()
 
+        self.interface.logger.qt_handler.logMessage.connect(self.console.write) # connect the log handler to the console
+        self.logger = self.interface.logger.getChild(self.__class__.__name__) # set up a child logger for the GUI
+        self.logger.setLevel(logging.DEBUG) # set the log level to DEBUG
+
     # def confirm_scan(self, status_callback, cancel_event):
     #         # Show confirmation dialog with scan parameters
     #     try:
@@ -135,7 +140,7 @@ class MainWindow(QMainWindow):
 
     # Helper to send commands to CLI interface
     def send_cli_command(self, cmd):
-        print(f">>> {cmd}")
+        self.logger.cmd(f">>> {cmd}")
         result = self.interface.process_gui_command(cmd)
         if result is not None:
             print(result)
@@ -561,8 +566,8 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, 1)
 
         # Redirect stdout/stderr
-        sys.stdout = self.console
-        sys.stderr = self.console
+        # sys.stdout = self.console
+        # sys.stderr = self.console
 
         # Disable all buttons initially
 
@@ -588,9 +593,19 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         # restore the real streams
-        sys.stdout = self._orig_stdout
-        sys.stderr = self._orig_stderr
+        # sys.stdout = self._orig_stdout
+        # sys.stderr = self._orig_stderr
+                # Disconnect the slot
+        try:
+            self.interface.logger.qt_handler.logMessage.disconnect(self.append_log)
+        except TypeError:
+            pass  # already disconnected
+
+        # (Optional) remove the handler so no Qt work happens at all
+        self.interface.logger.removeHandler(self.interface.qt_handler)
+
         super().closeEvent(event)
+
 
 
 
