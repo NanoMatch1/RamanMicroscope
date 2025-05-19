@@ -104,6 +104,8 @@ class Calibration:
         self.x_steps_per_micron = 1 / 0.0625
         self.y_steps_per_micron = 1 / 0.0625 
         self.z_steps_per_micron = 1 / 0.00625 
+
+        self.generate_master_calibration()
     
     def _load_calibrations(self):
         """
