@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QApplication
 import logging
 
 from instruments.cameras.tucsen import TucsenCamera
+# from tucsen.tucsen_camera_wrapper import TucsenCamera
 from logging_utils import LoggerInterface
 
 class Interface:
@@ -97,6 +98,8 @@ class Interface:
         # Initialize the high-level instrument classes
         self.laser.initialise()
         self.microscope.initialise()  #t be last as it relies on others
+
+        # self.microscope.set_acquisition_time(1) # workaround for the camera not responsing correctly on startup
         
         self._integrity_checker()
 

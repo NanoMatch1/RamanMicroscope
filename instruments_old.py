@@ -616,6 +616,7 @@ class Microscope(Instrument):
             'temp': self.get_detector_temperature,
             'refresh': self.refresh_camera,
             'camclose': self.close_camera,
+            'camopen': self.open_camera,
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
@@ -1555,7 +1556,12 @@ class Microscope(Instrument):
     def close_camera(self):
         '''Closes the hardware camera connection. Allows connection via Mosaic UI.'''
         self.camera.close_camera()
-        self.interface.debug_skip.append('camera')
+        # self.interface.debug_skip.append('camera')
+
+    @ui_callable
+    def open_camera(self):
+        '''Opens the hardware camera connection. '''
+        self.camera.initialise()
 
     @ui_callable
     def set_number_of_frames(self, n_frames):

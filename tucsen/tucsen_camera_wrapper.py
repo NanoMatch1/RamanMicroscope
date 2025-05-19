@@ -95,7 +95,7 @@ class TucamData:
         self.m_fs.nSaveFmt = self.m_format.TUFMT_TIF.value
 
 
-class TucamCamera:
+class TucsenCamera:
     """
     A refactored camera class that encapsulates initialization,
     acquisition, and teardown for a Tucsen camera.
@@ -168,13 +168,22 @@ class TucamCamera:
 
         print('Finished TucsenCamera init')
 
+    
+    def allocate_buffer_and_start(self):
+        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame))
+        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE.value)
+
+    def deallocate_buffer_and_stop(self):
+        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
+
     def initialise(self):
         print("Initialising TUCam API...")
         # Prepare TUCAM structures
         self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
         self.TUCAMOPEN = TUCAM_OPEN(0, 0)
-        self.handle = self.TUCAMOPEN.hIdxTUCam
-        
+        # self.handle = self.TUCAMOPEN.hIdxTUCam
         # Real hardware initialization
         TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
         print("TUCam API initialized.")
@@ -191,14 +200,14 @@ class TucamCamera:
 
     def open_stream(self):
         """Allocate buffers and start the engine in the given mode."""
-        TUCAM_Buf_Alloc(self.hCam, pointer(self.tucam_data.m_frame))
-        TUCAM_Cap_Start(self.hCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
+        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame))
+        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
 
     def close_stream(self):
         """Stop & release, no matter what happens during grabbing."""
-        TUCAM_Buf_AbortWait(self.hCam)
-        TUCAM_Cap_Stop(self.hCam)
-        TUCAM_Buf_Release(self.hCam)
+        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
 
     def wait_for_image_data(self, report=True, timeout=100000, debug=False):
 
@@ -479,7 +488,7 @@ class TucamCamera:
             return
         
         self.allocate_buffer_and_start()
-        n_frames = self.interface.microscope.acquisition_control.general_parameters['n_frames']
+        n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
 
         # Set up for continuous acquisition
         def continuous_task():
@@ -503,7 +512,7 @@ class TucamCamera:
                         
                         # self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
                         wavelengths = self.interface.microscope.wavelength_axis
-                        self.interface.microscope.acquisition_control.save_spectrum_transient(data, wavelengths)
+                        self.interface.acq_ctrl.save_spectrum_transient(data, wavelengths)
                         time.sleep(0.001)
                 except Exception as e:
                     print(f"Acquisition error: {e}")
@@ -1043,6 +1052,6 @@ class TucamCamera:
 
     # def get_camera_info(self):
     #     # Example stub if you have gain-attribute retrieval from TUCam
-    #     gain_info = get_camera_gain_attributes(self.handle)
+    #     gain_info = get_camera_gain_attributes(self.TUCAMOPEN.hIdxTUCam)
     #     print(gain_info)
     #     return gain_info
