@@ -15,7 +15,7 @@ logger = logging.getLogger('demo_logger')
 logger.setLevel(logging.DEBUG)
 
 # 2. FileHandler (INFO level and above)
-file_handler = logging.FileHandler(log_file)
+file_handler = logging.FileHandler(log_file) # writes to the file, in append by default
 file_handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s %(name)s [%(levelname)s] %(message)s')
 file_handler.setFormatter(formatter)

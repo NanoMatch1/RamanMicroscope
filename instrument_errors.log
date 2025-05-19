@@ -1,0 +1,36 @@
+2025-05-19 13:54:16,155 interface [ERROR] An error occurred: 'MainWindow' object has no attribute 'qt_handler'
+2025-05-19 13:54:16,155 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 94, in __init__
+    self.qt_handler.logMessage.connect(self.console.write) # connect the log handler to the console
+    ^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'qt_handler'
+
+2025-05-19 13:54:55,538 interface [ERROR] An error occurred: 'Interface' object has no attribute 'qt_handler'
+2025-05-19 13:54:55,553 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 94, in __init__
+    self.interface.qt_handler.logMessage.connect(self.console.write) # connect the log handler to the console
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Interface' object has no attribute 'qt_handler'
+
+2025-05-19 13:57:03,761 interface [ERROR] An error occurred: name 'logger' is not defined
+2025-05-19 13:57:03,776 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 96, in __init__
+    print(logger)
+          ^^^^^^
+NameError: name 'logger' is not defined
+

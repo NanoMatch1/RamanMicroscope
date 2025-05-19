@@ -10,7 +10,8 @@ from calibration import Calibration
 from acquisitioncontrol import AcquisitionControl
 from acquisitioncontrol import MainWindow
 from PyQt5.QtWidgets import QApplication
-# from commands import CommandHandler, Micr oscopeCommand, CameraCommand, SpectrometerCommand, StageCommand, MonochromatorCommand
+
+
 try:
     from tucsen.tucsen_camera_wrapper import TucamCamera
 except Exception as e:
@@ -21,10 +22,13 @@ except Exception as e:
     print("Using simulated camera instead.")
     TucamCamera = SimulatedCamera
 
+from logging_utils import LoggerInterface
 
 class Interface:
 
     def __init__(self, simulate=False, com_port='COM10', baud=9600, debug_skip=[]):
+
+        self.logger = LoggerInterface(name='interface')
 
         self.interface_commands = {
             'triax': self.connect_to_triax,
@@ -119,10 +123,20 @@ class Interface:
         Run a batch of commands from a list.
         """
         for command in commands:
-            print(f"Running command: {command}")
+            self.logger.info(f"Running command: {command}")
             result = self._command_handler(command)
-            print(result)
+            self.logger.info(result)
             self.save_state()
+
+    def modify_handler(self, handler: str, level: int):
+        """
+        Modify the level of a handler. Call after startup to set the level of the loggers.
+        """
+        if handler == 'all':
+            for h in self.logger.handlers:
+                h.setLevel(level)
+        else:
+            self.logger.modify_handler(handler, level)
         
 
     def cli(self):
@@ -143,7 +157,7 @@ class Interface:
                     continue
             
                 if command == 'debug':
-                    print("Debugging")
+                    self.logger.info("Debugging")
                     breakpoint()
                     continue
                 
@@ -155,13 +169,13 @@ class Interface:
                     continue
                     
                 result = self._command_handler(command)
-                print(result)
+                self.logger.info(result)
 
                 self.save_state()
             except Exception as e:
-                print(f"An error occurred: {e}")
+                self.logger.error(f"An error occurred: {e}")
                 error_details = traceback.format_exc()
-                print(error_details)
+                self.logger.error(error_details)
 
     def parse_command(self, command:str):
         """
@@ -186,7 +200,7 @@ class Interface:
         try:
             self.microscope.save_instrument_state()
         except Exception as e:
-            print(f"Failed to save instrument state: {e}")
+            self.logger.error(f"Failed to save instrument state: {e}")
 
     def process_gui_command(self, command:str):
         """
@@ -202,22 +216,22 @@ class Interface:
     def connect_to_triax(self):
         """Switch from simulated to real TRIAX spectrometer"""
         if self.simulate or 'TRIAX' in self.debug_skip:
-            print("Attempting to connect to real TRIAX spectrometer...")
+            self.logger.info("Attempting to connect to real TRIAX spectrometer...")
             try:
                 self.spectrometer = Triax(self, simulate=False)
                 self.spectrometer.initialise()
-                print("Successfully connected to real TRIAX spectrometer")
+                self.logger.info("Successfully connected to real TRIAX spectrometer")
                 self.command_map = self._generate_command_map()
             except Exception as e:
-                print(f"Failed to connect to real TRIAX: {e}")
+                self.logger.error(f"Failed to connect to real TRIAX: {e}")
                 # Fallback to simulation
                 from simulation import SimulatedTriax
                 self.spectrometer = SimulatedTriax(self)
                 self.spectrometer.initialise()
-                print("Reverted to simulated TRIAX")
+                self.logger.info("Reverted to simulated TRIAX")
         else:
             # Already using real hardware
-            print("Already connected to real TRIAX")
+            self.logger.info("Already connected to real TRIAX")
 
     #8.56 -14.81
     #Z #5.35 - 4.1
@@ -225,38 +239,38 @@ class Interface:
     def connect_to_laser(self):
         """Switch from simulated to real laser"""
         if self.simulate or 'laser' in self.debug_skip:
-            print("Attempting to connect to real laser...")
+            self.logger.info("Attempting to connect to real laser...")
             try:
                 self.laser = MillenniaLaser(self, simulate=False)
                 self.laser.initialise()
                 self.command_map = self._generate_command_map()
             except Exception as e:
-                print(f"Failed to connect to real laser: {e}")
+                self.logger.error(f"Failed to connect to real laser: {e}")
         else:
             # Already using real hardware
-            print("Already connected to real laser")
+            self.logger.info("Already connected to real laser")
 
     def connect_to_camera(self):
         """Switch from simulated to real camera"""
         if self.simulate or 'camera' in self.debug_skip or not self.connected_to_camera:
-            print("Attempting to connect to real camera...")
+            self.logger.info("Attempting to connect to real camera...")
             try:
                 self.camera = TucamCamera(self, simulate=False)
                 self.camera.initialise()
-                print("Successfully connected to real camera")
+                self.logger.info("Successfully connected to real camera")
                 self.debug_skip.remove('camera')
                 self.microscope.camera = self.camera  # Update the microscope's camera reference
                 self.command_map = self._generate_command_map()
             except Exception as e:
-                print(f"Failed to connect to real camera: {e}")
+                self.logger.error(f"Failed to connect to real camera: {e}")
                 # Fallback to simulation
                 from simulation import SimulatedCamera
                 self.camera = SimulatedCamera(self)
                 self.camera.initialise()
-                print("Reverted to simulated camera")
+                self.logger.info("Reverted to simulated camera")
         else:
             # Already using real hardware
-            print("Already connected to real camera")
+            self.logger.info("Already connected to real camera")
 
     def generate_help(self):
         help_dict = {}
@@ -269,11 +283,11 @@ class Interface:
     
     def show_help(self):
         help_dict = self.generate_help()
-        print("Available commands:")
+        self.logger.info("Available commands:")
         for inst, commands in help_dict.items():
-            print(f"{inst}:")
+            self.logger.info(f"{inst}:")
             for command in commands:
-                print(f"   {command}")
+                self.logger.info(f"   {command}")
 
     def _build_directories(self):
         '''Builds all the directories required for the system to run.'''
@@ -380,7 +394,7 @@ class Interface:
         return funct, args
 
     def _integrity_checker(self):
-        print("Microscope integrity check passed")
+        self.logger.info("Microscope integrity check passed")
         pass
 
 
