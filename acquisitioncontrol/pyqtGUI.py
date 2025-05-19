@@ -18,6 +18,8 @@ import time
 import threading
 import logging
 
+from logging_utils import QtLogHandler
+
 # Global exception hook to catch unhandled exceptions in the GUI
 def exception_hook(exc_type, exc_value, exc_tb):
     """
@@ -92,58 +94,24 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self.refresh_ui()
 
-        self.interface.logger.qt_handler.logMessage.connect(self.console.write) # connect the log handler to the console
-        self.logger = self.interface.logger.getChild(self.__class__.__name__) # set up a child logger for the GUI
+                # Create a new QtLogHandler specific to this GUI
+
+        self.qt_handler = QtLogHandler()
+        self.qt_handler.setFormatter(logging.Formatter('%(message)s'))
+        self.qt_handler.logMessage.connect(self.console.write)
+        # Optionally, attach to the logger here:
+        self.logger = self.interface.logger.getChild(self.__class__.__name__)
+        self.logger.addHandler(self.qt_handler)
         self.logger.setLevel(logging.DEBUG) # set the log level to DEBUG
 
-    # def confirm_scan(self, status_callback, cancel_event):
-    #         # Show confirmation dialog with scan parameters
-    #     try:
-            
-    #         # Format scan parameters for display
-    #         scan_params = (
-    #             f"Scan mode: {self.button_parameters['scan_mode']}\n"
-    #             f"Total steps: {total_steps}\n"
-    #             f"Estimated time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}\n"
-    #             f"Acquisition time: {self.general_parameters['acquisition_time']} ms\n"
-    #             f"Frames per step: {self.general_parameters['n_frames']}\n"
-    #             f"Laser power: {self.general_parameters['laser_power']} mW\n"
-    #             f"Start position: X={self.motion_parameters['start_position']['x']:.2f}, Y={self.motion_parameters['start_position']['y']:.2f}, Z={self.motion_parameters['start_position']['z']:.2f}\n"
-    #             f"End position: X={self.motion_parameters['end_position']['x']:.2f}, Y={self.motion_parameters['end_position']['y']:.2f}, Z={self.motion_parameters['end_position']['z']:.2f}\n"
-    #             f"Resolution: X={self.motion_parameters['resolution']['x']:.2f}, Y={self.motion_parameters['resolution']['y']:.2f}, Z={self.motion_parameters['resolution']['z']:.2f}"
-    #         )
-            
-    #         # Create temporary root window
-    #         root = tk.Tk()
-    #         root.withdraw()  # Hide the root window
-            
-    #         # Show confirmation dialog
-    #         if not messagebox.askokcancel("Confirm Scan", f"Start scan with the following parameters?\n\n{scan_params}"):
-    #             status_callback("Scan cancelled by user.")
-    #             cancel_event.set()
-    #             root.destroy()
-    #             return
-            
-    #         root.destroy()
-    #     except ImportError:
-    #         print("Tkinter not available. Proceeding with console confirmation.")
-    #         if not input("Proceed with scan? (y/n): ").lower().startswith('y'):
-    #             status_callback("Scan cancelled by user.")
-    #             cancel_event.set()
-    #             return
-    #     except Exception as e:
-    #         print(f"Error showing confirmation dialog: {e}")
-    #         if not input("Proceed with scan? (y/n): ").lower().startswith('y'):
-    #             status_callback("Scan cancelled by user.")
-    #             cancel_event.set()
-    #             return
+
 
     # Helper to send commands to CLI interface
     def send_cli_command(self, cmd):
-        self.logger.cmd(f">>> {cmd}")
+        self.logger.cmd(f"{cmd}")
         result = self.interface.process_gui_command(cmd)
         if result is not None:
-            print(result)
+            self.logger.info(result)
         
         self.refresh_ui()
 
@@ -177,11 +145,11 @@ class MainWindow(QMainWindow):
         result = msg_box.exec_()
         if result == QMessageBox.Ok:
             # User confirmed the scan
-            print("Scan confirmed.")
+            self.logger.info("Scan confirmed.")
             self.acq_ctrl._acquire_scan()
         else:
             # User cancelled the scan
-            print("Scan cancelled.")
+            self.logger.info("Scan cancelled.")
             return
 
     def cancel_scan(self):
@@ -355,8 +323,8 @@ class MainWindow(QMainWindow):
         # Write it back
         target_dict[param_name] = new_value
 
-        # print(self.acq_ctrl.general_parameters)
-        # print(self.acq_ctrl.motion_parameters)
+        # self.logger.info(self.acq_ctrl.general_parameters)
+        # self.logger.info(self.acq_ctrl.motion_parameters)
         self.acq_ctrl.save_config()
         self.refresh_ui()
 
@@ -597,12 +565,15 @@ class MainWindow(QMainWindow):
         # sys.stderr = self._orig_stderr
                 # Disconnect the slot
         try:
-            self.interface.logger.qt_handler.logMessage.disconnect(self.append_log)
+            self.qt_handler.logMessage.disconnect(self.console.write)
         except TypeError:
             pass  # already disconnected
+        except Exception as e:
+            self.logger.error(f"Error disconnecting log handler: {e}")
+            traceback.print_exc()
 
         # (Optional) remove the handler so no Qt work happens at all
-        self.interface.logger.removeHandler(self.interface.qt_handler)
+        self.interface.logger.removeHandler(self.qt_handler)
 
         super().closeEvent(event)
 

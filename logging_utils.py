@@ -22,7 +22,7 @@ class LoggerInterface:
     def __init__(self, name: str = 'instrument'):
         # 1) Define your level number and name
         COMMAND_LEVEL_NUM = 15
-        logging.addLevelName(COMMAND_LEVEL_NUM, "CMD >")
+        logging.addLevelName(COMMAND_LEVEL_NUM, "CMD")
 
         # 2) Attach a .command(...) method to all Logger instances
         def cmd(self, message, *args, **kwargs):
@@ -46,12 +46,12 @@ class LoggerInterface:
         self.cli_handler.setLevel(logging.DEBUG)
         self.cli_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
 
-        self.qt_handler = QtLogHandler()
-        self.qt_handler.setLevel(logging.DEBUG)
-        self.qt_handler.setFormatter(logging.Formatter('%(message)s'))
+        # self.qt_handler = QtLogHandler()
+        # self.qt_handler.setLevel(logging.DEBUG)
+        # self.qt_handler.setFormatter(logging.Formatter('%(message)s'))
 
         # 3) Attach them
-        self.handlers = [self.file_handler, self.cli_handler, self.qt_handler]
+        self.handlers = [self.file_handler, self.cli_handler]
         for h in self.handlers:
             # Add the handler to the logger
             self.logger.addHandler(h)

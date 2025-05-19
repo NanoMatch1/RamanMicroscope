@@ -499,6 +499,8 @@ class Microscope(Instrument):
                  spectrometer=None, simulate=False):
         super().__init__()
         self.interface = interface
+        self.logger = interface.logger
+        self.micro_log = self.logger.getChild('Microscope')
 
 
         self.scriptDir = interface.scriptDir
@@ -643,7 +645,7 @@ class Microscope(Instrument):
     
     @ui_callable
     def not_yet_implemented(self, *args):
-        print("Not yet implemented")
+        self.micro_log.info("Not yet implemented")
     
     @property
     def filename(self):
@@ -653,13 +655,13 @@ class Microscope(Instrument):
     @ui_callable
     def set_start_pos(self):
         self.interface.acq_ctrl.motion_parameters['start_position'] = self.stage_positions_microns.copy()
-        print("Scan Start position set to {}".format(self.interface.acq_ctrl.motion_parameters['start_position']))
+        self.micro_log.info("Scan Start position set to {}".format(self.interface.acq_ctrl.motion_parameters['start_position']))
         self.interface.acq_ctrl.save_config()
 
     @ui_callable
     def set_end_pos(self):
         self.interface.acq_ctrl.motion_parameters['end_position'] = self.stage_positions_microns.copy()
-        print("Scan End position set to {}".format(self.interface.acq_ctrl.motion_parameters['end_position']))
+        self.micro_log.info("Scan End position set to {}".format(self.interface.acq_ctrl.motion_parameters['end_position']))
         self.interface.acq_ctrl.save_config()
 
     @ui_callable
