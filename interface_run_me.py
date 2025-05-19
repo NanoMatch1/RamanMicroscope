@@ -11,6 +11,7 @@ from acquisitioncontrol import AcquisitionControl
 from acquisitioncontrol import MainWindow
 from PyQt5.QtWidgets import QApplication
 
+
 import logging
 
 

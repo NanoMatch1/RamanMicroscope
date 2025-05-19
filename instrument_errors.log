@@ -118,3 +118,27 @@ AttributeError: 'AcquisitionControl' object has no attribute 'scan_command_hiera
                     ^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'CameraScanner' object has no attribute 'wavelength_axis'
 
+2025-05-19 20:50:10,799 interface [ERROR] An error occurred: 'MainWindow' object has no attribute 'scan_complete_signal'
+2025-05-19 20:50:10,799 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 153, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 194, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 115, in __init__
+    self.scan_complete_signal.connect(self.scan_finished)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'scan_complete_signal'
+
+2025-05-19 20:51:57,686 interface [ERROR] An error occurred: 'MainWindow' object has no attribute 'update_progress_bar'
+2025-05-19 20:51:57,688 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 153, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 194, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 119, in __init__
+    self.progress_update_signal.connect(self.update_progress_bar)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'update_progress_bar'
+

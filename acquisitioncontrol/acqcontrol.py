@@ -207,7 +207,8 @@ class CameraScanner:
         Helper to update UI callbacks at the start of each scan step.
         """
         status_cb(f"Running step {idx + 1}/{total}: {step}")
-        progress_cb(idx + 1, total, start_time)
+        percentage = round((idx / total) * 100)
+        progress_cb(percentage)
 
     def _execute_step(self, step, timeout, retries=5):
         """

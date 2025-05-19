@@ -8,7 +8,8 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
     QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject
+from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer
+from PyQt5.QtWidgets import QProgressBar
 
 
 from acquisitioncontrol.acqcontrol import AcquisitionControl
@@ -97,6 +98,9 @@ class TextConsole(QPlainTextEdit):
 
 # --- Main Application Window ---
 class MainWindow(QMainWindow):
+    scan_complete_signal = pyqtSignal()
+    progress_update_signal = pyqtSignal(int)
+
     def __init__(self, acq_ctrl, interface):
         super().__init__()
         self.acq_ctrl = acq_ctrl
@@ -110,7 +114,10 @@ class MainWindow(QMainWindow):
         self.separate_resolution = acq_ctrl.separate_resolution
         self.z_scan = acq_ctrl.z_scan
 
+        self.scanning = False
         self.cancel_event = threading.Event()
+        self.scan_complete_signal.connect(self.scan_finished)
+        self.progress_update_signal.connect(self.update_progress_bar)
 
         self.init_ui()
         self.refresh_ui()
@@ -193,37 +200,48 @@ class MainWindow(QMainWindow):
     
     def initiate_scan(self):
         """
-        Initiate the scan protocols. Calls methods to build the scan, confirm settings with the user, then call the acquisition loop. 
-        This method is called when the user clicks the "Run Scan" button.
+        Called when the user clicks 'Run Scan'. Builds the scan, asks for confirmation,
+        then launches the scan in a background thread.
         """
-
         scan_sequence = self.acq_ctrl.build_scan_sequence()
-        confirm = self.confirm_scan(scan_sequence)
-        if confirm is False:
+        if not self.confirm_scan(scan_sequence):
             return
-        self.logger.info(f"Scan starting")
-        self.cancel_event.clear()
-        self.logger.info(f"A")
-
-        for btn in self.control_buttons:
-            btn.setEnabled(False)
-
-        self.logger.info(f"B")
-        self.btn_cancel_scan.setEnabled(True)
-
-        self.logger.info(f"C")
-        self.start_time = time.time()
-        self.scan_thread = threading.Thread(
-                target=self.acq_ctrl.acquire_scan,
-                args=(self.cancel_event, self.update_status, self.update_progress)
-            )
         
-        self.logger.info(f"D")
-        # Re-enable buttons after scan is complete
+
+        self.cancel_event.clear()
+        self.set_controls_enabled(False)
+        self.btn_cancel_scan.setEnabled(True)
+        self.progress_bar.setValue(0)
+        self.refresh_ui()
+        self.scanning = True
+        self.start_time = time.time()
+
+        def thread_safe_progress_callback(value):
+            self.progress_update_signal.emit(value)
+        # wrapper to handel scan and emit signal to end
+        def run_and_emit():
+            self.acq_ctrl.acquire_scan(
+                self.cancel_event,
+                self.update_status,
+                thread_safe_progress_callback
+            )
+            self.scan_complete_signal.emit()  # emits safely from any thread
+
+        self.scan_thread = threading.Thread(target=run_and_emit)
+        self.scan_thread.start()
+
+    def scan_finished(self):
+        self.scanning = False
+        self.set_controls_enabled(True)
+        self.update_status("Scan finished.")
+        self.progress_bar.setValue(100)
+        self.refresh_ui()
+
+    def set_controls_enabled(self, enabled: bool):
         for btn in self.control_buttons:
-            btn.setEnabled(True)
-        self.btn_cancel_scan.setEnabled(False)
-        self.logger.info(f"E")
+            btn.setEnabled(enabled)
+        self.btn_cancel_scan.setEnabled(False if enabled else True)
+
 
     def update_status(self, status):
         '''UI callback to update the status of the scan.'''
@@ -376,7 +394,7 @@ class MainWindow(QMainWindow):
 
         # Update labels for mode, positions, and estimate
         scan_time = self.acq_ctrl.update_scan_estimate()
-        self.mode_toggle_btn.setText(f"Mode: {self.acq_ctrl.scan_mode.capitalize()}")
+        self.btn_mode_toggle.setText(f"Mode: {self.acq_ctrl.scan_mode.capitalize()}")
         self.lbl_mode.setText(self.acq_ctrl.scan_mode.capitalize())
         self.lbl_start.setText(self.acq_ctrl.start_position())
         self.lbl_stop.setText(self.acq_ctrl.stop_position())
@@ -406,9 +424,9 @@ class MainWindow(QMainWindow):
         ag_layout = QVBoxLayout()
 
         # Scan mode toggle
-        self.mode_toggle_btn = QPushButton("Mode: Map")
-        self.mode_toggle_btn.clicked.connect(lambda: self.send_cli_command('scanmode'))
-        ag_layout.addWidget(self.mode_toggle_btn)
+        self.btn_mode_toggle = QPushButton("Mode: Map")
+        self.btn_mode_toggle.clicked.connect(lambda: self.send_cli_command('scanmode'))
+        ag_layout.addWidget(self.btn_mode_toggle)
 
         # Checkboxes
         self.chk_sep_res = QCheckBox("Separate Resolution")
@@ -434,16 +452,16 @@ class MainWindow(QMainWindow):
         # Left button group
         left_btn_layout = QVBoxLayout()
         self.btn_run_cont = QPushButton("Run Cont.")
-        self.btn_run_cont.setStyleSheet("background-color: green; color: white;")
+        self.btn_run_cont.setStyleSheet("background-color: lightgray;")
         # self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
         self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
 
         self.btn_stop = QPushButton("Stop")
-        self.btn_stop.setStyleSheet("background-color: red; color: white;")
+        self.btn_stop.setStyleSheet("background-color: lightgray;")
         self.btn_stop.clicked.connect(lambda: self.send_cli_command("stop"))
 
         self.btn_acquire = QPushButton("Acquire")
-        self.btn_acquire.setStyleSheet("background-color: blue; color: white;")
+        self.btn_acquire.setStyleSheet("background-color: lightgray;")
         self.btn_acquire.clicked.connect(lambda: self.send_cli_command("acquire"))
 
         left_btn_layout.addWidget(self.btn_run_cont)
@@ -470,21 +488,27 @@ class MainWindow(QMainWindow):
         # Add to the top of the right_layout
         right_layout.addLayout(top_button_layout)
 
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        right_layout.addWidget(self.progress_bar)
+
         # Controls and state side-by-side
         ctrl_state_layout = QHBoxLayout()
 
         # Instrument Control
         instrument_group = QGroupBox("Instrument Control")
         ig_layout = QHBoxLayout()
-        btn_set_home = QPushButton("Set Home")
-        btn_set_home.clicked.connect(lambda: self.send_cli_command('stagehome'))
-        btn_set_start = QPushButton("Set Start")
-        btn_set_start.clicked.connect(lambda: self.send_cli_command('setstart'))
-        btn_set_stop = QPushButton("Set Stop")
-        btn_set_stop.clicked.connect(lambda: self.send_cli_command('setstop'))
-        ig_layout.addWidget(btn_set_home)
-        ig_layout.addWidget(btn_set_start)
-        ig_layout.addWidget(btn_set_stop)
+        self.btn_set_home = QPushButton("Set Home")
+        self.btn_set_home.clicked.connect(lambda: self.send_cli_command('stagehome'))
+        self.btn_set_start = QPushButton("Set Start")
+        self.btn_set_start.clicked.connect(lambda: self.send_cli_command('setstart'))
+        self.btn_set_stop = QPushButton("Set Stop")
+        self.btn_set_stop.clicked.connect(lambda: self.send_cli_command('setstop'))
+        ig_layout.addWidget(self.btn_set_home)
+        ig_layout.addWidget(self.btn_set_start)
+        ig_layout.addWidget(self.btn_set_stop)
         instrument_group.setLayout(ig_layout)
 
         ctrl_state_layout.addWidget(instrument_group)
@@ -578,11 +602,18 @@ class MainWindow(QMainWindow):
             self.btn_stop,
             self.btn_acquire,
             self.btn_run_scan,
-            self.btn_cancel_scan,
+            self.btn_mode_toggle,
+            self.btn_set_home,
+            self.btn_set_start,
+            self.btn_set_stop,
+            # self.btn_cancel_scan,
         ]
 
         # initially disable scan cancel
         self.btn_cancel_scan.setEnabled(False)
+
+    def update_progress_bar(self, value: int):
+        self.progress_bar.setValue(value)
 
     def get_estimated_time(self):
         scan_duration = self.acq_ctrl.update_scan_estimate()
