@@ -8,9 +8,10 @@ class QtLogHandler(logging.Handler, QObject):
     """
     logMessage = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, parent=None):
+        QObject.__init__(self, parent)
         logging.Handler.__init__(self)
-        QObject.__init__(self)
+
 
     def emit(self, record):
         msg = self.format(record)

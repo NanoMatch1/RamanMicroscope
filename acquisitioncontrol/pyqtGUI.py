@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
     QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject
 
 
 from acquisitioncontrol.acqcontrol import AcquisitionControl
@@ -20,20 +20,41 @@ import logging
 
 from logging_utils import QtLogHandler
 
-# Global exception hook to catch unhandled exceptions in the GUI
-def exception_hook(exc_type, exc_value, exc_tb):
-    """
-    Catch unhandled exceptions and write the full traceback to stderr.
-    """
-    tb_text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    # Write to stderr, which is redirected to the GUI console
-    try:
-        sys.stderr.write(tb_text)
-    except Exception:
-        # Fallback to default handler if console not available
-        sys.__excepthook__(exc_type, exc_value, exc_tb)
 
-# Install the exception hook
+def run_in_thread_and_refresh(func):
+    """
+    Decorator that runs `func(self, *args, **kwargs)` in a daemon
+    thread and, when it finishes, schedules self.refresh_ui() on
+    the Qt main loop.
+    """
+    def wrapper(self, *args, **kwargs):
+        def target():
+            try:
+                func(self, *args, **kwargs)
+            finally:
+                pass
+                # Schedule refresh_ui() back on the GUI thread
+                # QMetaObject.invokeMethod(self,
+                #                          "refresh_ui",
+                #                          Qt.QueuedConnection)
+        threading.Thread(target=target, daemon=True).start()
+    return wrapper
+
+
+# Global exception hook to catch unhandled exceptions in the GUI
+# def exception_hook(exc_type, exc_value, exc_tb):
+#     """
+#     Catch unhandled exceptions and write the full traceback to stderr.
+#     """
+#     tb_text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+#     # Write to stderr, which is redirected to the GUI console
+#     try:
+#         sys.stderr.write(tb_text)
+#     except Exception:
+#         # Fallback to default handler if console not available
+#         sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+# # Install the exception hook
 # sys.excepthook = exception_hook
 
 
@@ -96,17 +117,24 @@ class MainWindow(QMainWindow):
 
                 # Create a new QtLogHandler specific to this GUI
 
-        self.qt_handler = QtLogHandler()
+        # 1) instantiate a fresh handler, make MainWindow its parent
+        self.qt_handler = QtLogHandler(parent=self)
+
+        # 2) format it & hook it up
         self.qt_handler.setFormatter(logging.Formatter('%(message)s'))
         self.qt_handler.logMessage.connect(self.console.write)
-        # Optionally, attach to the logger here:
-        self.logger = self.interface.logger.getChild(self.__class__.__name__)
-        self.logger.addHandler(self.qt_handler)
-        self.logger.setLevel(logging.DEBUG) # set the log level to DEBUG
 
+        # 3) attach to the central logger
+        central = self.interface.logger  # your 'instrument' logger
+        central.addHandler(self.qt_handler)
 
+        self.logger = self.interface.logger
+
+    # def _append_log(self, txt: str):
+    #     self.console.append(txt)
 
     # Helper to send commands to CLI interface
+    @run_in_thread_and_refresh
     def send_cli_command(self, cmd):
         self.logger.cmd(f"{cmd}")
         result = self.interface.process_gui_command(cmd)

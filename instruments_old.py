@@ -734,14 +734,14 @@ class Microscope(Instrument):
                 instrument_state = json.load(f)
             motor_positions = instrument_state.get('motor_dict', {})
             stage_positions = instrument_state.get('stage_positions', {})
-            print('Instrument state loaded from file')
+            self.micro_log.info('Instrument state loaded from file')
             self.write_motor_positions(motor_dict=motor_positions)
             self.stage_positions_microns = stage_positions
             
             self.get_all_current_wavelengths()
             self.detect_microscope_mode()
         else:
-            print('Instrument state file not found. Saving current state.')
+            self.micro_log.info('Instrument state file not found. Saving current state.')
             self.save_instrument_state()
             # raise FileNotFoundError(f"Instrument state file not found at {save_state_path}")
     
@@ -749,7 +749,7 @@ class Microscope(Instrument):
         if os.path.exists(self.config_path):
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
-            print('Config loaded from file')
+            self.micro_log.info('Config loaded from file')
             return config
         else:
             raise FileNotFoundError(f"Config file not found at {self.config_path}")
@@ -766,7 +766,7 @@ class Microscope(Instrument):
         else:
             raise ValueError(f"Unknown mode motor position: {mode_steps}. Please check the beam splitter assembly positions.")
 
-        print("Microscope mode detected: {}".format(self.microscope_mode))
+        self.micro_log.info("Microscope mode detected: {}".format(self.microscope_mode))
         return self.microscope_mode
         
     
@@ -796,29 +796,27 @@ class Microscope(Instrument):
     def raman_mode(self):
         '''Set the acquisition mode to Raman mode.'''
         if self.microscope_mode == 'ramanmode':
-            # print("Microscope already in Raman mode")
             response = input("Microscope already in Raman mode. Do you want to continue? (y/n)")
             if response.lower() != 'y':
-                print("aborting mode change, staying in raman mode")
+                self.micro_log.info("aborting mode change, staying in raman mode")
                 return
             
         self.motion_control.move_motors({'mode':-self.mode_steps})
         self.microscope_mode = 'ramanmode'
-        print("Microscope set to Raman mode")
+        self.micro_log.info("Microscope set to Raman mode")
     
     @ui_callable
     def image_mode(self):
         '''Set the acquisition mode to image mode.'''
         if self.microscope_mode == 'imagemode':
-            # print("Microscope already in Image mode")
             response = input("Microscope already in Image mode. Do you want to continue? (y/n)")
             if response.lower() != 'y':
-                print("aborting mode change, staying in image mode")
+                self.micro_log.info("aborting mode change, staying in image mode")
                 return
 
         self.motion_control.move_motors({'mode':self.mode_steps})
         self.microscope_mode = 'imagemode'
-        print("Microscope set to Image mode")
+        self.micro_log.info("Microscope set to Image mode")
 
 
     @ui_callable
@@ -830,7 +828,7 @@ class Microscope(Instrument):
         home_positions = {series_name: []}
         for index in range(cycles):
             response = self.home_motor(label)
-            print(f"Homing motor {label}: {response}")
+            self.micro_log.info(f"Homing motor {label}: {response}")
             home_positions[series_name].append(response)
             time.sleep(1)
         
@@ -853,7 +851,7 @@ class Microscope(Instrument):
 
         response = self.controller.send_command(f"h{motor_id}")
         response = response[0]
-        print(f"Homing response: {response}")
+        self.micro_log.info(f"Homing response: {response}")
         if "at position" in response:
             position = int(response.split(' ')[-1].strip())
         else:
@@ -862,7 +860,7 @@ class Microscope(Instrument):
         # Save to config
         self.config.setdefault("home_positions", {})
         self.config["home_positions"][motor_id] = position
-        print(f"Saved home position {position} for {motor_id}")
+        self.micro_log.info(f"Saved home position {position} for {motor_id}")
 
         self.write_config()
         time.sleep(0.01)
@@ -880,9 +878,9 @@ class Microscope(Instrument):
 
         # for motor_label in self.motor_map.keys():
         #     response = self.motion_control.home_motor(motor_label)
-        #     print(f"Homing motor {motor_label}: {response}")
+        #     self.micro_log.info(f"Homing motor {motor_label}: {response}")
         # return response
-        print("Home all motors not implemented yet")
+        self.micro_log.info("Home all motors not implemented yet")
     
         return "Home all motors not implemented yet"
 
@@ -896,7 +894,7 @@ class Microscope(Instrument):
         """
         for motor_label in self.action_groups['laser_wavelength'].keys():
             response = self.home_motor(motor_label)
-            print(f"Homing motor {motor_label}: {response}")
+            self.micro_log.info(f"Homing motor {motor_label}: {response}")
         
         # if move_to_calibrated_position:
         #     self.go_to_laser_wavelength(800)
@@ -912,7 +910,7 @@ class Microscope(Instrument):
         """
         for motor_label in self.action_groups['monochromator_wavelength'].keys():
             response = self.motion_control.home_motor(motor_label)
-            print(f"Homing motor {motor_label}: {response}")
+            self.micro_log.info(f"Homing motor {motor_label}: {response}")
 
         # if move_to_calibrated_position:
         #     self.go_to_laser_wavelength(800)
@@ -928,7 +926,7 @@ class Microscope(Instrument):
         """
         for motor_label in self.action_groups['grating_wavelength'].keys():
             response = self.motion_control.home_motor(motor_label)
-            print(f"Homing motor {motor_label}: {response}")
+            self.micro_log.info(f"Homing motor {motor_label}: {response}")
 
         # if move_to_calibrated_position:
         #     self.go_to_laser_wavelength(800)
@@ -957,7 +955,7 @@ class Microscope(Instrument):
     # def connect_to_triax(self):
     #     '''Connects to the spectrometer after already running.'''
     #     self.interface.connect_to_triax()
-    #     print('Connected to TRIAX spectrometer')
+    #     self.micro_log.info('Connected to TRIAX spectrometer')
     #     self.generate_wavelength_axis()
 
     # @ui_callable
@@ -984,7 +982,7 @@ class Microscope(Instrument):
         motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items() if motor in self.motor_map}
             
         self.controller.write_motor_positions(motor_id_dict)
-        print('Motor positions written to file')
+        self.micro_log.info('Motor positions written to file')
 
     
     @ui_callable
@@ -1018,7 +1016,7 @@ class Microscope(Instrument):
             
         # with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.txt'), 'a') as f:
         #     f.write('{}:{}:{}:{}\n'.format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
-        # print("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
+        # self.micro_log.info("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
         # return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"
 
 
@@ -1078,10 +1076,10 @@ class Microscope(Instrument):
         
 
 
-        print('-'*20)
+        self.micro_log.info('-'*20)
         for key, value in report.items():
-            print('{}: {}'.format(key, value))
-        print('-'*20)
+            self.micro_log.info('{}: {}'.format(key, value))
+        self.micro_log.info('-'*20)
 
     #? Stage control commands
 
@@ -1094,9 +1092,9 @@ class Microscope(Instrument):
         if hasattr(self, 'scan_thread'):
             self.cancel_event.set()
             self.scan_thread.join()
-            print("Scan cancelled")
+            self.micro_log.info("Scan cancelled")
         else:
-            print("No scan to cancel")
+            self.micro_log.info("No scan to cancel")
  
 
 
@@ -2182,36 +2180,36 @@ class Microscope(Instrument):
         self.detect_microscope_mode()
 
 
-        print("---Steps---")
+        self.micro_log.info("---Steps---")
         for motor, position in self.laser_steps.items():
-            print(f'{motor}: {position} steps')
+            self.micro_log.info(f'{motor}: {position} steps')
         for motor, position in self.grating_steps.items():
-            print(f'{motor}: {position} steps')
+            self.micro_log.info(f'{motor}: {position} steps')
 
-        print('---Wavelengths---')
+        self.micro_log.info('---Wavelengths---')
         for motor, wavelength in self.laser_wavelengths.items():
             if wavelength is None:
-                print(f'{motor}: None')
+                self.micro_log.info(f'{motor}: None')
                 continue
-            print(f'{motor}: {round(wavelength, 2)} nm')
+            self.micro_log.info(f'{motor}: {round(wavelength, 2)} nm')
         for motor, wavelength in self.grating_wavelengths.items():
             if wavelength is None:
-                print(f'{motor}: None')
+                self.micro_log.info(f'{motor}: None')
                 continue
-            print(f'{motor}: {round(wavelength, 2)} nm')
+            self.micro_log.info(f'{motor}: {round(wavelength, 2)} nm')
 
-        print('---Spectrometer---')
-        print(f'Spectrometer position: {self.spectrometer_position} steps')
-        print(f'Spectrometer wavelength: {self.spectrometer_wavelength} nm')
+        self.micro_log.info('---Spectrometer---')
+        self.micro_log.info(f'Spectrometer position: {self.spectrometer_position} steps')
+        self.micro_log.info(f'Spectrometer wavelength: {self.spectrometer_wavelength} nm')
 
         # stage
-        print('---Stage---')
+        self.micro_log.info('---Stage---')
         
         for motor, position in stage_steps.items():
-            print(f'{motor}: {position} steps')
+            self.micro_log.info(f'{motor}: {position} steps')
         for motor, position in self.stage_positions_microns.items():
-            print(f'{motor}: {position} microns')
-        print("Mode: ", self.microscope_mode)
+            self.micro_log.info(f'{motor}: {position} microns')
+        self.micro_log.info(f"Mode: {self.microscope_mode}")
 
         return 
     

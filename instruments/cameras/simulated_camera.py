@@ -5,9 +5,9 @@ import traceback
 
 
 # everywhere you have `print("…")`, replace with:
-# logger.info("Acquiring frame %d/%d…", i+1, n_frames)
+# self.logger.info("Acquiring frame %d/%d…", i+1, n_frames)
 # or for errors:
-# logger.error("Failed to acquire frame.")
+# self.logger.error("Failed to acquire frame.")
 
 class SimulatedCameraInterface():
 
@@ -15,7 +15,9 @@ class SimulatedCameraInterface():
     
     def __init__(self, interface, **kwargs):
         self.interface = interface
+        self.logger = interface.logger.getChild('simulated_camera')
         # acquisition parameters
+
         self.acqtime = 0.5 # seconds
         self.roi = (0, 1220, 2048, 148)
         self.is_running = False
@@ -30,15 +32,15 @@ class SimulatedCameraInterface():
 
     def initialise(self):
         """Initialize the simulated camera"""
-        logger.info("Simulated camera initialized")
+        self.logger.info("Simulated camera initialized")
 
     def set_exposure_time(self, exposure_time):
         """Set the camera's exposure time"""
         try:
             self.acqtime = float(exposure_time)
-            logger.info(f"Set exposure time to {self.acqtime} seconds")
+            self.logger.info(f"Set exposure time to {self.acqtime} seconds")
         except ValueError:
-            logger.error("Invalid exposure time value")
+            self.logger.error("Invalid exposure time value")
 
     def check_camera_temperature(self):
         """Check the camera temperature"""
@@ -48,15 +50,15 @@ class SimulatedCameraInterface():
 
     def set_roi(self, roi):
         """Set the camera's region of interest (ROI)"""
-        logger.info(f"Setting ROI to {roi}")
+        self.logger.info(f"Setting ROI to {roi}")
         try:
             x1, y1, x2, y2 = roi
             if x1 < 0 or y1 < 0 or x2 > 2048 or y2 > 148:
                 raise ValueError("ROI coordinates out of bounds")
             self.roi = roi
-            logger.info(f"ROI set to {self.roi}")
+            self.logger.info(f"ROI set to {self.roi}")
         except ValueError:
-            logger.error("Invalid ROI format. Expected (x1, y1, x2, y2)")
+            self.logger.error("Invalid ROI format. Expected (x1, y1, x2, y2)")
 
     def _generate_simulated_image(self, width=2048, height=148):
         """
@@ -101,18 +103,18 @@ class SimulatedCameraInterface():
     def grab_frame(self, timeout=100000):        
         image_data = self._generate_simulated_image()
         # Simulate acquisition time
-        logger.info("Simulated camera acquiring frame...")
+        self.logger.info("Simulated camera acquiring frame...")
         time.sleep(self.acqtime)
         return image_data
 
     def open_stream(self):
         """Open the camera stream (simulated)"""
-        # logger.info("Simulated camera stream opened")
+        # self.logger.info("Simulated camera stream opened")
         pass
     
     def close_stream(self):
         """Close the camera stream (simulated)"""
-        # logger.info("Simulated camera stream closed")
+        # self.logger.info("Simulated camera stream closed")
         pass
 
     def start_continuous_acquisition(self):
@@ -121,7 +123,7 @@ class SimulatedCameraInterface():
         Each frame is saved as .npy into self.transient_dir.
         """
         if self.is_running:
-            logger.info("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
+            self.logger.info("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
             return
         
         self.open_stream()
@@ -134,11 +136,11 @@ class SimulatedCameraInterface():
             while not self.stop_flag.is_set():
                 try:
                     for index in range(n_frames):
-                        logger.info(f"Acquiring frame {index+1}/{n_frames}...")
+                        self.logger.info(f"Acquiring frame {index+1}/{n_frames}...")
 
                         new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
-                            logger.error("Failed to acquire frame.")
+                            self.logger.error("Failed to acquire frame.")
                             break
 
                         if index == 0:
@@ -152,15 +154,15 @@ class SimulatedCameraInterface():
                         time.sleep(0.01)
 
                 except Exception as e:
-                    logger.error(f"Acquisition error: {e}")
-                    logger.error(traceback.format_exc())
+                    self.logger.error(f"Acquisition error: {e}")
+                    self.logger.error(traceback.format_exc())
                     break
 
         acq_thread = threading.Thread(target=continuous_task, daemon=True)
         acq_thread.start()
 
         self.is_running = True
-        logger.info("Started continuous acquisition.")
+        self.logger.info("Started continuous acquisition.")
 
 
     def stop_continuous_acquisition(self):
@@ -170,5 +172,5 @@ class SimulatedCameraInterface():
         self.stop_flag.set()
         self.is_running = False
         self.close_stream()
-        logger.info("Continuous acquisition stopped.")
+        self.logger.info("Continuous acquisition stopped.")
 
