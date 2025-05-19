@@ -620,8 +620,7 @@ class Microscope(Instrument):
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
             'closecamera': self.close_camera_connection,
-            'allocate': self.allocate_camera_buffer,
-            'deallocate': self.deallocate_camera_buffer,
+
             # laser commands
             'low': self.low_power,
             'high': self.high_power,
@@ -1479,6 +1478,22 @@ class Microscope(Instrument):
         '''Takes the current laser wavelength and calculates the absolute wavenumbers.'''
         wavelength_sample = next(iter(self.laser_wavelengths.values()))
         return 10_000_000/wavelength_sample
+
+    @property
+    def report_laser_wavelength(self):
+        return round(self.laser_wavelengths.get('l1', 'KeyError'), 2)
+
+    @property
+    def report_grating_wavelength(self):
+        return round(self.grating_wavelengths.get('g1', 'KeyError'), 2)
+
+    @property
+    def report_monochromator_wavelength(self):
+        return round(self.grating_wavelengths.get('g3', 'KeyError'), 2)
+
+    @property
+    def report_spectrometer_wavelength(self):
+        return round(self.spectrometer_wavelength.get('triax', 'KeyError'), 2)
     
     @property
     def current_monochromator_wavenumber(self):
@@ -1588,15 +1603,6 @@ class Microscope(Instrument):
     #                         image=image_data,
     #                         wavelength=self.wavelength_axis,
     #                         metadata=json.dumps(self.interface.acq_ctrl.metadata))
-    @ui_callable
-    def allocate_camera_buffer(self):
-        '''Allocates the camera buffer for the acquisition.'''
-        self.camera.allocate_buffer_and_start()
-    
-    @ui_callable
-    def deallocate_camera_buffer(self):
-        '''Deallocates the camera buffer and stops the acquisition.'''
-        self.camera.deallocate_buffer_and_stop()
 
 
     def prepare_dataset_acquisition(self):
@@ -1651,6 +1657,7 @@ class Microscope(Instrument):
         wavelength (float): Target wavelength in nm
         shift (bool): If True, maintains the current Raman shift. If False, sets monochromator to same wavelength.
         """
+        self.logger.info(f"Moving all components to wavelength: {wavelength} nm")
         # First move the laser
         self.go_to_laser_wavelength(wavelength)
         self.go_to_grating_wavelength(wavelength) # move all grating motors
@@ -1663,8 +1670,7 @@ class Microscope(Instrument):
         # Finally, move the spectrometer
         self.go_to_spectrometer_wavelength(wavelength)
         
-        print("Laser set at {} nm".format(self.laser_wavelengths['l1']))
-        print(f"All components set to wavelength: {wavelength} nm")
+        self.logger.info(f"All components set to wavelength: {wavelength} nm")
         return True
     
 

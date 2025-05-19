@@ -142,3 +142,34 @@ AttributeError: 'MainWindow' object has no attribute 'scan_complete_signal'
                                         ^^^^^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'MainWindow' object has no attribute 'update_progress_bar'
 
+2025-05-19 21:18:19,167 interface [ERROR] An error occurred: unsupported format string passed to dict.__format__
+2025-05-19 21:18:19,169 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 154, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 195, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 123, in __init__
+    self.refresh_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 413, in refresh_ui
+    self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to dict.__format__
+
+2025-05-19 21:20:48,066 interface [ERROR] An error occurred: type dict doesn't define __round__ method
+2025-05-19 21:20:48,066 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 154, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 195, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 123, in __init__
+    self.refresh_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 413, in refresh_ui
+    self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\instruments_old.py", line 1497, in report_spectrometer_wavelength
+    return round(self.spectrometer_wavelength, 2)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: type dict doesn't define __round__ method
+
