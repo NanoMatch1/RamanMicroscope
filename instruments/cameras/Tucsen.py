@@ -81,7 +81,7 @@ class TucsenCamera(Camera):
         self.logger = interface.logger.getChild('TucsenCamera')
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         # acquisition parameters
-        self.acqtime = 500 # milliseconds
+        self.acqtime = 0.5 # seconds
         self.full_roi = (0, 0, 2048, 2048)
         self.roi = (0, 1220, 2048, 148)
 
