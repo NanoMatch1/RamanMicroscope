@@ -1,7 +1,7 @@
 {
   "general_parameters": {
     "acquisition_time": 1.0,
-    "filename": "tests",
+    "filename": "scan_test_19",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 3
@@ -17,7 +17,7 @@
       "z": 0
     },
     "end_position": {
-      "x": 100.0,
+      "x": 10.0,
       "y": 0.0,
       "z": 0
     },

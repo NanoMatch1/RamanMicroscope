@@ -121,7 +121,6 @@ class CameraScanner:
         self.timeout = timeout
 
     def _acquire_once(self):
-        import matplotlib.pyplot as plt
         """acquires a single frame and saves it."""
         self.camera.camera_lock.acquire()
         try:
@@ -247,6 +246,7 @@ class AcquisitionControl:
 
     def __init__(self, interface):
         self.interface = interface
+        self.logger = interface.logger.getChild('acquisition_control')
 
         self.camera = interface.microscope.camera
         self.acquisitionControlDir = interface.microscope.acquisitionControlDir
@@ -647,34 +647,28 @@ class AcquisitionControl:
         return self.scan_sequence
     
     def _acquire_one_frame(self):
-        import matplotlib.pyplot as plt
         '''Acquires a single frame and returns it without saving'''
         camera_scanner = CameraScanner(self)
         image_data = camera_scanner._acquire_once()
         if image_data is None:
             print("Error: image data is None. Aborting acquisition.")
             return
-        
-        plt.imshow(image_data)
-        plt.show()
+
         return image_data
 
     def acquire_once(self, filename=None):
-        import matplotlib.pyplot as plt
         '''Acquires a single frame and saves it.'''
         if filename is not None:
             self.general_parameters['filename'] = filename
         self.prepare_acquisition_params()  # ensures acqtime is set correctly at camera level
+        self.logger.info("Acquiring single frame...")
         image_data = self._acquire_one_frame()
-
-        plt.imshow(image_data, cmap='gray')
-        plt.show()
 
         self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=True)
         index = len([file for file in os.listdir(self.interface.microscope.dataDir) if self.general_parameters['filename'] in file]) # autoincrement the scan index based on the number of files in the directory matching the filename
         self.save_spectrum(image_data, scan_index=index)
 
-        print("Acquisition complete.")  
+        self.logger.info("Acquisition complete.")  
 
 
     def acquire_scan(self, cancel_event, status_callback, progress_callback, timeout=100000):
