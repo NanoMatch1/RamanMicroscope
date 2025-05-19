@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
     QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer, pyqtSlot
 from PyQt5.QtWidgets import QProgressBar
 
 
@@ -35,10 +35,11 @@ def run_in_thread_and_refresh(func):
             finally:
                 pass
                 # Schedule refresh_ui() back on the GUI thread
-                # QMetaObject.invokeMethod(self,
-                #                          "refresh_ui",
-                #                          Qt.QueuedConnection)
+                QMetaObject.invokeMethod(self,
+                                         "refresh_ui",
+                                         Qt.QueuedConnection)
         threading.Thread(target=target, daemon=True).start()
+
     return wrapper
 
 
@@ -141,14 +142,12 @@ class MainWindow(QMainWindow):
     #     self.console.append(txt)
 
     # Helper to send commands to CLI interface
-    # @run_in_thread_and_refresh
+    @run_in_thread_and_refresh
     def send_cli_command(self, cmd):
         self.logger.cmd(f"{cmd}")
         result = self.interface.process_gui_command(cmd)
         if result is not None:
             self.logger.info(result)
-        
-        self.refresh_ui()
 
     def confirm_scan(self, scan_sequence):
         '''Create a popup window to confirm the scan sequence.'''
@@ -379,7 +378,7 @@ class MainWindow(QMainWindow):
         self.acq_ctrl.save_config()
         self.refresh_ui()
 
-
+    @pyqtSlot()
     def refresh_ui(self):
         # Update all parameter fields
         for fullkey, (line_edit, _) in self.param_entries.items():
@@ -398,13 +397,19 @@ class MainWindow(QMainWindow):
         self.lbl_mode.setText(self.acq_ctrl.scan_mode.capitalize())
         self.lbl_start.setText(self.acq_ctrl.start_position())
         self.lbl_stop.setText(self.acq_ctrl.stop_position())
-        self.lbl_est.setText(f"Estimated runtime: {scan_time['duration']:.2f} {scan_time['units']}")
+        self.lbl_est.setText(f"{scan_time['duration']:.2f} {scan_time['units']}")
 
         # Stage position update
         stage_pos = self.acq_ctrl.current_stage_coordinates
         self.lbl_stage_x.setText(f"{stage_pos[0]:.2f}")
         self.lbl_stage_y.setText(f"{stage_pos[1]:.2f}")
         self.lbl_stage_z.setText(f"{stage_pos[2]:.2f}")
+
+        # instrument state update
+        self.lbl_laser.setText(f"{self.interface.microscope.report_laser_wavelength:.2f} nm")
+        self.lbl_grating.setText(f"{self.interface.microscope.report_grating_wavelength:.2f} nm")
+        self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
+        self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
 
         # self.update_instrument_state()
         # self.set_start()   # or otherwise update start/stop labels
@@ -543,7 +548,7 @@ class MainWindow(QMainWindow):
         pl.addRow("Mode:", self.lbl_mode)
         pl.addRow("Start Pos:", self.lbl_start)
         pl.addRow("Stop Pos", self.lbl_stop)
-        pl.addRow("Estimated Time:", self.lbl_est)
+        pl.addRow("Estimated Runtime:", self.lbl_est)
         scan_pos_group.setLayout(pl)
         pos_group_layout.addWidget(scan_pos_group)
 
