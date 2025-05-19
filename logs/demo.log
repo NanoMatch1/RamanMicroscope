@@ -1,0 +1,9 @@
+2025-05-19 12:28:11,685 demo_logger [INFO] INFO: Standard informational message.
+2025-05-19 12:28:11,686 demo_logger [WARNING] WARNING: Something to watch out for.
+2025-05-19 12:28:11,688 demo_logger [ERROR] ERROR: A non-fatal error occurred.
+2025-05-19 12:28:11,689 demo_logger [ERROR] EXCEPTION: Caught division by zero!
+Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\logging_test.py", line 36, in <module>
+    1 / 0
+    ~~^~~
+ZeroDivisionError: division by zero

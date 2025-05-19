@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         self.cancel_event = threading.Event()
 
         self.init_ui()
+        self.refresh_ui()
 
     # def confirm_scan(self, status_callback, cancel_event):
     #         # Show confirmation dialog with scan parameters
@@ -368,11 +369,12 @@ class MainWindow(QMainWindow):
 
 
         # Update labels for mode, positions, and estimate
+        scan_time = self.acq_ctrl.update_scan_estimate()
         self.mode_toggle_btn.setText(f"Mode: {self.acq_ctrl.scan_mode.capitalize()}")
         self.lbl_mode.setText(self.acq_ctrl.scan_mode.capitalize())
         self.lbl_start.setText(self.acq_ctrl.start_position())
         self.lbl_stop.setText(self.acq_ctrl.stop_position())
-        self.lbl_est.setText(f"Estimated runtime: {self.acq_ctrl.estimate_scan_duration():.2f}s")
+        self.lbl_est.setText(f"Estimated runtime: {scan_time['duration']:.2f} {scan_time['units']}")
 
         # Stage position update
         stage_pos = self.acq_ctrl.current_stage_coordinates
@@ -427,7 +429,8 @@ class MainWindow(QMainWindow):
         left_btn_layout = QVBoxLayout()
         self.btn_run_cont = QPushButton("Run Cont.")
         self.btn_run_cont.setStyleSheet("background-color: green; color: white;")
-        self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
+        # self.btn_run_cont.clicked.connect(lambda: self.send_cli_command("run"))
+        self.btn_run_cont.clicked.connect(lambda: self.interface.microscope.start_continuous_acquisition())
 
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setStyleSheet("background-color: red; color: white;")
@@ -517,9 +520,9 @@ class MainWindow(QMainWindow):
         # Stage pos
         stage_pos_group = QGroupBox("Stage Position")
         pl2 = QFormLayout()
-        self.lbl_stage_x = QLabel(str(self.acq_ctrl.microscope.stage_positions_microns['x']))
-        self.lbl_stage_y = QLabel(str(self.acq_ctrl.microscope.stage_positions_microns['y']))
-        self.lbl_stage_z = QLabel(str(self.acq_ctrl.microscope.stage_positions_microns['z']))
+        self.lbl_stage_x = QLabel(str(self.interface.microscope.stage_positions_microns['x']))
+        self.lbl_stage_y = QLabel(str(self.interface.microscope.stage_positions_microns['y']))
+        self.lbl_stage_z = QLabel(str(self.interface.microscope.stage_positions_microns['z']))
         pl2.addRow("X:", self.lbl_stage_x)
         pl2.addRow("Y:", self.lbl_stage_y)
         pl2.addRow("Z:", self.lbl_stage_z)
@@ -596,10 +599,10 @@ if __name__ == "__main__":
     from acquisitioncontrol.simulation import DummyMicroscope, DummyCLI
     print("### Running Simulated GUI ###")
     sys.path.insert(0, os.path.dirname(__file__))
-    microscope = DummyMicroscope()
+    interface = DummyCLI()
     app = QApplication(sys.argv)
-    acq_ctrl = AcquisitionControl(microscope=microscope)
-    microscope.acq_ctrl = acq_ctrl
-    main_window = MainWindow(acq_ctrl, DummyCLI(microscope))
+    acq_ctrl = AcquisitionControl(interface)
+    interface.acq_ctrl = acq_ctrl
+    main_window = MainWindow(acq_ctrl, interface)
     main_window.show()
     sys.exit(app.exec_())

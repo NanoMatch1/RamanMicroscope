@@ -499,6 +499,8 @@ class Microscope(Instrument):
                  spectrometer=None, simulate=False):
         super().__init__()
         self.interface = interface
+
+
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
         self.autocalibrationDir = interface.autocalibrationDir
@@ -532,7 +534,6 @@ class Microscope(Instrument):
             self.motor_map.update(group)
 
         # acquisition parameters
-        self.acq_ctrl = AcquisitionControl(self)
 
         # Motion control
         self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
@@ -646,25 +647,25 @@ class Microscope(Instrument):
     
     @property
     def filename(self):
-        return self.acq_ctrl.filename
+        return self.interface.acq_ctrl.filename
 
 
     @ui_callable
     def set_start_pos(self):
-        self.acq_ctrl.motion_parameters['start_position'] = self.stage_positions_microns.copy()
-        print("Scan Start position set to {}".format(self.acq_ctrl.motion_parameters['start_position']))
-        self.acq_ctrl.save_config()
+        self.interface.acq_ctrl.motion_parameters['start_position'] = self.stage_positions_microns.copy()
+        print("Scan Start position set to {}".format(self.interface.acq_ctrl.motion_parameters['start_position']))
+        self.interface.acq_ctrl.save_config()
 
     @ui_callable
     def set_end_pos(self):
-        self.acq_ctrl.motion_parameters['end_position'] = self.stage_positions_microns.copy()
-        print("Scan End position set to {}".format(self.acq_ctrl.motion_parameters['end_position']))
-        self.acq_ctrl.save_config()
+        self.interface.acq_ctrl.motion_parameters['end_position'] = self.stage_positions_microns.copy()
+        print("Scan End position set to {}".format(self.interface.acq_ctrl.motion_parameters['end_position']))
+        self.interface.acq_ctrl.save_config()
 
     @ui_callable
     def toggle_scan_mode(self):
         '''Toggle between linescan and map in acquisition control'''
-        self.acq_ctrl.toggle_scan_mode()
+        self.interface.acq_ctrl.toggle_scan_mode()
 
 
     # TODO: use setter and getter for stage_pos_microns and update_stage
@@ -685,7 +686,7 @@ class Microscope(Instrument):
     def open_acquisition_gui(self):
         def run_gui():
             root = tk.Tk()
-            params = self.acq_ctrl
+            params = self.interface.acq_ctrl
             app = AcquisitionGUI(root, params)
             root.mainloop()
 
@@ -699,7 +700,7 @@ class Microscope(Instrument):
         '''Executes a scan based on the heirarchical acquisition scan built by the AcquisitionControl class.'''
         self.cancel_event = threading.Event()
 
-        self.scan_thread = threading.Thread(target=self.acq_ctrl.acquire_scan, args=(self, self.cancel_event))
+        self.scan_thread = threading.Thread(target=self.interface.acq_ctrl.acquire_scan, args=(self, self.cancel_event))
         self.scan_thread.start()
         return self.scan_thread
 
@@ -1167,7 +1168,7 @@ class Microscope(Instrument):
             else:
                 raise ValueError(f"Invalid stage position: {key}")
             
-        self.acq_ctrl.update_stage_positions()
+        self.interface.acq_ctrl.update_stage_positions()
         
     # def move_stage(self, motor_steps):
     #     '''Moves the microcsope sample stage in steps in the X, Y and Z directions'''
@@ -1183,7 +1184,7 @@ class Microscope(Instrument):
     #         self.move_z(motion_dict['Z'])
     #     self.update_stage_positions(motion_dict)
 
-    #     print('Stage moved to {}'.format(self.acq_ctrl.current_stage_coordinates))
+    #     print('Stage moved to {}'.format(self.interface.acq_ctrl.current_stage_coordinates))
     
     @ui_callable
     def move_x(self, travel_distance):
@@ -1235,7 +1236,7 @@ class Microscope(Instrument):
 
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
-        print('Stage home ({}) set to current position'.format(self.acq_ctrl.current_stage_coordinates))
+        print('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
 
     @ui_callable
     def enter_focus_mode(self):
@@ -1509,24 +1510,24 @@ class Microscope(Instrument):
             print("Acquisition time must be positive.")
             return
         
-        self.acq_ctrl.general_parameters['acquisition_time'] = value
+        self.interface.acq_ctrl.general_parameters['acquisition_time'] = value
         self.camera.set_exposure_time(str(value))
 
     @ui_callable
     def set_filename(self, filename):
-        self.acq_ctrl.general_parameters['filename'] = filename
+        self.interface.acq_ctrl.general_parameters['filename'] = filename
         print("Filename set to: ", filename)
 
     @ui_callable
     def set_laser_power(self, value):
         self.interface.laser.set_power(value)
-        self.acq_ctrl.general_parameters['laser_power'] = value
+        self.interface.acq_ctrl.general_parameters['laser_power'] = value
 
     @ui_callable
     def set_raman_shift(self, value):
         self.current_shift = value
         self.go_to_wavenumber(value)
-        self.acq_ctrl.general_parameters['raman_shift'] = value
+        self.interface.acq_ctrl.general_parameters['raman_shift'] = value
 
     @ui_callable
     def set_camera_binning(self, value):
@@ -1552,12 +1553,12 @@ class Microscope(Instrument):
             print("Invalid number of frames. Must be an integer.")
             return
         
-        self.acq_ctrl.general_parameters['n_frames'] = n_frames
+        self.interface.acq_ctrl.general_parameters['n_frames'] = n_frames
         print('Number of frames set to: ', n_frames)
 
     @ui_callable
     def acquire_once(self, filename=None):
-        self.acq_ctrl.acquire_once(filename)
+        self.interface.acq_ctrl.acquire_once(filename)
         return
     
     # @ui_callable
@@ -1579,7 +1580,7 @@ class Microscope(Instrument):
     #     np.savez_compressed(out_path,
     #                         image=image_data,
     #                         wavelength=self.wavelength_axis,
-    #                         metadata=json.dumps(self.acq_ctrl.metadata))
+    #                         metadata=json.dumps(self.interface.acq_ctrl.metadata))
     @ui_callable
     def allocate_camera_buffer(self):
         '''Allocates the camera buffer for the acquisition.'''
@@ -1593,7 +1594,7 @@ class Microscope(Instrument):
 
     def prepare_dataset_acquisition(self):
         '''Prepares the dataset acquisition by setting the parameters.'''
-        self.acq_ctrl.prepare_acquisition()
+        self.interface.acq_ctrl.prepare_acquisition()
     
     def acquire_dataset(self):
         '''Prepares and executes a multidimensional dataset acquisition.'''

@@ -1,13 +1,14 @@
 {
   "general_parameters": {
-    "acquisition_time": 1000,
-    "filename": "tests2",
+    "acquisition_time": 1.0,
+    "filename": "tests",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 3
   },
-  "button_parameters": {
-    "scan_mode": "linescan"
+  "hidden_parameters": {
+    "scan_mode": "linescan",
+    "scan_index": 0
   },
   "motion_parameters": {
     "start_position": {

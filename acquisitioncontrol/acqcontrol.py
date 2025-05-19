@@ -113,13 +113,15 @@ class ScanSequenceGenerator:
 
 class CameraScanner:
 
+
     def __init__(self, acq_ctrl, timeout=100000):
         self.acq_ctrl = acq_ctrl
-        self.microscope = acq_ctrl.microscope
-        self.camera = acq_ctrl.microscope.camera
+        self.microscope = acq_ctrl.interface.microscope
+        self.camera = acq_ctrl.interface.microscope.camera
         self.timeout = timeout
 
     def _acquire_once(self):
+        import matplotlib.pyplot as plt
         """acquires a single frame and saves it."""
         self.camera.camera_lock.acquire()
         try:
@@ -136,7 +138,8 @@ class CameraScanner:
                     print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                     return None
 
-                image_data = new_frame if frame_idx == 0 else (image_data + new_frame) / 2
+                image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
+
 
             return image_data
         
@@ -242,15 +245,18 @@ class CameraScanner:
 
 class AcquisitionControl:
 
-    def __init__(self, microscope=None):
-        self.microscope = microscope
-        self.acquisitionControlDir = microscope.acquisitionControlDir
+    def __init__(self, interface):
+        self.interface = interface
+
+        self.camera = interface.microscope.camera
+        self.acquisitionControlDir = interface.microscope.acquisitionControlDir
+
 
         # define the command hierarchy for the scan here
         self.scan_command_hierarchy = [
             self.move_stage_absolute,
-            self.microscope.go_to_polarization_in,
-            self.microscope.go_to_wavelength_all,
+            self.interface.microscope.go_to_polarization_in,
+            self.interface.microscope.go_to_wavelength_all,
         ]
 
         self.general_parameters = {
@@ -337,18 +343,18 @@ class AcquisitionControl:
     
     def update_stage_positions(self):
         self.stage_positions = {
-            'x': self.microscope.stage_positions_microns['x'],
-            'y': self.microscope.stage_positions_microns['y'],
-            'z': self.microscope.stage_positions_microns['z']
+            'x': self.interface.microscope.stage_positions_microns['x'],
+            'y': self.interface.microscope.stage_positions_microns['y'],
+            'z': self.interface.microscope.stage_positions_microns['z']
         }
         self._current_parameters['sample_position'] = self.stage_positions
 
     @property
     def current_stage_coordinates(self):
         current_coords = [
-            self.microscope.stage_positions_microns['x'], 
-            self.microscope.stage_positions_microns['y'], 
-            self.microscope.stage_positions_microns['z']
+            self.interface.microscope.stage_positions_microns['x'], 
+            self.interface.microscope.stage_positions_microns['y'], 
+            self.interface.microscope.stage_positions_microns['z']
             ]
         
         self._current_parameters['sample_position'] = {
@@ -360,13 +366,13 @@ class AcquisitionControl:
         return current_coords
 
     def get_all_parameters(self):
-        detector_temp = self.microscope.get_detector_temperature()
+        detector_temp = self.interface.microscope.get_detector_temperature()
         self.set_current_parameters({'detector_temperature': detector_temp})
 
         self._current_parameters.update(self.general_parameters)
-        self._current_parameters['laser_wavelength'] = self.microscope.laser_wavelengths.get('l1', 0.0)
-        self._current_parameters['monochromator_wavelength'] = self.microscope.monochromator_wavelengths.get('g3', 0.0)
-        # self._current_parameters['polarization_in_angle'] = self.microscope.polarization_angles.get('in', 0.0)
+        self._current_parameters['laser_wavelength'] = self.interface.microscope.laser_wavelengths.get('l1', 0.0)
+        self._current_parameters['monochromator_wavelength'] = self.interface.microscope.monochromator_wavelengths.get('g3', 0.0)
+        # self._current_parameters['polarization_in_angle'] = self.interface.microscope.polarization_angles.get('in', 0.0)
 
 
         return self.all_parameters
@@ -393,7 +399,7 @@ class AcquisitionControl:
         '''Estimates the duration of the scan in seconds. This is a rough estimate based on the number of steps in the scan and the acquisition time.'''
 
         frames = self.general_parameters['n_frames']
-        acq_time = self.general_parameters['acquisition_time'] / 1000.0
+        acq_time = self.general_parameters['acquisition_time']
         return self.scan_size * acq_time * frames * 1.2
     
     def update_scan_estimate(self):
@@ -401,10 +407,10 @@ class AcquisitionControl:
             duration = self.estimate_scan_duration()
 
 
-            if duration > 600:
+            if 3600 > duration >= 600:
                 scan_time = duration / 60
                 units = 'minutes'
-            elif duration > 3600:
+            elif duration >= 3600:
                 scan_time = duration / 3600
                 units = 'hours'
             else:
@@ -615,21 +621,21 @@ class AcquisitionControl:
             'z': target_microns[2]
         }
 
-        motor_dict = self.microscope.calibration_service.microns_to_steps(micron_dict)
-        # self.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
-        self.microscope.motion_control.move_motors(motor_dict)
+        motor_dict = self.interface.microscope.calibration_service.microns_to_steps(micron_dict)
+        # self.interface.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
+        self.interface.microscope.motion_control.move_motors(motor_dict)
         print("Sent Command {}".format(motor_dict))
         print("Stage moved ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
 
-        self.microscope.motion_control
+        self.interface.microscope.motion_control
 
-        self.microscope.update_stage_positions(micron_dict)
+        self.interface.microscope.update_stage_positions(micron_dict)
         self.update_stage_positions()
 
 
     def prepare_acquisition_params(self):
-        self.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
-        self.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
+        self.interface.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
+        self.interface.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
 
 
     def build_scan_sequence(self):
@@ -641,23 +647,31 @@ class AcquisitionControl:
         return self.scan_sequence
     
     def _acquire_one_frame(self):
+        import matplotlib.pyplot as plt
         '''Acquires a single frame and returns it without saving'''
         camera_scanner = CameraScanner(self)
         image_data = camera_scanner._acquire_once()
         if image_data is None:
             print("Error: image data is None. Aborting acquisition.")
             return
+        
+        plt.imshow(image_data)
+        plt.show()
         return image_data
 
     def acquire_once(self, filename=None):
+        import matplotlib.pyplot as plt
         '''Acquires a single frame and saves it.'''
         if filename is not None:
             self.general_parameters['filename'] = filename
         self.prepare_acquisition_params()  # ensures acqtime is set correctly at camera level
         image_data = self._acquire_one_frame()
 
+        plt.imshow(image_data, cmap='gray')
+        plt.show()
+
         self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=True)
-        index = len([file for file in os.listdir(self.microscope.dataDir) if self.acq_ctrl.general_parameters['filename'] in file]) # autoincrement the scan index based on the number of files in the directory matching the filename
+        index = len([file for file in os.listdir(self.interface.microscope.dataDir) if self.general_parameters['filename'] in file]) # autoincrement the scan index based on the number of files in the directory matching the filename
         self.save_spectrum(image_data, scan_index=index)
 
         print("Acquisition complete.")  
@@ -673,7 +687,7 @@ class AcquisitionControl:
 
         if failed_steps:
             record_failed_steps = json.dumps(failed_steps)
-            status_dir = os.path.join(self.microscope.dataDir, 'status')
+            status_dir = os.path.join(self.interface.microscope.dataDir, 'status')
             if not os.path.exists(status_dir):
                 os.makedirs(status_dir)
             with open(os.path.join(status_dir, 'failed_steps.json'), 'w') as f:
@@ -690,7 +704,7 @@ class AcquisitionControl:
 
     #     command_hierarchy = [
     #         self.move_stage_absolute,
-    #         self.microscope.go_to_polarization_in,
+    #         self.interface.microscope.go_to_polarization_in,
     #         self .microscope.go_to_wavelength_all,
     #     ]
 
@@ -700,8 +714,8 @@ class AcquisitionControl:
     #     rescan_list = []
 
     #     self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
-    #     # if self.microscope.detect_microscope_mode() == 'imagemode':
-    #     #     self.microscope.raman_mode()
+    #     # if self.interface.microscope.detect_microscope_mode() == 'imagemode':
+    #     #     self.interface.microscope.raman_mode()
 
     #     total_steps = len(sequence)
     #     start_time = time.time()
@@ -721,12 +735,12 @@ class AcquisitionControl:
     #         for frame in range(self.general_parameters['n_frames']):
     #             print("Acquiring frame {}".format(frame + 1))
 
-    #             new_frame = self.microscope.camera.safe_acquisition(export=False)
+    #             new_frame = self.interface.microscope.camera.safe_acquisition(export=False)
 
     #             if new_frame is None:
     #                 print("Error image data None. Retryig now...")
 
-    #                 new_frame = self.microscope.camera.safe_acquisition(export=False)
+    #                 new_frame = self.interface.microscope.camera.safe_acquisition(export=False)
     #                 if new_frame is None:
     #                     print("Error image data None")
     #                     status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
@@ -758,12 +772,12 @@ class AcquisitionControl:
     #             for frame in range(self.general_parameters['n_frames']):
     #                 print("Acquiring frame {}".format(frame))
 
-    #                 new_frame = self.microscope.acquire_one_frame(export_raw=False)
+    #                 new_frame = self.interface.microscope.acquire_one_frame(export_raw=False)
 
     #                 if new_frame is None:
     #                     print("Error image data None. Retryig now...")
 
-    #                     new_frame = self.microscope.acquire_one_frame(export_raw=False)
+    #                     new_frame = self.interface.microscope.acquire_one_frame(export_raw=False)
     #                     if new_frame is None:
     #                         print("Error image data None")
     #                         status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
@@ -790,7 +804,7 @@ class AcquisitionControl:
             wavelength_axis = np.arange(image_data.shape[1])
 
         # TODO:add wavelength axis to the image data along a new axis
-        save_path = os.path.join(self.microscope.dataDir, 'transient_data', 'transient_data.npy')
+        save_path = os.path.join(self.interface.microscope.dataDir, 'transient_data', 'transient_data.npy')
         # if kwargs.get('report', False):
         #     print(f"Saving transient data to {save_path}")
         # print(f"Saving transient data to {save_path}")
@@ -798,9 +812,9 @@ class AcquisitionControl:
 
     def save_spectrum(self, image_data, **kwargs):
         scan_index     = kwargs.get('scan_index',     self.hidden_parameters['scan_index'])
-        wavelength_axis = kwargs.get('wavelength_axis', self.microscope.wavelength_axis)
+        wavelength_axis = kwargs.get('wavelength_axis', self.interface.microscope.wavelength_axis)
         filename       = kwargs.get('filename',       self.general_parameters['filename'])
-        save_dir       = kwargs.get('save_dir',       self.microscope.dataDir)
+        save_dir       = kwargs.get('save_dir',       self.interface.microscope.dataDir)
 
         file_path = os.path.join(save_dir, f"{filename}", f"{filename}_{scan_index:06d}.npz")
         if not os.path.exists(os.path.dirname(file_path)):
@@ -815,7 +829,7 @@ class AcquisitionControl:
 
     @property
     def wavelength_axis(self):
-        return self.microscope.wavelength_axis
+        return self.interface.microscope.wavelength_axis
     
     @property
     def filename(self):
@@ -827,7 +841,7 @@ class AcquisitionControl:
     
     @property
     def acquisitionDir(self):
-        return os.path.join(self.microscope.scriptDir, 'acquisition_control')
+        return os.path.join(self.interface.microscope.scriptDir, 'acquisition_control')
     
     @property
     def current_position(self):

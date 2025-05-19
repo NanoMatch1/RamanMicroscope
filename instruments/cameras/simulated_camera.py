@@ -3,6 +3,17 @@ import threading
 import numpy as np
 import traceback
 
+import logging
+
+logger = logging.getLogger(__name__)
+# (optional) give it a default level here, or set it globally elsewhere
+logger.setLevel(logging.INFO)
+
+# everywhere you have `print("…")`, replace with:
+# logger.info("Acquiring frame %d/%d…", i+1, n_frames)
+# or for errors:
+# logger.error("Failed to acquire frame.")
+
 class SimulatedCameraInterface():
 
     """Simulated camera interface for testing without hardware"""
@@ -24,27 +35,33 @@ class SimulatedCameraInterface():
 
     def initialise(self):
         """Initialize the simulated camera"""
-        print("Simulated camera initialized")
+        logger.info("Simulated camera initialized")
 
     def set_exposure_time(self, exposure_time):
         """Set the camera's exposure time"""
         try:
             self.acqtime = float(exposure_time)
-            print(f"Set exposure time to {self.acqtime} seconds")
+            logger.info(f"Set exposure time to {self.acqtime} seconds")
         except ValueError:
-            print("Invalid exposure time value")
+            logger.error("Invalid exposure time value")
+
+    def check_camera_temperature(self):
+        """Check the camera temperature"""
+        # Simulate a temperature check
+        temperature = np.random.uniform(-8, -6)  # Simulated temperature in Celsius
+        return temperature
 
     def set_roi(self, roi):
         """Set the camera's region of interest (ROI)"""
-        print(f"Setting ROI to {roi}")
+        logger.info(f"Setting ROI to {roi}")
         try:
             x1, y1, x2, y2 = roi
             if x1 < 0 or y1 < 0 or x2 > 2048 or y2 > 148:
                 raise ValueError("ROI coordinates out of bounds")
             self.roi = roi
-            print(f"ROI set to {self.roi}")
+            logger.info(f"ROI set to {self.roi}")
         except ValueError:
-            print("Invalid ROI format. Expected (x1, y1, x2, y2)")
+            logger.error("Invalid ROI format. Expected (x1, y1, x2, y2)")
 
     def _generate_simulated_image(self, width=2048, height=148):
         """
@@ -89,16 +106,18 @@ class SimulatedCameraInterface():
     def grab_frame(self, timeout=100000):        
         image_data = self._generate_simulated_image()
         # Simulate acquisition time
+        logger.info("Simulated camera acquiring frame...")
         time.sleep(self.acqtime)
+        return image_data
 
     def open_stream(self):
         """Open the camera stream (simulated)"""
-        # print("Simulated camera stream opened")
+        # logger.info("Simulated camera stream opened")
         pass
     
     def close_stream(self):
         """Close the camera stream (simulated)"""
-        # print("Simulated camera stream closed")
+        # logger.info("Simulated camera stream closed")
         pass
 
     def start_continuous_acquisition(self):
@@ -107,7 +126,7 @@ class SimulatedCameraInterface():
         Each frame is saved as .npy into self.transient_dir.
         """
         if self.is_running:
-            print("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
+            logger.info("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
             return
         
         self.open_stream()
@@ -120,37 +139,41 @@ class SimulatedCameraInterface():
             while not self.stop_flag.is_set():
                 try:
                     for index in range(n_frames):
-                        print(f"Acquiring frame {index+1}/{n_frames}...")
+                        logger.info(f"Acquiring frame {index+1}/{n_frames}...")
 
                         new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
-                            print("Failed to acquire frame.")
+                            logger.error("Failed to acquire frame.")
                             break
 
                         if index == 0:
                             # First frame, set up the data array
-                            data = new_frame
+                            data = new_frame.astype(np.float32) # NOTE: The conversion to float32 is important for averaging across n_frames > 10. It prevents overflow, but we're also going to save as float32 to prevent quantization noise upon conversion to uint16.
                         else:
-                            data = (data + new_frame) / 2
+                            data = (data + new_frame.astype(np.float32)) / 2
 
                         wavelengths = self.interface.microscope.wavelength_axis
                         self.save_transient_spectrum_cb(data, wavelengths)
                         time.sleep(0.01)
 
                 except Exception as e:
-                    print(f"Acquisition error: {e}")
-                    print(traceback.format_exc())
+                    logger.error(f"Acquisition error: {e}")
+                    logger.error(traceback.format_exc())
                     break
 
         acq_thread = threading.Thread(target=continuous_task, daemon=True)
         acq_thread.start()
 
         self.is_running = True
-        print("Started continuous acquisition.")
+        logger.info("Started continuous acquisition.")
 
 
-
-    # if export is True:
-
-    # @simulate(function_handler=lambda self, *args, **kwargs: 'Simulated camera initialized')
+    def stop_continuous_acquisition(self):
+        """
+        Stop the continuous acquisition thread.
+        """
+        self.stop_flag.set()
+        self.is_running = False
+        self.close_stream()
+        logger.info("Continuous acquisition stopped.")
 
