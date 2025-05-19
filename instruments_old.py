@@ -616,6 +616,7 @@ class Microscope(Instrument):
             'temp': self.get_detector_temperature,
             'refresh': self.refresh_camera,
             'camclose': self.close_camera,
+            'camopen': self.open_camera,
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
@@ -1028,15 +1029,6 @@ class Microscope(Instrument):
 
     def initialise(self):
         '''Initialises the microscope by querying all connections to instruments and setting up the necessary parameters.'''
-        # Use the injected calibration service
-        # Update calibrations with auto-calibration data if available
-        # self.calibration_service.ammend_calibrations()
-        # finally, update with the monochromator calibrations
-        # self.calibration_service.update_monochromator_calibrations()
-
-        # TODO: Remove unnecessary calibrations later
-        # One calibration to rule them all
-        self.calibration_service.generate_master_calibration(microsteps=32)
 
         # load the previous known state of the instrument from file
         self.load_instrument_state()
@@ -1564,7 +1556,12 @@ class Microscope(Instrument):
     def close_camera(self):
         '''Closes the hardware camera connection. Allows connection via Mosaic UI.'''
         self.camera.close_camera()
-        self.interface.debug_skip.append('camera')
+        # self.interface.debug_skip.append('camera')
+
+    @ui_callable
+    def open_camera(self):
+        '''Opens the hardware camera connection. '''
+        self.camera.initialise()
 
     @ui_callable
     def set_number_of_frames(self, n_frames):
