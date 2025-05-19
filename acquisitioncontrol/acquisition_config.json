@@ -1,7 +1,7 @@
 {
   "general_parameters": {
     "acquisition_time": 1.0,
-    "filename": "scan_test_19",
+    "filename": "scan_test_GUI",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 3

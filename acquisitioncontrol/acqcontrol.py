@@ -293,8 +293,8 @@ class AcquisitionControl:
         }
 
         self.polarization_parameters = {
-            'input': {'start': 0.0, 'end': 0.0, 'resolution': 1.0},
-            'output': {'start': 0.0, 'end': 0.0, 'resolution': 1.0}
+            'input': {'start_angle': 0.0, 'end_angle': 0.0, 'resolution': 1.0},
+            'output': {'start_angle': 0.0, 'end_angle': 0.0, 'resolution': 1.0}
         }
 
         self._current_parameters = {
@@ -864,4 +864,43 @@ class AcquisitionControl:
     @property
     def current_position(self):
         return self._current_parameters['sample_position']
+    
+    @property
+    def scan_wavelengths(self):
+        if self.wavelength_parameters['start_wavelength'] == self.wavelength_parameters['end_wavelength'] or self.wavelength_parameters['resolution'] == 0:
+            return f"{self.wavelength_parameters['start_wavelength']:.2f}"
+        
+        wavelength_list = np.arange(
+            self.wavelength_parameters['start_wavelength'],
+            self.wavelength_parameters['end_wavelength'],
+            self.wavelength_parameters['resolution']
+        )
+        wavelength_list = ", ".join([f"{wl:.2f}" for wl in wavelength_list])
+        return wavelength_list
+    
+    @property
+    def scan_polarizations_in(self):
+        if self.polarization_parameters['input']['start_angle'] == self.polarization_parameters['input']['end_angle'] or self.polarization_parameters['input']['resolution'] == 0:
+            return f"{self.polarization_parameters['input']['start_angle']:.2f}"
+        
+        polarization_list = np.arange(
+            self.polarization_parameters['input']['start_angle'],
+            self.polarization_parameters['input']['end_angle'],
+            self.polarization_parameters['input']['resolution']
+        )
+        polarization_list = ", ".join([f"{pol:.2f}" for pol in polarization_list])
+        return polarization_list
+    
+    @property
+    def scan_polarizations_out(self):
+        if self.polarization_parameters['output']['start_angle'] == self.polarization_parameters['output']['end_angle'] or self.polarization_parameters['output']['resolution'] == 0:
+            return f"{self.polarization_parameters['output']['start_angle']:.2f}"
+        
+        polarization_list = np.arange(
+            self.polarization_parameters['output']['start_angle'],
+            self.polarization_parameters['output']['end_angle'],
+            self.polarization_parameters['output']['resolution']
+        )
+        polarization_list = ", ".join([f"{pol:.2f}" for pol in polarization_list])
+        return polarization_list
     
