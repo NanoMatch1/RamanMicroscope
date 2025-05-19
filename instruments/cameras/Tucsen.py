@@ -320,14 +320,14 @@ class TucsenCamera(Camera):
         """Allocate buffers and start the engine in the given mode."""
         self.camera_lock.acquire()
         self.is_running = True
-        TUCAM_Buf_Alloc(self.hCam, pointer(self.tucam_data.m_frame))
-        TUCAM_Cap_Start(self.hCam, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
+        TUCAM_Buf_Alloc(self.handle, pointer(self.tucam_data.m_frame))
+        TUCAM_Cap_Start(self.handle, self.tucam_data.m_capmode.TUCCM_SEQUENCE)
 
     def close_stream(self):
         """Stop & release, no matter what happens during grabbing."""
-        TUCAM_Buf_AbortWait(self.hCam)
-        TUCAM_Cap_Stop(self.hCam)
-        TUCAM_Buf_Release(self.hCam)
+        TUCAM_Buf_AbortWait(self.handle)
+        TUCAM_Cap_Stop(self.handle)
+        TUCAM_Buf_Release(self.handle)
         self.camera_lock.release()
         self.is_running = False
 
