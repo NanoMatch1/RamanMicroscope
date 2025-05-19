@@ -1,7 +1,7 @@
 {
   "general_parameters": {
     "acquisition_time": 1.0,
-    "filename": "scan_test_19",
+    "filename": "30sectest",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 3
@@ -12,25 +12,25 @@
   },
   "motion_parameters": {
     "start_position": {
-      "x": 0.0,
-      "y": 0.0,
-      "z": 0
+      "x": 4203.0,
+      "y": 6045.0,
+      "z": 0.0
     },
     "end_position": {
-      "x": 10.0,
-      "y": 10.0,
-      "z": 0
+      "x": 4203.0,
+      "y": 6045.0,
+      "z": 0.0
     },
     "resolution": {
-      "x": 1,
-      "y": 1,
-      "z": 1
+      "x": 1.0,
+      "y": 1.0,
+      "z": 0.0
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 800.0,
-    "end_wavelength": 810.0,
-    "resolution": 5.0
+    "start_wavelength": 750.0,
+    "end_wavelength": 751.0,
+    "resolution": 1.0
   },
   "polarization_parameters": {
     "input": {
