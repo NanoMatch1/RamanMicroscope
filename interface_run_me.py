@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import QApplication
 
 import logging
 
-from instruments.cameras.tucsen import TucsenCamera
+from instruments.cameras.tucsencam import TucsenCamera
 
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
 from logging_utils import LoggerInterface
