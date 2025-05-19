@@ -9,7 +9,7 @@ import traceback
 # or for errors:
 # self.logger.error("Failed to acquire frame.")
 
-class SimulatedCameraInterface():
+class SimulatedCameraInterface:
 
     """Simulated camera interface for testing without hardware"""
     
@@ -21,7 +21,6 @@ class SimulatedCameraInterface():
         self.acqtime = 0.5 # seconds
         self.roi = (0, 1220, 2048, 148)
         self.is_running = False
-        self.save_transient_spectrum_cb = interface.acq_ctrl.save_spectrum_transient
         self.stop_flag = threading.Event()
         self.camera_lock = threading.Lock()
 
@@ -33,6 +32,7 @@ class SimulatedCameraInterface():
     def initialise(self):
         """Initialize the simulated camera"""
         self.logger.info("Simulated camera initialized")
+        self.save_transient_spectrum_cb = self.interface.acq_ctrl.save_spectrum_transient
 
     def set_exposure_time(self, exposure_time):
         """Set the camera's exposure time"""

@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QApplication
 import logging
 
 from instruments.cameras.tucsen import TucsenCamera
+
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
 from logging_utils import LoggerInterface
 
@@ -49,7 +50,11 @@ class Interface:
 
         # Create hardware instances
         self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
-        self.camera = TucsenCamera(self, simulate=simulate)
+        if simulate:
+            from instruments.cameras.simulated_camera import SimulatedCameraInterface
+            self.camera = SimulatedCameraInterface(self)
+        else:
+            self.camera = TucsenCamera(self, simulate=simulate)
         self.spectrometer = Triax(self, simulate=simulate)
         self.laser = MillenniaLaser(self, simulate=simulate)
 
@@ -382,7 +387,7 @@ class Interface:
         self.logger.info("Microscope integrity check passed")
         pass
 
-def main(startup_commands=[]):
+def main(startup_commands=[], simulate=False):
     # Create your CLI-backed controller
     
     interface = Interface(simulate=simulate, com_port='COM10', debug_skip=[
@@ -406,4 +411,4 @@ if __name__ == '__main__':
 
     startup_commands = [
     ]
-    main(startup_commands=startup_commands)
+    main(startup_commands=startup_commands, simulate=simulate)
