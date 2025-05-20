@@ -209,7 +209,8 @@ class MainWindow(QMainWindow):
         if not self.confirm_scan(scan_sequence):
             return
         
-
+        self.acq_ctrl.prepare_acquisition_params()
+        
         self.cancel_event.clear()
         self.set_controls_enabled(False)
         self.btn_cancel_scan.setEnabled(True)
