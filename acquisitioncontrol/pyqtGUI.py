@@ -414,6 +414,7 @@ class MainWindow(QMainWindow):
         self.lbl_grating.setText(f"{self.interface.microscope.report_grating_wavelength:.2f} nm")
         self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
         self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
+        # self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_entrance_slit:.2f} nm")
 
         # self.update_instrument_state()
         # self.set_start()   # or otherwise update start/stop labels
@@ -529,10 +530,12 @@ class MainWindow(QMainWindow):
         self.lbl_grating = QLabel("N/A")
         self.lbl_monochromator = QLabel("N/A")
         self.lbl_spectrometer = QLabel("N/A")
+        self.lbl_entrance_slit = QLabel("N/A")
         sg_form.addRow("Laser wavelength:", self.lbl_laser)
         sg_form.addRow("Grating wavelength:", self.lbl_grating)
         sg_form.addRow("Monochromator wavelength:", self.lbl_monochromator)
         sg_form.addRow("Spectrometer wavelength:", self.lbl_spectrometer)
+        sg_form.addRow("Entrance slit:", self.lbl_entrance_slit)
         state_group.setLayout(sg_form)
 
         ctrl_state_layout.addWidget(state_group)

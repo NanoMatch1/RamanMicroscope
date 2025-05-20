@@ -550,7 +550,9 @@ class Microscope(Instrument):
             'sg': self.go_to_grating_wavelength,
             'sall': self.go_to_wavelength_all,
             'st': self.go_to_spectrometer_wavelength,
-            'reference': self.reference_calibration_from_wavelength,
+            'referenceall': self.reference_calibration_from_wavelength,
+            'referencelaser': self.reference_laser_from_wavelength,
+            'referencegratings': self.reference_gratings_from_wavelength,
             'referencetriax': self.reference_calibration_from_triax,
             'invertcal': self.invert_calibrations,
             'allmotors': self.get_all_motor_positions,
@@ -1483,6 +1485,10 @@ class Microscope(Instrument):
     def report_spectrometer_wavelength(self):
         return round(self.spectrometer_wavelength.get('triax', 'KeyError'), 2)
     
+    # @property
+    # def report_entrance_slit(self):
+    #     return round(self.interface.spectrometer.entrance_slit, 2)
+    
     @property
     def current_monochromator_wavenumber(self):
         '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
@@ -1762,7 +1768,68 @@ class Microscope(Instrument):
         motor_dict.update(target_mono_steps)
         self.write_motor_positions(motor_dict=motor_dict)
 
-        print('Motors successfully shifted')
+        print('All Motors successfully shifted')
+
+    @ui_callable
+    def reference_laser_from_wavelength(self, wavelength):
+        '''
+        Reference the current laser motor configuration to a known laser wavelength (in nm).
+        Provide the true laser wavelength from an external reference.
+
+        Parameters
+        ----------
+        wavelength : float
+            Known laser wavelength (in nm).
+        shift : bool, optional
+            Whether to apply Raman shift correction. Default is True.
+        '''
+        true_wavelength_laser = float(wavelength)
+        print(f'True wavelength provided: {true_wavelength_laser} nm')
+
+
+        # Calculate target motor positions from the provided wavelength
+        target_laser_steps = self.calibration_service.wl_to_steps(true_wavelength_laser, self.action_groups['laser_wavelength'])
+
+        # write current position to motors
+        motor_dict = {}
+        motor_dict.update(target_laser_steps)
+        self.write_motor_positions(motor_dict=motor_dict)
+
+        print('Laser Motors successfully shifted')
+
+
+    @ui_callable
+    def reference_gratings_from_wavelength(self, wavelength, shift=True):
+        '''
+        Reference the current system configuration to a known laser wavelength (in nm).
+        Provide the true laser wavelength from an external reference.
+
+        Parameters
+        ----------
+        wavelength : float
+            Known laser wavelength (in nm).
+        shift : bool, optional
+            Whether to apply Raman shift correction. Default is True.
+        '''
+        true_wavelength_laser = float(wavelength)
+        print(f'True wavelength provided: {true_wavelength_laser} nm')
+
+        if shift:
+            grating_wavenumber = (10_000_000 / true_wavelength_laser) - self.current_shift
+            true_wavelength_grating = 10_000_000 / grating_wavenumber
+        else:
+            true_wavelength_grating = true_wavelength_laser
+
+        # Calculate target motor positions from the provided wavelength
+        target_mono_steps = self.calibration_service.wl_to_steps(true_wavelength_grating, self.action_groups['grating_wavelength'])
+
+
+        # write current position to motors
+        motor_dict = {}
+        motor_dict.update(target_mono_steps)
+        self.write_motor_positions(motor_dict=motor_dict)
+
+        print('Grating Motors successfully shifted')
 
     def wavenumber_to_wavelength(self, wavenumber):
         return 10_000_000/wavenumber
@@ -2609,6 +2676,7 @@ class Triax(Instrument):
         }
 
         self.spectrometer_position = 380000
+        self.entrance_slit = 0
 
         # 108659 = 750 nm
 
@@ -2650,6 +2718,7 @@ class Triax(Instrument):
         '''Connect and establish primary attributes.'''
         self.connect()
         self.get_spectrometer_position()
+        self.get_entrance_slit()
         # self.generate_wavelength_axis()
         self.interface.microscope.generate_wavelength_axis() # TODO: move from microscope to spectrometer. Use @property to generate wavelength axis on the fly
         return self.spectrometer_position
@@ -2678,6 +2747,7 @@ class Triax(Instrument):
     def read_enterance_slit(self):
         '''Read the current position of the entrance slit.'''
         response = self.send_command('read_enter')
+        self.entrance_slit = float(response.strip()[1:])
         return response
     
     @ui_callable
@@ -2690,6 +2760,7 @@ class Triax(Instrument):
     def move_enterance_slit(self, position):
         '''Move the entrance slit to the specified position.'''
         response = self.send_command('men {}'.format(position))
+        self.enterance_slit += float(position)
         return response
     
     @ui_callable
