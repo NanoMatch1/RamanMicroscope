@@ -276,7 +276,7 @@ class TucsenCamera(Camera):
         self._uninit_api()
         print("Camera connection closed and API uninitialized.")
 
-    def safe_acquisition(self, target_temp=-5, timeout=100000):
+    def grab_frame_safe(self, target_temp=-5, timeout=100000):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
@@ -286,33 +286,13 @@ class TucsenCamera(Camera):
 
             if temp.value < target_temp:
                 # print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
-                data = self.grab_frame()
-                return data
+                image_data = self.grab_frame(timeout=timeout)
+                return image_data
             else:
                 self.logger.info(f"Camera too hot ({temp.value}°C). Waiting...")
                 time.sleep(5)  # Wait before checking temperature again
 
-    # def acquire_one_frame(self, timeout=100000):
-    #     """Medium level command. Open in single-frame or soft-trigger mode, grab one, then close."""
 
-    #     if self.is_running:
-    #         print("Camera is already running. Please stop the acquisition before starting a new one.")
-    #         return None
-
-    #     try:
-    #         self.open_stream(self.tucam_data.m_capmode.TUCCM_SEQUENCE)  # or TUCCM_SOFTTRIGGER
-    #         image_data = self.grab_frame(timeout=timeout)
-    #     finally:
-    #         self.close_stream()
-    #         self.camera_lock.release()
-
-    #     if image_data is None:
-    #         print("Acquisition failed - image_data is None.")
-    #         return None
-        
-        # # optional export can sit up here; no more fan hacks
-        # return image_data
-    
     def grab_frame(self, timeout=100000):
         """Low level command. While the camera stream is open, grab one frame."""
         if self.is_running is False:

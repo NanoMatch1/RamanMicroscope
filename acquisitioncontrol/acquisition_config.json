@@ -1,14 +1,14 @@
 {
   "general_parameters": {
     "acquisition_time": 1.0,
-    "filename": "acqtest19",
+    "filename": "acqtest20.1_map",
     "raman_shift": 0.0,
     "laser_power": 4.5,
-    "n_frames": 5
+    "n_frames": 2
   },
   "hidden_parameters": {
     "scan_mode": "linescan",
-    "scan_index": 14
+    "scan_index": 4
   },
   "motion_parameters": {
     "start_position": {
@@ -17,12 +17,12 @@
       "z": 0
     },
     "end_position": {
-      "x": 10.0,
-      "y": 10.0,
+      "x": 6.0,
+      "y": 6.0,
       "z": 0
     },
     "resolution": {
-      "x": 1.0,
+      "x": 2.0,
       "y": 1.0,
       "z": 1.0
     }

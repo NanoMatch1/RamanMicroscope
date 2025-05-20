@@ -132,7 +132,7 @@ class CameraScanner:
             n_frames = self.acq_ctrl.general_parameters['n_frames']
 
             for frame_idx in range(n_frames):
-                new_frame = self.camera.grab_frame(timeout=self.timeout)
+                new_frame = self.camera.grab_frame_safe(timeout=self.timeout)
                 if new_frame is None:
                     new_frame = self._retry_frame(self.timeout, 2)
 
@@ -224,7 +224,7 @@ class CameraScanner:
         image_data = None
         n_frames = self.acq_ctrl.general_parameters['n_frames']
         for frame_idx in range(n_frames):
-            new_frame = self.camera.grab_frame(timeout=timeout)
+            new_frame = self.camera.grab_frame_safe(timeout=timeout)
             if new_frame is None:
                 new_frame = self._retry_frame(timeout, retries)
 
@@ -243,7 +243,7 @@ class CameraScanner:
         """
         for attempt in range(1, retries + 1):
             print(f"Retry {attempt}/{retries} for image data...")
-            frame = self.camera.grab_frame(timeout=timeout)
+            frame = self.camera.grab_frame_safe(timeout=timeout)
             if frame is not None:
                 return frame
         return None

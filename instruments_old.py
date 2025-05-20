@@ -1235,6 +1235,7 @@ class Microscope(Instrument):
     def enter_focus_mode(self):
         '''Enters the mode for incrementally adjusting the microscope focus at the sample.'''
         print("Entering focus mode.\nType focus steps in microns.\nType 'exit' to exit focus mode.")
+        
         while True:
             command = input()
             if command == 'exit':
@@ -1607,6 +1608,7 @@ class Microscope(Instrument):
     @ui_callable
     def start_continuous_acquisition(self):
         '''Starts continuous acquisition on the camera.'''
+        self.interface.acq_ctrl.prepare_acquisition_params()
         self.camera.start_continuous_acquisition()
 
     @ui_callable
