@@ -100,6 +100,16 @@ class SimulatedCameraInterface:
         
         return sim_frame
     
+    def grab_frame_safe(self, timeout=100000):
+        '''Workaround for temperature checking'''
+        # Simulate a temperature check
+        temperature = self.check_camera_temperature()
+        image_data = self.grab_frame(timeout)
+
+        return image_data
+        
+
+    
     def grab_frame(self, timeout=100000):        
         image_data = self._generate_simulated_image()
         # Simulate acquisition time
