@@ -392,7 +392,7 @@ def main(startup_commands=[], simulate=False):
     
     interface = Interface(simulate=simulate, com_port='COM10', debug_skip=[
         #'camera', 
-        'TRIAX'
+        #'TRIAX'
         ])
     # Start the command line interface
     interface.run_batch(startup_commands)

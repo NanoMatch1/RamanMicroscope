@@ -1,4 +1,4 @@
-
+import os
 import logging
 from PyQt5.QtCore import QObject, pyqtSignal
 
@@ -37,7 +37,8 @@ class LoggerInterface:
         self.logger.setLevel(logging.DEBUG)
 
         # 2) Configure your handlers just once
-        self.file_handler = logging.FileHandler('instrument_errors.log')
+        logfile = os.path.join(os.path.dirname(__file__), 'logs', 'instrument_errors.log')
+        self.file_handler = logging.FileHandler(logfile)  # File handler
         self.file_handler.setLevel(logging.ERROR)
         self.file_handler.setFormatter(logging.Formatter(
             '%(asctime)s %(name)s [%(levelname)s] %(message)s'

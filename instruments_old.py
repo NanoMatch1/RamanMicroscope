@@ -876,20 +876,15 @@ class Microscope(Instrument):
 
     @ui_callable
     def home_all_motors(self):
-        # """
+        """
         # Home all motors in the system.
         
-        # Returns:
-        # str: The response from the controller after homing all motors.
-        # """
-
-        # for motor_label in self.motor_map.keys():
-        #     response = self.motion_control.home_motor(motor_label)
-        #     self.micro_log.info(f"Homing motor {motor_label}: {response}")
-        # return response
-        self.micro_log.info("Home all motors not implemented yet")
+        """
+        self.home_laser()
+        self.home_gratings()
+        # home polarization NYI
     
-        return "Home all motors not implemented yet"
+        return 
 
     @ui_callable
     def home_laser(self, move_to_calibrated_position=True):

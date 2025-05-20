@@ -285,11 +285,11 @@ class TucsenCamera(Camera):
             TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
 
             if temp.value < target_temp:
-                print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
+                # print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
                 data = self.grab_frame()
                 return data
             else:
-                print(f"Camera too hot ({temp.value}°C). Waiting...")
+                self.logger.info(f"Camera too hot ({temp.value}°C). Waiting...")
                 time.sleep(5)  # Wait before checking temperature again
 
     # def acquire_one_frame(self, timeout=100000):
@@ -341,7 +341,7 @@ class TucsenCamera(Camera):
             result = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.tucam_data.m_frame), timeout)
 
         except Exception:
-            print('Grab the frame failure')
+            self.logger.info('Grab the frame failure in _wait_for_image_data()')
             return None
 
         data = self._frame_to_numpy()
@@ -419,7 +419,7 @@ class TucsenCamera(Camera):
 
                         new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
-                            self.logger.error("Failed to acquire frame.")
+                            self.logger.info("New frame is None. Stopping acquisition.")
                             break
 
                         if index == 0:
