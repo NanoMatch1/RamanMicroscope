@@ -121,8 +121,9 @@ class TucsenCamera(Camera):
         # self.set_denoise(0)
         self._set_image_and_gain()
         self.set_roi(self.roi)
+        self.set_target_temperature(-20)
         self.set_fan_speed(3)
-
+ 
     def refresh(self):
         """
         Refresh the camera settings and parameters.
@@ -484,3 +485,64 @@ class TucsenCamera(Camera):
             )
 
         self.roi = roi_tuple
+
+    
+    def enable_auto_temperature_control(self, enable: bool, report: bool = True):
+        """
+        Enable or disable the camera's automatic temperature control.
+        
+        :param enable: True to turn on auto-control, False to turn it off.
+        :param report:  If True, print a confirmation message.
+        :return:        TUCAMRET status code.
+        """
+        # Map boolean to 0 or 1
+        val = 1 if enable is True or enable == 1 else 0
+        status = TUCAM_Prop_SetValue(
+            self.TUCAMOPEN.hIdxTUCam,
+            TUCAM_IDPROP.TUIDP_AUTO_CTRLTEMP.value,
+            val,
+            0
+        )
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            if report:
+                state = "enabled" if enable else "disabled"
+                self.logger.info(f"Automatic temperature control {state}.")
+        else:
+            self.logger.error(
+                f"Failed to {'enable' if enable else 'disable'} auto temp control (code {status})."
+            )
+        return status
+
+    def set_target_temperature(self, target_celsius: float, report: bool = True):
+        """
+        Set the desired sensor temperature.
+        
+        The TUCAM property expects an integer 0–100 corresponding to –50 °C→+50 °C:
+        prop_value = target_celsius + 50
+        :contentReference[oaicite:1]{index=1}
+        
+        :param target_celsius: Desired temperature in °C (must be between –50 and +50).
+        :param report:         If True, print a confirmation message.
+        :return:               TUCAMRET status code.
+        """
+        # Clamp to valid range
+        try:
+            target_celsius = float(target_celsius)
+        except ValueError:
+            self.logger.error("Target temperature must be a number.")
+            return 
+        t = round(max(-50.0, min(50.0, target_celsius)))
+        prop_val = int(t + 50)  # map –50:+50 → 0:100
+        status = TUCAM_Prop_SetValue(
+            self.TUCAMOPEN.hIdxTUCam,
+            TUCAM_IDPROP.TUIDP_TEMPERATURE.value,
+            prop_val,
+            0
+        )
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            self.logger.info(f"Target temperature set to {t}°C (prop value {prop_val}).")
+        else:
+            self.logger.error(
+                f"Failed to set target temperature to {t}°C (code {status})."
+            )
+        return status

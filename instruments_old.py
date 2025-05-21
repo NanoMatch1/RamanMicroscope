@@ -610,12 +610,15 @@ class Microscope(Instrument):
             # camera commands
             'nframe': self.set_number_of_frames,
             'acquire': self.acquire_once,
+            'acquirecustom': self.acquire_custom_scan,
             'run': self.start_continuous_acquisition,
             'stop': self.stop_continuous_acquisition,
             'roi': self.set_roi,
             'setbin': self.set_camera_binning,
             'caminfo': self.camera_info,
             'temp': self.get_detector_temperature,
+            'settemp': self.set_detector_temperature,
+            'autotemp': self.camera_auto_temperature_control,
             'refresh': self.refresh_camera,
             'camclose': self.close_camera,
             'camopen': self.open_camera,
@@ -1582,6 +1585,11 @@ class Microscope(Instrument):
         self.interface.acq_ctrl.acquire_once(filename)
         return
     
+    @ui_callable
+    def acquire_custom_scan(self):
+        self.interface.acq_ctrl.acquire_custom_scan()
+        return
+    
     # @ui_callable
     
     # def save_acquisition(self, image_data, filename=None, save_folder=None, scan_index=0):
@@ -1636,6 +1644,19 @@ class Microscope(Instrument):
     def get_detector_temperature(self):
         '''Returns the camera temperature.'''
         return round(self.camera.check_camera_temperature(), 2)
+    
+    @ui_callable
+    def set_detector_temperature(self, temperature):
+        status = self.interface.camera.set_target_temperature(temperature)
+
+    @ui_callable
+    def camera_auto_temperature_control(self, state):
+        try:
+            state = bool(int(state))
+        except ValueError:
+            print("Invalid state. Must be 0 or 1.")
+            return
+        self.interface.camera.enable_auto_temperature_control(state)
 
     @ui_callable
     def get_laser_motor_positions(self):

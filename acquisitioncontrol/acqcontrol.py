@@ -247,6 +247,50 @@ class CameraScanner:
             if frame is not None:
                 return frame
         return None
+    
+    def acquire_custom_scan(self):
+        '''CUSTOM SCAN, edit to design your own scan routine'''
+        acqtimelist = [1, 2, 4, 8, 16, 32, 64, 128] # seconds acqtime
+        # acqtimelist = [1, 2, 4, 8, 12, 16, 20, 22, 23, 24, 25, 26, 27, 28]
+        
+        self.camera.camera_lock.acquire()
+        self.camera.open_stream()
+
+        try:
+            for acqtime in acqtimelist:
+                self.microscope.set_acquisition_time(acqtime)
+                
+                image_data = None
+                n_frames = self.acq_ctrl.general_parameters['n_frames']
+
+                for frame_idx in range(n_frames):
+                    new_frame = self.camera.grab_frame_safe(timeout=self.timeout)
+                    if new_frame is None:
+                        new_frame = self._retry_frame(self.timeout, 2)
+
+                    if new_frame is None:
+                        print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
+                        return None
+
+                    image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
+
+
+                # Save the image data to a file
+                self.acq_ctrl.save_spectrum_transient(
+                    image_data,
+                    wavelength_axis=self.microscope.wavelength_axis,
+                    report=False
+                )
+                filename = self.acq_ctrl.general_parameters['filename']
+                dataDir = os.path.join(self.microscope.dataDir, filename)
+                if not os.path.exists(dataDir):
+                    os.makedirs(dataDir)
+                index = len([file for file in os.listdir(dataDir) if filename in file]) 
+                self.acq_ctrl.save_spectrum(image_data, scan_index=index)
+        
+        finally:
+            self.camera.close_stream()
+            self.camera.camera_lock.release()
 
 
 
@@ -673,9 +717,16 @@ class AcquisitionControl:
         image_data = self._acquire_one_frame()
 
         self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=True)
-        index = len([file for file in os.listdir(self.interface.microscope.dataDir) if self.general_parameters['filename'] in file]) # autoincrement the scan index based on the number of files in the directory matching the filename
-        self.save_spectrum(image_data, scan_index=index)
 
+        filename = self.general_parameters['filename']
+        dataDir = os.path.join(self.interface.microscope.dataDir, filename)
+        if not os.path.exists(dataDir):
+            os.makedirs(dataDir)
+        index = len([file for file in os.listdir(dataDir) if filename in file]) 
+        # self.logger.info("scan_index = {}".format(index)) # autoincrement the scan index based on the number of files in the directory matching the filename
+
+        self.save_spectrum(image_data, scan_index=index)
+        self.logger.info(f"File Saved: {filename}_{index:06d}.npz")
         self.logger.info("Acquisition complete.")  
 
     def cli_acquire_scan(self):
@@ -701,7 +752,7 @@ class AcquisitionControl:
         camera_scanner = CameraScanner(self)
         failed_steps = camera_scanner._acquire_scan(cancel_event, status_callback, progress_callback, timeout)
 
-        print("Scan complete.")
+        self.logger.info("Scan complete.")
 
         if failed_steps:
             record_failed_steps = json.dumps(failed_steps)
@@ -715,105 +766,10 @@ class AcquisitionControl:
             print("All steps completed successfully.")
         status_callback("Scan complete.")
         
-
-    # def acquire_scan_old(self, cancel_event, status_callback, progress_callback):
-
-    #     # TODO: FIX motion back to origin, keep track of stage pos better
-
-    #     scan_command_hierarchy = [
-    #         self.move_stage_absolute,
-    #         self.interface.microscope.go_to_polarization_in,
-    #         self .microscope.go_to_wavelength_all,
-    #     ]
-
-    #     sequence = self.generate_map_sequence()
-
-    #     print(f"Predicted time: {self.estimated_scan_time['duration']:.1f} {self.estimated_scan_time['units']}")
-    #     rescan_list = []
-
-    #     self.prepare_acquisition_params() # makes sure the acquisition parameters are set correctly at the hardware level before starting the scan
-    #     # if self.interface.microscope.detect_microscope_mode() == 'imagemode':
-    #     #     self.interface.microscope.raman_mode()
-
-    #     total_steps = len(sequence)
-    #     start_time = time.time()
-    #     print(f"Starting scan with {total_steps} steps.")
-
-    #     for index, step in enumerate(sequence):
-    #         self.general_parameters['scan_index'] = index
-    #         if cancel_event.is_set():
-    #             status_callback("Scan cancelled.")
-    #             return
-    #         status_callback(f"Running step {index}: {step}")
-    #         progress_callback(index + 1, total_steps, start_time)
-    #         for command, change in zip(scan_command_hierarchy, step):
-    #             if change is not None:
-    #                 command(change)
-            
-    #         for frame in range(self.general_parameters['n_frames']):
-    #             print("Acquiring frame {}".format(frame + 1))
-
-    #             new_frame = self.interface.microscope.camera.safe_acquisition(export=False)
-
-    #             if new_frame is None:
-    #                 print("Error image data None. Retryig now...")
-
-    #                 new_frame = self.interface.microscope.camera.safe_acquisition(export=False)
-    #                 if new_frame is None:
-    #                     print("Error image data None")
-    #                     status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
-    #                     rescan_list.append(index, step)
-    #                     return
-                    
-    #             if frame == 0:
-    #                 image_data = new_frame
-    #             else:
-    #                 image_data = (image_data + new_frame) / 2
-
-
-    #             self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
-              
-    #         self.save_spectrum(image_data, scan_index=index)
-        
-    #     if len(rescan_list) > 0:
-    #         for (index, step) in rescan_list:
-    #             self.general_parameters['scan_index'] = index
-    #             if cancel_event.is_set():
-    #                 status_callback("Scan cancelled.")
-    #                 return
-    #             status_callback(f"Running step {index}: {step}")
-    #             progress_callback(index + 1, total_steps, start_time)
-    #             for command, change in zip(scan_command_hierarchy, step):
-    #                 if change is not None:
-    #                     command(change)
-                
-    #             for frame in range(self.general_parameters['n_frames']):
-    #                 print("Acquiring frame {}".format(frame))
-
-    #                 new_frame = self.interface.microscope.acquire_one_frame(export_raw=False)
-
-    #                 if new_frame is None:
-    #                     print("Error image data None. Retryig now...")
-
-    #                     new_frame = self.interface.microscope.acquire_one_frame(export_raw=False)
-    #                     if new_frame is None:
-    #                         print("Error image data None")
-    #                         status_callback("Error acquiring spectrum in AcquisitionControl.acquire_scan. Adding to rescan list and moving on.")
-    #                         rescan_list.append(index, step)
-    #                         return
-                        
-    #                 if frame == 0:
-    #                     image_data = new_frame
-    #                 else:
-    #                     image_data = (image_data + new_frame) / 2
-
-    #                 self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=False)
-                    
-    #             self.save_spectrum(image_data, scan_index=index)
-            
-    #     status_callback("Scan complete.")
-    #     progress_callback(total_steps, total_steps, start_time)
-    #     print("Scan complete.")
+    def acquire_custom_scan(self):
+        camera_scanner = CameraScanner(self)
+        camera_scanner.acquire_custom_scan()
+        self.logger.info("Scan complete.")
 
     # def save_transient_spectrum(self, image_data, wavelength_axis, **kwargs):
     def save_spectrum_transient(self, image_data, wavelength_axis=None, **kwargs):
