@@ -1,14 +1,14 @@
 {
   "general_parameters": {
     "acquisition_time": 1.0,
-    "filename": "acqtest20.1_map",
+    "filename": "acquire_test_21.2",
     "raman_shift": 0.0,
     "laser_power": 4.5,
-    "n_frames": 2
+    "n_frames": 1
   },
   "hidden_parameters": {
     "scan_mode": "linescan",
-    "scan_index": 4
+    "scan_index": 0
   },
   "motion_parameters": {
     "start_position": {
@@ -17,19 +17,19 @@
       "z": 0
     },
     "end_position": {
-      "x": 6.0,
-      "y": 6.0,
+      "x": 10.0,
+      "y": 0.0,
       "z": 0
     },
     "resolution": {
-      "x": 2.0,
+      "x": 10.0,
       "y": 1.0,
       "z": 1.0
     }
   },
   "wavelength_parameters": {
     "start_wavelength": 750.0,
-    "end_wavelength": 751.0,
+    "end_wavelength": 750.0,
     "resolution": 1.0
   },
   "polarization_parameters": {
