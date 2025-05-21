@@ -1,2 +1,21 @@
 2025-05-21 10:49:32,133 interface [ERROR] Failed to connect to real camera: -2147483135 is not a valid TUCAMRET
 2025-05-21 10:50:23,310 interface [ERROR] Failed to connect to real camera: -2147483135 is not a valid TUCAMRET
+2025-05-22 11:39:16,148 interface [ERROR] An error occurred: SpanSelector.__init__() got an unexpected keyword argument 'rectprops'
+2025-05-22 11:39:16,148 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 252, in __init__
+    self.init_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 735, in init_ui
+    self.live_viewer = LiveDataViewer()
+                       ^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 86, in __init__
+    self._make_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 109, in _make_ui
+    self.span_selector = SpanSelector(
+                         ^^^^^^^^^^^^^
+TypeError: SpanSelector.__init__() got an unexpected keyword argument 'rectprops'
+

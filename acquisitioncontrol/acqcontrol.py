@@ -9,6 +9,8 @@ import math
 
 import traceback
 
+from PyQt5.QtCore import QObject, pyqtSignal
+
 class ScanSequenceGenerator:
 
     def __init__(self, acq_ctrl):
@@ -293,10 +295,11 @@ class CameraScanner:
             self.camera.camera_lock.release()
 
 
-
-class AcquisitionControl:
+class AcquisitionControl(QObject):
+    spectrum_ready = pyqtSignal(np.ndarray, np.ndarray)  
 
     def __init__(self, interface):
+        super().__init__()
         self.interface = interface
         self.logger = interface.logger.getChild('acquisition_control')
 
@@ -800,6 +803,10 @@ class AcquisitionControl:
             wavelength=wavelength_axis,
             metadata=json.dumps(self.metadata)
         )
+
+        breakpoint()
+
+        self.spectrum_ready.emit(image_data, wavelength_axis)
 
     @property
     def wavelength_axis(self):

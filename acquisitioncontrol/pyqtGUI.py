@@ -6,10 +6,11 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget,
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
-    QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy
+    QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy, 
+    QProgressBar
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer, pyqtSlot
-from PyQt5.QtWidgets import QProgressBar
+# from PyQt5.QtWidgets import QProgressBar
 
 
 from acquisitioncontrol.acqcontrol import AcquisitionControl
@@ -20,6 +21,11 @@ import threading
 import logging
 
 from logging_utils import QtLogHandler
+
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from matplotlib.widgets import SpanSelector
+import numpy as np
 
 
 def run_in_thread_and_refresh(func):
@@ -58,6 +64,129 @@ def run_in_thread_and_refresh(func):
 
 # # Install the exception hook
 # sys.excepthook = exception_hook
+
+
+
+class LiveDataViewer(QWidget):
+    """
+    A QWidget that displays a live 1D spectrum (top) and 2D image (bottom).
+    Emits region_changed when the user selects a vertical band on the image.
+    """
+    region_changed = pyqtSignal(int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Data storage
+        self.current_spectrum = None  # 1D numpy array
+        self.current_image = None     # 2D numpy array
+        # Selection defaults
+        self.sel_y0 = 0
+        self.sel_y1 = None
+        # Build UI
+        self._make_ui()
+        # Connect region selection signal
+        self.region_changed.connect(self._on_region_changed)
+
+    def _make_ui(self):
+        layout = QVBoxLayout(self)
+
+        # --- Spectrum plot (2/3 height) ---
+        self.spectrum_fig = Figure()
+        self.spectrum_ax = self.spectrum_fig.add_subplot(111)
+        self.spectrum_canvas = FigureCanvas(self.spectrum_fig)
+        layout.addWidget(self.spectrum_canvas, stretch=2)
+
+        # --- Image plot (1/3 height) ---
+        self.image_fig = Figure()
+        self.image_ax = self.image_fig.add_subplot(111)
+        self.image_canvas = FigureCanvas(self.image_fig)
+        layout.addWidget(self.image_canvas, stretch=1)
+
+        # Enable span selector on image_ax for Y-axis selection
+        def onselect(ymin, ymax):
+            y0, y1 = int(round(ymin)), int(round(ymax))
+            self.region_changed.emit(y0, y1)
+        self.span_selector = SpanSelector(
+            self.image_ax, onselect,
+            direction='vertical', useblit=True,
+            props=dict(alpha=0.3, facecolor='yellow')
+        )
+
+        # --- Controls: Autoscale & Normalization ---
+        controls_layout = QHBoxLayout()
+        self.chk_autoscale = QCheckBox("Autoscale")
+        self.edit_norm_xmin = QLineEdit("0")
+        self.edit_norm_xmax = QLineEdit("0")
+        self.btn_apply_norm = QPushButton("Apply Norm")
+
+        # Wire up controls to redraw
+        self.chk_autoscale.toggled.connect(self._redraw_spectrum)
+        self.btn_apply_norm.clicked.connect(self._redraw_spectrum)
+
+        controls_layout.addWidget(self.chk_autoscale)
+        controls_layout.addWidget(QPushButton("Xmin:"))  # label
+        controls_layout.addWidget(self.edit_norm_xmin)
+        controls_layout.addWidget(QPushButton("Xmax:"))  # label
+        controls_layout.addWidget(self.edit_norm_xmax)
+        controls_layout.addWidget(self.btn_apply_norm)
+        layout.addLayout(controls_layout)
+
+    def update_data(self, spectrum: np.ndarray, image: np.ndarray):
+        """
+        Slot for new data: redraw image and spectrum.
+        """
+        self.current_spectrum = spectrum
+        self.current_image = image
+        # Initialize sel_y1 to full height if first time
+        if self.sel_y1 is None:
+            self.sel_y1 = image.shape[0]
+
+        # Draw image
+        self.image_ax.clear()
+        self.image_ax.imshow(image, aspect='auto')
+        self.image_canvas.draw()
+
+        # Draw binned spectrum
+        self._redraw_spectrum()
+
+    def _redraw_spectrum(self):
+        """
+        Redraw the spectrum by summing between sel_y0 and sel_y1,
+        applying normalization/autoscale as specified.
+        """
+        if self.current_image is None:
+            return
+
+        # Compute binned spectrum
+        y0, y1 = self.sel_y0, self.sel_y1 or self.current_image.shape[0]
+        binned = self.current_image[y0:y1, :].sum(axis=0)
+
+        # Apply normalization if not autoscale
+        if not self.chk_autoscale.isChecked():
+            try:
+                xmin = int(self.edit_norm_xmin.text())
+                xmax = int(self.edit_norm_xmax.text())
+                norm_slice = binned[xmin:xmax]
+                norm_factor = norm_slice.max() if norm_slice.size else 1
+            except Exception:
+                norm_factor = 1
+            if norm_factor != 0:
+                binned = binned / norm_factor
+
+        # Plot
+        self.spectrum_ax.clear()
+        self.spectrum_ax.plot(binned)
+        if self.chk_autoscale.isChecked():
+            self.spectrum_ax.autoscale()
+        self.spectrum_canvas.draw()
+
+    def _on_region_changed(self, y0: int, y1: int):
+        """
+        Slot invoked when the user selects a vertical span on the image.
+        Updates selection and redraws the spectrum.
+        """
+        self.sel_y0, self.sel_y1 = max(0, y0), min(self.current_image.shape[0], y1)
+        self._redraw_spectrum()
 
 
 # --- Command line input with history ---
@@ -121,6 +250,7 @@ class MainWindow(QMainWindow):
         self.progress_update_signal.connect(self.update_progress_bar)
 
         self.init_ui()
+        self.acq_ctrl.spectrum_ready.connect(self.live_viewer.update_data)
         self.refresh_ui()
 
                 # Create a new QtLogHandler specific to this GUI
@@ -601,6 +731,13 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(splitter, 1)
 
         main_layout.addLayout(right_layout, 1)
+
+        plot_layout = QVBoxLayout()
+        self.live_viewer = LiveDataViewer()
+
+        plot_layout.insertWidget(1, self.live_viewer)
+
+        main_layout.addLayout(plot_layout, 1)
 
         # Redirect stdout/stderr
         # sys.stdout = self.console

@@ -515,7 +515,7 @@ class Microscope(Instrument):
 
         self.microscope_mode = 'ramanmode'
 
-        self.wavelength_axis = None
+        self.wavelength_axis = np.arange(0, 2048, 1)
         self.instrument_state = {}
         self.autosave = True
 
@@ -694,6 +694,7 @@ class Microscope(Instrument):
     def generate_wavelength_axis(self):
         spectrometer_wavelength = self.calculate_spectrometer_wavelength()['triax'] # TODO:change to getter
         self.wavelength_axis = self.calibration_service.generate_wavelength_axis(spectrometer_wavelength)
+        breakpoint()
 
     
     @ui_callable
