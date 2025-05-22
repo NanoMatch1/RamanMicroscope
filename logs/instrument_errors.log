@@ -19,3 +19,72 @@
                          ^^^^^^^^^^^^^
 TypeError: SpanSelector.__init__() got an unexpected keyword argument 'rectprops'
 
+2025-05-22 12:10:17,835 interface [ERROR] An error occurred: 'LiveDataViewer' object has no attribute 'btn_apply_norm'
+2025-05-22 12:10:17,838 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 256, in __init__
+    self.init_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 740, in init_ui
+    self.live_viewer = LiveDataViewer()
+                       ^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 86, in __init__
+    self._make_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 124, in _make_ui
+    self.btn_apply_norm.clicked.connect(self._redraw_spectrum)
+    ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LiveDataViewer' object has no attribute 'btn_apply_norm'
+
+2025-05-22 12:10:43,640 interface [ERROR] An error occurred: 'LiveDataViewer' object has no attribute 'edit_norm_xmin'
+2025-05-22 12:10:43,642 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 257, in __init__
+    self.init_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 741, in init_ui
+    self.live_viewer = LiveDataViewer()
+                       ^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 86, in __init__
+    self._make_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 129, in _make_ui
+    controls_layout.addWidget(self.edit_norm_xmin)
+                              ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LiveDataViewer' object has no attribute 'edit_norm_xmin'
+
+2025-05-22 12:23:58,840 interface [ERROR] An error occurred: 'LiveDataViewer' object has no attribute 'edit_xlim_xmin'
+2025-05-22 12:23:58,845 interface [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 141, in cli
+    self.gui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\interface_run_me.py", line 182, in gui
+    window = MainWindow(self.acq_ctrl, self)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 273, in __init__
+    self.init_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 757, in init_ui
+    self.live_viewer = LiveDataViewer()
+                       ^^^^^^^^^^^^^^^^
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 87, in __init__
+    self._make_ui()
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\pyqtGUI.py", line 130, in _make_ui
+    controls_layout.addWidget(self.edit_xlim_xmin)
+                              ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LiveDataViewer' object has no attribute 'edit_xlim_xmin'
+
+2025-05-22 12:50:52,340 interface.simulated_camera [ERROR] Acquisition error: [Errno 22] Invalid argument: 'C:\\Users\\Sam\\matchbook\\ramanproject\\RamanMicroscope\\data\\transient_data\\transient_data.npy'
+2025-05-22 12:50:52,388 interface.simulated_camera [ERROR] Traceback (most recent call last):
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\instruments\cameras\simulated_camera.py", line 163, in continuous_task
+    self.save_transient_spectrum_cb(data, wavelengths)
+  File "c:\Users\Sam\matchbook\ramanproject\RamanMicroscope\acquisitioncontrol\acqcontrol.py", line 788, in save_spectrum_transient
+    np.save(save_path, image_data) # TODO: remove once integrated data viewer is complete
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Sam\matchbook\ramanproject\.venv\Lib\site-packages\numpy\lib\_npyio_impl.py", line 577, in save
+    file_ctx = open(file, "wb")
+               ^^^^^^^^^^^^^^^^
+OSError: [Errno 22] Invalid argument: 'C:\\Users\\Sam\\matchbook\\ramanproject\\RamanMicroscope\\data\\transient_data\\transient_data.npy'
+

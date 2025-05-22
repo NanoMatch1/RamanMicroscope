@@ -514,8 +514,8 @@ class Microscope(Instrument):
         self.simulate = simulate
 
         self.microscope_mode = 'ramanmode'
-
-        self.wavelength_axis = np.arange(0, 2048, 1)
+        camera_roi = self.interface.camera.roi
+        self.wavelength_axis = np.arange(camera_roi[0], camera_roi[2], 1)
         self.instrument_state = {}
         self.autosave = True
 

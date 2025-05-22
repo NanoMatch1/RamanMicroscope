@@ -23,6 +23,7 @@ import logging
 from logging_utils import QtLogHandler
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.patches import Rectangle
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 import numpy as np
@@ -69,124 +70,138 @@ def run_in_thread_and_refresh(func):
 
 class LiveDataViewer(QWidget):
     """
-    A QWidget that displays a live 1D spectrum (top) and 2D image (bottom).
-    Emits region_changed when the user selects a vertical band on the image.
+    Displays a live 1D spectrum (top, 3/4 height) and a 2D image (bottom, 1/4 height).
+    You can drag a vertical band on the image to select rows to bin.  That band is
+    redrawn with each update, and the spectrum redraws automatically.
     """
+    # emitted when the user selects a new vertical band (y0, y1)
     region_changed = pyqtSignal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Data storage
-        self.current_spectrum = None  # 1D numpy array
-        self.current_image = None     # 2D numpy array
-        # Selection defaults
+        self.current_image = None
         self.sel_y0 = 0
         self.sel_y1 = None
-        # Build UI
+
         self._make_ui()
-        # Connect region selection signal
+        # Connect selector → slot
         self.region_changed.connect(self._on_region_changed)
 
     def _make_ui(self):
         layout = QVBoxLayout(self)
 
-        # --- Spectrum plot (2/3 height) ---
-        self.spectrum_fig = Figure()
-        self.spectrum_ax = self.spectrum_fig.add_subplot(111)
+        # Spectrum axes (3/4 of height)
+        self.spectrum_fig    = Figure()
+        self.spectrum_ax     = self.spectrum_fig.add_subplot(111)
         self.spectrum_canvas = FigureCanvas(self.spectrum_fig)
-        layout.addWidget(self.spectrum_canvas, stretch=2)
+        layout.addWidget(self.spectrum_canvas, stretch=3)
 
-        # --- Image plot (1/3 height) ---
-        self.image_fig = Figure()
-        self.image_ax = self.image_fig.add_subplot(111)
+        # Image axes (1/4 of height)
+        self.image_fig    = Figure()
+        self.image_ax     = self.image_fig.add_subplot(111)
         self.image_canvas = FigureCanvas(self.image_fig)
         layout.addWidget(self.image_canvas, stretch=1)
 
-        # Enable span selector on image_ax for Y-axis selection
-        def onselect(ymin, ymax):
-            y0, y1 = int(round(ymin)), int(round(ymax))
-            self.region_changed.emit(y0, y1)
+        # SpanSelector on image for Y-axis selection
         self.span_selector = SpanSelector(
-            self.image_ax, onselect,
-            direction='vertical', useblit=True,
+            self.image_ax,
+            lambda v0, v1: self.region_changed.emit(int(round(v0)), int(round(v1))),
+            direction='vertical',
+            useblit=True,
             props=dict(alpha=0.3, facecolor='yellow')
         )
 
-        # --- Controls: Autoscale & Normalization ---
-        controls_layout = QHBoxLayout()
-        self.chk_autoscale = QCheckBox("Autoscale")
-        self.edit_norm_xmin = QLineEdit("0")
-        self.edit_norm_xmax = QLineEdit("0")
-        self.btn_apply_norm = QPushButton("Apply Norm")
+        # Controls: autoscale toggle + X-region inputs
+        ctrl = QHBoxLayout()
+        self.chk_autoscale    = QCheckBox("Autoscale Y to X-region")
+        self.chk_autoscale.setChecked(True)
+        self.edit_xmin        = QLineEdit("0")
+        self.edit_xmax        = QLineEdit("0")
+        self.btn_apply_region = QPushButton("Apply X-Region")
 
-        # Wire up controls to redraw
+        ctrl.addWidget(self.chk_autoscale)
+        ctrl.addWidget(QPushButton("Xmin:"))
+        ctrl.addWidget(self.edit_xmin)
+        ctrl.addWidget(QPushButton("Xmax:"))
+        ctrl.addWidget(self.edit_xmax)
+        ctrl.addWidget(self.btn_apply_region)
+        layout.addLayout(ctrl)
+
+        # Redraw spectrum when controls change
         self.chk_autoscale.toggled.connect(self._redraw_spectrum)
-        self.btn_apply_norm.clicked.connect(self._redraw_spectrum)
+        self.btn_apply_region.clicked.connect(self._redraw_spectrum)
 
-        controls_layout.addWidget(self.chk_autoscale)
-        controls_layout.addWidget(QPushButton("Xmin:"))  # label
-        controls_layout.addWidget(self.edit_norm_xmin)
-        controls_layout.addWidget(QPushButton("Xmax:"))  # label
-        controls_layout.addWidget(self.edit_norm_xmax)
-        controls_layout.addWidget(self.btn_apply_norm)
-        layout.addLayout(controls_layout)
+    def update_data(self, image_data: np.ndarray, wavelength_axis=None):
+        """
+        Call this slot when new frame arrives.
+        Clears and redraws the image and selection rectangle, then
+        updates the binned spectrum.
+        """
+        self.current_image = image_data
 
-    def update_data(self, spectrum: np.ndarray, image: np.ndarray):
-        """
-        Slot for new data: redraw image and spectrum.
-        """
-        self.current_spectrum = spectrum
-        self.current_image = image
-        # Initialize sel_y1 to full height if first time
+        # Initialize full-height selection on first call
         if self.sel_y1 is None:
-            self.sel_y1 = image.shape[0]
+            self.sel_y1 = image_data.shape[0]
 
-        # Draw image
+        # Redraw image
         self.image_ax.clear()
-        self.image_ax.imshow(image, aspect='auto')
+        self.image_ax.imshow(image_data, aspect='auto')
+
+        # Draw a fresh rectangle for the selected band
+        x0, x1 = self.image_ax.get_xlim()
+        y0, y1 = self.sel_y0, self.sel_y1
+        width, height = x1 - x0, y1 - y0
+        patch = Rectangle((x0, y0), width, height,
+                          fill=False, edgecolor='yellow', linewidth=1)
+        self.image_ax.add_patch(patch)
+
         self.image_canvas.draw()
 
-        # Draw binned spectrum
+        # Then redraw the spectrum below
         self._redraw_spectrum()
+
+    def _on_region_changed(self, y0: int, y1: int):
+        """
+        Slot: user dragged a new Y-range on the image.
+        Update selection and force a redraw of image + spectrum.
+        """
+        self.sel_y0, self.sel_y1 = y0, y1
+        if self.current_image is not None:
+            # reuse update_data to clear & redraw everything
+            self.update_data(self.current_image)
 
     def _redraw_spectrum(self):
         """
-        Redraw the spectrum by summing between sel_y0 and sel_y1,
-        applying normalization/autoscale as specified.
+        Sum rows between sel_y0 and sel_y1, plot raw intensities,
+        and autoscale Y to the specified X-region if enabled.
         """
         if self.current_image is None:
             return
 
-        # Compute binned spectrum
         y0, y1 = self.sel_y0, self.sel_y1 or self.current_image.shape[0]
-        binned = self.current_image[y0:y1, :].sum(axis=0)
+        binned = self.current_image[y0:y1, :].mean(axis=0)
 
-        # Apply normalization if not autoscale
-        if not self.chk_autoscale.isChecked():
-            try:
-                xmin = int(self.edit_norm_xmin.text())
-                xmax = int(self.edit_norm_xmax.text())
-                norm_slice = binned[xmin:xmax]
-                norm_factor = norm_slice.max() if norm_slice.size else 1
-            except Exception:
-                norm_factor = 1
-            if norm_factor != 0:
-                binned = binned / norm_factor
+        # X-region slicing
+        try:
+            xmin = int(self.edit_xmin.text())
+            xmax = int(self.edit_xmax.text())
+        except ValueError:
+            xmin, xmax = 0, len(binned)
+        xmin = max(0, xmin)
+        xmax = min(len(binned), xmax if xmax > xmin else len(binned))
+        region = binned[xmin:xmax] if xmax > xmin else binned
 
         # Plot
         self.spectrum_ax.clear()
-        self.spectrum_ax.plot(binned)
-        if self.chk_autoscale.isChecked():
-            self.spectrum_ax.autoscale()
+        self.spectrum_ax.plot(binned, linewidth=1)
+        self.spectrum_ax.set_title("Binned Spectrum")
+
+        if self.chk_autoscale.isChecked() and region.size > 0:
+            ymin, ymax = region.min(), region.max()
+            self.spectrum_ax.set_ylim(ymin, ymax)
+
         self.spectrum_canvas.draw()
 
-    def _on_region_changed(self, y0: int, y1: int):
-        """
-        Slot invoked when the user selects a vertical span on the image.
-        Updates selection and redraws the spectrum.
-        """
-        self.sel_y0, self.sel_y1 = max(0, y0), min(self.current_image.shape[0], y1)
-        self._redraw_spectrum()
 
 
 # --- Command line input with history ---
@@ -562,6 +577,8 @@ class MainWindow(QMainWindow):
 
         acq_group = QGroupBox("Acquisition Control")
         ag_layout = QVBoxLayout()
+        # FIx the width of the acquisition group
+        acq_group.setMaximumWidth(300)
 
         # Scan mode toggle
         self.btn_mode_toggle = QPushButton("Mode: Map")
