@@ -678,7 +678,7 @@ class AcquisitionControl(QObject):
 
         motor_dict = self.interface.microscope.calibration_service.microns_to_steps(micron_dict)
         # self.interface.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
-        self.interface.microscope.motion_control.move_motors(motor_dict)
+        self.interface.microscope.motion_control.move_motors(motor_dict, backlash=False)
         print("Sent Command {}".format(motor_dict))
         print("Stage moved ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
 
