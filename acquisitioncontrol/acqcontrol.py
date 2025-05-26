@@ -77,6 +77,9 @@ class ScanSequenceGenerator:
         Points are spaced by X resolution along the line. Z is fixed.
         Returns list of [position, None, None] entries.
         """
+        # Unpack parameters
+        wl_params = self.wavelength_parameters
+        pol_params = self.polarization_parameters['input']
         motion = self.motion_parameters
         start = motion['start_position']
         end   = motion['end_position']
@@ -95,11 +98,19 @@ class ScanSequenceGenerator:
 
         sequence = []
         prev_pos = None
-        for x, y in zip(xs, ys):
-            pos = [x, y, z0]
-            entry = [pos if pos != prev_pos else None, None, None]
-            sequence.append(entry)
-            prev_pos = pos
+
+        wavelength_list = self._generate_array(wl_params['start_wavelength'], wl_params['end_wavelength'], wl_params['resolution'])
+        polarization_list = self._generate_array(pol_params['start_angle'], pol_params['end_angle'], pol_params['resolution'])
+
+        prev_pos = [self.acq_ctrl.current_stage_coordinates, None, None]
+        for wl in wavelength_list:
+            for pol in polarization_list:
+                for x, y in zip(xs, ys):
+                    target_positions = [x, y, z0]
+                    current = [target_positions, pol, wl]
+                    entry = [current[i] if current[i] != prev_pos[i] else None for i in range(3)]
+                    sequence.append(entry)
+                    prev_pos = current
 
         return sequence
 
@@ -208,7 +219,7 @@ class CameraScanner:
         """
         Helper to update UI callbacks at the start of each scan step.
         """
-        status_cb(f"Running step {idx + 1}/{total}: {step}")
+        status_cb(f"Running step {idx + 1}/{total}")
         percentage = round((idx / total) * 100)
         progress_cb(percentage)
 
@@ -680,9 +691,7 @@ class AcquisitionControl(QObject):
         # self.interface.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
         self.interface.microscope.motion_control.move_motors(motor_dict, backlash=False)
         print("Sent Command {}".format(motor_dict))
-        print("Stage moved ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
-
-        self.interface.microscope.motion_control
+        self.logger.info("Stage moved to ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
 
         self.interface.microscope.update_stage_positions(micron_dict)
         self.update_stage_positions()
@@ -743,9 +752,9 @@ class AcquisitionControl(QObject):
                 return False
 
         self.acquire_scan(
-            cancel_event=CancelEvent(),
-            status_callback=lambda msg: print(msg),
-            progress_callback=lambda step, total, start_time: print(f"Step {step}/{total} completed in {time.time() - start_time:.2f} seconds") 
+            CancelEvent(),
+            lambda msg: print(msg),
+            lambda percentage: print(f"Progress: {percentage}%")
         )
         self.logger.info("Scan complete.")
 
@@ -753,7 +762,7 @@ class AcquisitionControl(QObject):
         """Acquires a confirmed scan sequence. Should only be called from the UI after completing the confirmation dialogue."""
 
         camera_scanner = CameraScanner(self)
-        failed_steps = camera_scanner._acquire_scan(cancel_event, status_callback, progress_callback, timeout)
+        failed_steps = camera_scanner._acquire_scan(cancel_event, status_callback, progress_callback, timeout=timeout)
 
         self.logger.info("Scan complete.")
 

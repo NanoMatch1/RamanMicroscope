@@ -98,5 +98,15 @@
             0.03876423394516125, 
             712.3963178316953
         ]
+    },
+    "polarization_calibrations.json": {
+        "pin_to_angle": [
+            0.075, 
+            0.0
+        ],
+        "angle_to_pin": [
+            13.333, 
+            0.0
+        ]
     }
 }
