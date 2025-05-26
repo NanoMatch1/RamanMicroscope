@@ -105,6 +105,8 @@ class MotionControl:
         self._monochromator_wavelength = None
         self._spectrometer_wavelength = None
 
+        self.last_direction = True
+
 
 
     def extract_coms_flag(self, message):
@@ -574,6 +576,7 @@ class Microscope(Instrument):
             'stagehome': self.set_stage_home,
             'setstart': self.set_start_pos,
             'setstop': self.set_end_pos,
+            'scanres': self.set_scan_resolution,
             'scanmode': self.toggle_scan_mode,
             'acquirescan': self.cli_acquire_scan,
 
@@ -672,6 +675,17 @@ class Microscope(Instrument):
         self.interface.acq_ctrl.save_config()
 
     @ui_callable
+    def set_scan_resolution(self, resolution):
+        '''Set the scan resolution in microns.'''
+        try:
+            resolution = float(resolution)
+            self.interface.acq_ctrl.motion_parameters['resolution'] = {'x': resolution, 'y': resolution, 'z': resolution}
+            self.micro_log.info("Scan resolution set to {}".format(resolution))
+        except ValueError:
+            self.micro_log.error("Invalid scan resolution value")
+            raise
+
+    @ui_callable
     def toggle_scan_mode(self):
         '''Toggle between linescan and map in acquisition control'''
         self.interface.acq_ctrl.toggle_scan_mode()
@@ -694,7 +708,6 @@ class Microscope(Instrument):
     def generate_wavelength_axis(self):
         spectrometer_wavelength = self.calculate_spectrometer_wavelength()['triax'] # TODO:change to getter
         self.wavelength_axis = self.calibration_service.generate_wavelength_axis(spectrometer_wavelength)
-        breakpoint()
 
     
     @ui_callable
@@ -1100,10 +1113,8 @@ class Microscope(Instrument):
     @ui_callable
     def go_to_polarization_in(self, angle):
         '''Moves the polarizer to the specified angle.'''
-        print("Not implemented yet")
-        return
         self.motion_control.move_motors({'p_in': angle})
-        print('Polarizer moved to {} degrees'.format(angle))
+        self.logger.info('Input polarization set to {} degrees'.format(angle))
 
     @ui_callable
     def go_to_polarization_out(self, angle):
@@ -1111,7 +1122,7 @@ class Microscope(Instrument):
         print("Not implemented yet")
         return
         self.motion_control.move_motors({'p_out': angle})
-        print('Polarizer moved to {} degrees'.format(angle))
+        print('Output polarization set to {} degrees'.format(angle))
 
     def _parse_stage_motion_command(self, command):
         """
