@@ -1,42 +1,42 @@
 {
   "general_parameters": {
-    "acquisition_time": 1.0,
-    "filename": "acquire_test_21.2",
+    "acquisition_time": 25.0,
+    "filename": "4Jun711_2",
     "raman_shift": 0.0,
     "laser_power": 4.5,
-    "n_frames": 1
+    "n_frames": 5
   },
   "hidden_parameters": {
     "scan_mode": "linescan",
-    "scan_index": 0
+    "scan_index": 28
   },
   "motion_parameters": {
     "start_position": {
-      "x": 0,
-      "y": 0.0,
-      "z": 0
+      "x": 790,
+      "y": -568.0,
+      "z": 28
     },
     "end_position": {
-      "x": 10.0,
-      "y": 0.0,
-      "z": 0
+      "x": 802.0,
+      "y": -566.0,
+      "z": 32
     },
     "resolution": {
-      "x": 10.0,
+      "x": 0.75,
       "y": 1.0,
       "z": 1.0
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 750.0,
-    "end_wavelength": 750.0,
-    "resolution": 1.0
+    "start_wavelength": 711.0,
+    "end_wavelength": 711.0,
+    "resolution": 0.0
   },
   "polarization_parameters": {
     "input": {
-      "start_angle": 0.0,
-      "end_angle": 0.0,
-      "resolution": 1.0
+      "start_angle": 205.0,
+      "end_angle": 205.0,
+      "resolution": 0.0
     },
     "output": {
       "start_angle": 0.0,
