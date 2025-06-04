@@ -137,28 +137,31 @@ class LiveDataViewer(QWidget):
         Clears and redraws the image and selection rectangle, then
         updates the binned spectrum.
         """
-        self.current_image = image_data
+        try:
+            self.current_image = image_data
 
-        # Initialize full-height selection on first call
-        if self.sel_y1 is None:
-            self.sel_y1 = image_data.shape[0]
+            # Initialize full-height selection on first call
+            if self.sel_y1 is None:
+                self.sel_y1 = image_data.shape[0]
 
-        # Redraw image
-        self.image_ax.clear()
-        self.image_ax.imshow(image_data, aspect='auto')
+            # Redraw image
+            self.image_ax.clear()
+            self.image_ax.imshow(image_data, aspect='auto')
 
-        # Draw a fresh rectangle for the selected band
-        x0, x1 = self.image_ax.get_xlim()
-        y0, y1 = self.sel_y0, self.sel_y1
-        width, height = x1 - x0, y1 - y0
-        patch = Rectangle((x0, y0), width, height,
-                          fill=False, edgecolor='yellow', linewidth=1)
-        self.image_ax.add_patch(patch)
+            # Draw a fresh rectangle for the selected band
+            x0, x1 = self.image_ax.get_xlim()
+            y0, y1 = self.sel_y0, self.sel_y1
+            width, height = x1 - x0, y1 - y0
+            patch = Rectangle((x0, y0), width, height,
+                            fill=False, edgecolor='yellow', linewidth=1)
+            self.image_ax.add_patch(patch)
 
-        self.image_canvas.draw()
+            self.image_canvas.draw()
 
-        # Then redraw the spectrum below
-        self._redraw_spectrum()
+            # Then redraw the spectrum below
+            self._redraw_spectrum()
+        except Exception as e:
+            print("Error updating live data:", e)
 
     def _on_region_changed(self, y0: int, y1: int):
         """
@@ -530,41 +533,43 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def refresh_ui(self):
         # Update all parameter fields
-        for fullkey, (line_edit, _) in self.param_entries.items():
-            parts = fullkey.split(".")
-            section = parts[0] + "_parameters"
-            d = getattr(self.acq_ctrl, section)
-            for p in parts[1:]:
-                d = d[p]
-            line_edit.setText(str(d))
+        try:
+            for fullkey, (line_edit, _) in self.param_entries.items():
+                parts = fullkey.split(".")
+                section = parts[0] + "_parameters"
+                d = getattr(self.acq_ctrl, section)
+                for p in parts[1:]:
+                    d = d[p]
+                line_edit.setText(str(d))
 
 
 
-        # Update labels for mode, positions, and estimate
-        scan_time = self.acq_ctrl.update_scan_estimate()
-        self.btn_mode_toggle.setText(f"Mode: {self.acq_ctrl.scan_mode.capitalize()}")
-        self.lbl_mode.setText(self.acq_ctrl.scan_mode.capitalize())
-        self.lbl_start.setText(self.acq_ctrl.start_position())
-        self.lbl_stop.setText(self.acq_ctrl.stop_position())
-        self.lbl_est.setText(f"{scan_time['duration']:.2f} {scan_time['units']}")
+            # Update labels for mode, positions, and estimate
+            scan_time = self.acq_ctrl.update_scan_estimate()
+            self.btn_mode_toggle.setText(f"Mode: {self.acq_ctrl.scan_mode.capitalize()}")
+            self.lbl_mode.setText(self.acq_ctrl.scan_mode.capitalize())
+            self.lbl_start.setText(self.acq_ctrl.start_position())
+            self.lbl_stop.setText(self.acq_ctrl.stop_position())
+            self.lbl_est.setText(f"{scan_time['duration']:.2f} {scan_time['units']}")
 
-        # Stage position update
-        stage_pos = self.acq_ctrl.current_stage_coordinates
-        self.lbl_stage_x.setText(f"{stage_pos[0]:.2f}")
-        self.lbl_stage_y.setText(f"{stage_pos[1]:.2f}")
-        self.lbl_stage_z.setText(f"{stage_pos[2]:.2f}")
+            # Stage position update
+            stage_pos = self.acq_ctrl.current_stage_coordinates
+            self.lbl_stage_x.setText(f"{stage_pos[0]:.2f}")
+            self.lbl_stage_y.setText(f"{stage_pos[1]:.2f}")
+            self.lbl_stage_z.setText(f"{stage_pos[2]:.2f}")
 
-        # instrument state update
-        self.lbl_laser.setText(f"{self.interface.microscope.report_laser_wavelength:.2f} nm")
-        self.lbl_grating.setText(f"{self.interface.microscope.report_grating_wavelength:.2f} nm")
-        self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
-        self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
-        # self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_entrance_slit:.2f} nm")
+            # instrument state update
+            self.lbl_laser.setText(f"{self.interface.microscope.report_laser_wavelength:.2f} nm")
+            self.lbl_grating.setText(f"{self.interface.microscope.report_grating_wavelength:.2f} nm")
+            self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
+            self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
+            # self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_entrance_slit:.2f} nm")
 
-        # self.update_instrument_state()
-        # self.set_start()   # or otherwise update start/stop labels
-        # self.set_stop()
-
+            # self.update_instrument_state()
+            # self.set_start()   # or otherwise update start/stop labels
+            # self.set_stop()
+        except Exception as e:
+            print("Error refreshing UI:", e)
 
     def init_ui(self):
         central = QWidget()
