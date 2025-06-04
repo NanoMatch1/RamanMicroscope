@@ -76,7 +76,7 @@ def noise_workflow():
     # breakpoint()
 
 series_name = r'sulfur-wavelengthscan-t4' # CHANGE THIS TO THE NAME OF THE FOLDER IN THE DATA DIRECTORY
-series_name = r'time_series_21-5-2'
+series_name = r'2JunTest'
 
 dirname = os.path.dirname(__file__)
 dataDir = os.path.join(dirname, 'data')
