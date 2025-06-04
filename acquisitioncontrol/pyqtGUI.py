@@ -161,7 +161,9 @@ class LiveDataViewer(QWidget):
             # Then redraw the spectrum below
             self._redraw_spectrum()
         except Exception as e:
-            print("Error updating live data:", e)
+            error_details = traceback.format_exc()
+            result = f"Error updating live data: {e}\n{error_details}"
+            print(result)
 
     def _on_region_changed(self, y0: int, y1: int):
         """
@@ -569,7 +571,10 @@ class MainWindow(QMainWindow):
             # self.set_start()   # or otherwise update start/stop labels
             # self.set_stop()
         except Exception as e:
-            print("Error refreshing UI:", e)
+            # tracebakck
+            error_details = traceback.format_exc()
+            result = f"Error refreshing ui: {e}\n{error_details}"
+            print(result)
 
     def init_ui(self):
         central = QWidget()
