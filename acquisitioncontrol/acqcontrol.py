@@ -794,7 +794,11 @@ class AcquisitionControl(QObject):
         # if kwargs.get('report', False):
         #     print(f"Saving transient data to {save_path}")
         # print(f"Saving transient data to {save_path}")
-        np.save(save_path, image_data) # TODO: remove once integrated data viewer is complete
+        try:
+            np.save(save_path, image_data) # TODO: remove once integrated data viewer is complete
+        except OSError:
+            print(f"Transient save failed - skipping")
+            
         self.spectrum_ready.emit(image_data, wavelength_axis)
 
     def save_spectrum(self, image_data, **kwargs):

@@ -784,13 +784,21 @@ class Microscope(Instrument):
         '''Determines Raman or Imagemode depending on the current position of the mode motor.'''
 
         mode_steps = self.get_stage_steps()['mode']
-        if -160_000 < mode_steps < -10_000:
-            self.microscope_mode = 'ramanmode'
-        elif -10_000 < mode_steps < 200_000:
+        if mode_steps == 50000:
             self.microscope_mode = 'imagemode'
+        elif mode_steps == -50000:
+            self.microscope_mode = 'ramanmode'
 
         else:
-            raise ValueError(f"Unknown mode motor position: {mode_steps}. Please check the beam splitter assembly positions.")
+            self.micro_log.info('Microscope mode not recognised. Please check state and enter "imagemode" or "ramanmode"')
+            while True:
+                newmode = input("Enter current mode (imagemode/ramanmode): ").strip().lower()
+                if newmode in ['imagemode', 'ramanmode']:
+                    self.microscope_mode = newmode
+                    self.motion_control.write_motor_positions({'mode': -self.mode_steps if newmode == 'ramanmode' else self.mode_steps})
+                    break
+                else:
+                    print("Invalid mode. Please enter 'imagemode' or 'ramanmode'.")
 
         self.micro_log.info("Microscope mode detected: {}".format(self.microscope_mode))
         return self.microscope_mode
@@ -1024,6 +1032,9 @@ class Microscope(Instrument):
             with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'r') as f:
                 current_data = json.load(f)
         except FileNotFoundError:
+            current_data = {}
+        except Exception as e:
+            print('recmot Error:', e)
             current_data = {}
 
 
