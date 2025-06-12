@@ -277,7 +277,7 @@ class TucsenCamera(Camera):
         self._uninit_api()
         print("Camera connection closed and API uninitialized.")
 
-    def grab_frame_safe(self, target_temp=-5, timeout=100000):
+    def grab_frame_safe(self, target_temp=-15, timeout=100000):
         """
         Acquires a frame, then waits for the temperature to drop before proceeding.
         """
@@ -288,6 +288,13 @@ class TucsenCamera(Camera):
             if temp.value < target_temp:
                 # print(f"Temperature stable ({temp.value}°C). Acquiring frame...")
                 image_data = self.grab_frame(timeout=timeout)
+                # check temp at end of frame acquisition. If too hot, start again
+                temp = ctypes.c_double()
+                TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
+                if temp.value < target_temp:
+                    self.logger.info(f"Frame acquired at {temp.value}°C. Discarding and retrying")
+                    continue
+
                 return image_data
             else:
                 self.logger.info(f"Camera too hot ({temp.value}°C). Waiting...")

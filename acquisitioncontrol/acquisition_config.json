@@ -1,41 +1,41 @@
 {
   "general_parameters": {
-    "acquisition_time": 25.0,
-    "filename": "4Jun711_2",
+    "acquisition_time": 1.0,
+    "filename": "Jun12PolFast5",
     "raman_shift": 0.0,
-    "laser_power": 4.5,
-    "n_frames": 5
+    "laser_power": "4.5",
+    "n_frames": 1
   },
   "hidden_parameters": {
     "scan_mode": "linescan",
-    "scan_index": 28
+    "scan_index": 0
   },
   "motion_parameters": {
     "start_position": {
-      "x": 790,
-      "y": -568.0,
-      "z": 28
+      "x": 441,
+      "y": -368.0,
+      "z": -8
     },
     "end_position": {
-      "x": 802.0,
-      "y": -566.0,
-      "z": 32
+      "x": 428.0,
+      "y": -368.0,
+      "z": -8
     },
     "resolution": {
-      "x": 0.75,
-      "y": 1.0,
-      "z": 1.0
+      "x": 0.5,
+      "y": 0.5,
+      "z": 0.1
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 711.0,
-    "end_wavelength": 711.0,
+    "start_wavelength": 750.0,
+    "end_wavelength": 750.0,
     "resolution": 0.0
   },
   "polarization_parameters": {
     "input": {
-      "start_angle": 205.0,
-      "end_angle": 205.0,
+      "start_angle": 240.0,
+      "end_angle": 240.0,
       "resolution": 0.0
     },
     "output": {

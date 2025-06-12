@@ -162,7 +162,7 @@ class LiveDataViewer(QWidget):
             self._redraw_spectrum()
         except Exception as e:
             error_details = traceback.format_exc()
-            result = f"Error updating live data: {e}\n{error_details}"
+            result = f"Error updating live data: \n{e}\n{error_details}"
             print(result)
 
     def _on_region_changed(self, y0: int, y1: int):
@@ -573,7 +573,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             # tracebakck
             error_details = traceback.format_exc()
-            result = f"Error refreshing ui: {e}\n{error_details}"
+            result = f"Error refreshing ui: \n{e}\n{error_details}"
             print(result)
 
     def init_ui(self):
