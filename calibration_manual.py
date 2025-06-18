@@ -263,8 +263,11 @@ class Calibration:
 
     def calibrate_all_motors(self):
         '''#TODO: refactor so that calibrations use only the motor labels, not motor_groups. motor_groups can be held and referenced internally, and called wherever needed. Attempt to keep backwards compatibility'''
-        flattened_data = self._generate_motor_dict()
-        print(flattened_data)
+        self.motor_dict = self._generate_motor_dict()
+        print(self.motor_dict)
+
+        for motor, data in self.motor_dict.items():
+            self.calibrate_motor_axis(motor)
         breakpoint()
         
 
@@ -716,7 +719,7 @@ class Calibration:
         
         if axis_label in self.full_data['laser_positions']:
             data_group = 'laser_positions'
-        elif axis_label in self.full_data['monochromator_positions']:
+        elif axis_label in self.full_data['grating_positions']:
             data_group = 'monochromator_positions'
         
         elif 'triax' in axis_label:
@@ -1573,10 +1576,12 @@ if __name__ == '__main__':
     # coefficients = calibration.monochromator_calibration()
     # coefficients = calibration.calibrate_motor_axis('triax')
     # calibration.save_triax_calibrations()
+    # 754, 759, 764, 784, 817
+    print(calibration.full_data['wavelength'])
     calibration.calibrate_all_motors()
+    calibration.save_all_calibrations()
     breakpoint()
     
-    calibration.save_all_calibrations()
     
     calibration.load_motor_recordings(filename='laser_motor_recordings.json')
     calibration.sort_flattened_data_by_wavelength()
