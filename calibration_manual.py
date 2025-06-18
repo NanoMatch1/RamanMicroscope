@@ -176,8 +176,22 @@ class Calibration:
         else:
             print(f"Calibration file '{calibration_name}' not found. Proceeding with empty calibration data.")
 
+    def _remove_entries_by_wavelength(self, data, skiplist):
+        '''Helper function removes all dictionary entries which have the wavelength specified in the skiplist.'''
+        
+        indexpop = []
+        for index, entry in data.items():
+            wavelength = entry.get('wavelength', None)
+            if wavelength in skiplist:
+                print("skipping {}".format(wavelength))
+                indexpop.append(index)
+            
+        for index in indexpop:
+            data.pop(index)
 
-    def load_motor_recordings(self, filename=None):
+        return data
+
+    def load_motor_recordings(self, filename=None, skiplist=[], calculate_wavelength=False):
         if not filename:
             motor_recordings_file = os.path.join(self.dataDir, 'motor_recordings.json')
         else:
@@ -189,7 +203,11 @@ class Calibration:
         
         with open(motor_recordings_file, 'r') as f:
             data = json.load(f)
+
         
+        data = self._remove_entries_by_wavelength(data, skiplist)
+        if calculate_wavelength is True:
+            self._calculate_wavelength_from_triax(data)
         self.full_data = self._flatten_calibration_data(data)
         
         return self.full_data
@@ -259,16 +277,46 @@ class Calibration:
                     self.motor_dict[motor_label] = data
         
         return self.motor_dict
+    
+    def _calculate_wavelength_from_triax(self, data, calibration_file='master_calibration_microsteps_32.json', prompt=True):
+        '''Attempts to full the value for wavelength from the most recent calibration file for the triax spectrometer. Designed for manual one-off use, do not use unless you have a good reason.'''
+
+        with open(os.path.join(os.path.dirname(__file__), 'calibration', calibration_file)) as file:
+            calibrations = json.load(file)
+
+        triax_cals = None
+        for key, value in calibrations.items():
+            if 'triax' in key:
+                triax_cals = calibrations[key]
+
+        if triax_cals is None:
+            print("No tirax values found in calibration dictionary: {}. Returning null...".format(calibrations))
+            return
         
+        triax_to_wl = np.poly1d(triax_cals['triax_to_wl'])
+
+        new_wavelengths = []
+
+        for index, item in data.items():
+            # print(index)
+            triax_steps = item['triax_positions']
+            given_wavelength = item['wavelength']
+            calculated_wavelength = triax_to_wl(triax_steps)
+            new_wavelengths.append([given_wavelength, calculated_wavelength])
+        
+            print('Given:', given_wavelength, '// New: ', calculated_wavelength)
+            item['wavelength'] = calculated_wavelength
+
+        return data
 
     def calibrate_all_motors(self):
         '''#TODO: refactor so that calibrations use only the motor labels, not motor_groups. motor_groups can be held and referenced internally, and called wherever needed. Attempt to keep backwards compatibility'''
         self.motor_dict = self._generate_motor_dict()
-        print(self.motor_dict)
 
         for motor, data in self.motor_dict.items():
             self.calibrate_motor_axis(motor)
-        breakpoint()
+        
+        print("All motors calibrated successfully. Calibration data stored in 'self.calibrations'.")
         
 
 
@@ -600,12 +648,35 @@ class Calibration:
 
         print("Successfully saved TRIAX calibration data to 'TRIAX_calibration.json' file.")
 
-    def save_all_calibrations(self):
+    def save_all_calibrations(self, update_master=False):
         
         with open(os.path.join(self.calibrationDir, 'calibrations_main.json'), 'w') as f:
-            json.dump(calibration.calibrations, f)
+            json.dump(self.calibrations, f, indent=4, sort_keys=True)
+
 
         print("Calibration complete: Successfully saved calibration data to 'calibrations_main.json' file.")
+
+        if update_master is True:
+            master_file = [file for file in os.listdir(self.calibrationDir) if file.startswith('master_calibration') and file.endswith('.json')]
+            if len(master_file) == 0:
+                print("No master file found to update. Please check calibrations folder.")
+                return
+            elif len(master_file) > 1:
+                print("Multiple master files found. Please check calibrations folder.")
+                return
+            master_filename = master_file[0]
+            with open(os.path.join(self.calibrationDir, master_filename), 'r') as f:
+                master_calibrations = json.load(f)
+            
+            for group, calibrations in master_calibrations.items():
+                for key, cal in self.calibrations.items():
+                    if key in calibrations:
+                        print(f"Updating {key} in master calibration file.")
+                        calibrations[key] = cal
+            
+            with open(os.path.join(self.calibrationDir, master_filename), 'w') as f:
+                json.dump(master_calibrations, f, indent=4, sort_keys=True)
+        print("Master calibration file updated successfully.")
 
     def save_new_calibrations(self):
         with open(os.path.join(os.path.dirname(__file__), 'c-new.json'), 'w') as f:
@@ -720,7 +791,7 @@ class Calibration:
         if axis_label in self.full_data['laser_positions']:
             data_group = 'laser_positions'
         elif axis_label in self.full_data['grating_positions']:
-            data_group = 'monochromator_positions'
+            data_group = 'grating_positions'
         
         elif 'triax' in axis_label:
             data_group = 'triax_positions'
@@ -755,6 +826,10 @@ class Calibration:
         self.calibration_metrics[f'wl_to_{axis_label}'] = metrics_fwd
         self.calibration_metrics[f'{axis_label}_to_wl'] = metrics_inv
 
+        # Estimate step size per nm from the derivative of the polynomial fit
+        step_per_nm = np.gradient(pred_steps, wavelength_axis)
+        relative_residuals = residuals_fwd / step_per_nm  # Fraction of one wavelength step
+
         # Plot forward calibration if requested
         if show or getattr(self, 'showplots', False):
             fig, ax = plt.subplots(2, 1)
@@ -768,6 +843,23 @@ class Calibration:
             ax[1].set_ylabel('Residuals')
             ax[1].set_xlabel('Wavelength (nm)')
             ax[1].legend()
+            # Create secondary Y axis
+            ax2 = ax[1].twinx()
+
+            # Compute step size per nm from the fit derivative
+            step_per_nm = np.gradient(pred_steps, wavelength_axis)
+            relative_residuals = residuals_fwd / step_per_nm  # Fractional error
+
+            # Set matching limits on the secondary axis
+            abs_min, abs_max = ax[1].get_ylim()
+            frac_min = abs_min / np.nanmax(step_per_nm)
+            frac_max = abs_max / np.nanmin(step_per_nm)
+            ax2.set_ylim(frac_min, frac_max)
+            ax2.set_ylabel('Residuals (fraction of step)')
+
+            # Add legends only from primary axis
+            ax[1].legend()
+
             plt.tight_layout()
             plt.show()
 
@@ -1565,10 +1657,12 @@ if __name__ == '__main__':
 
 
 
-
+    skiplist = [715.2, 754, 759, 764, 784, 817]
+    skiplist = [710, 725, 730, 735, 740, 745, 750, 780, 785, 790,795,800,806,812,824]
     # calibration, cal_data = initialise(showplots=False)
     calibration = Calibration(showplots=True)
-    calibration.load_motor_recordings()
+    calibration.load_motor_recordings(calculate_wavelength=True, skiplist=skiplist)
+    
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
 
@@ -1579,7 +1673,7 @@ if __name__ == '__main__':
     # 754, 759, 764, 784, 817
     print(calibration.full_data['wavelength'])
     calibration.calibrate_all_motors()
-    calibration.save_all_calibrations()
+    calibration.save_all_calibrations(update_master=True)
     breakpoint()
     
     
