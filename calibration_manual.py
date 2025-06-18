@@ -249,6 +249,26 @@ class Calibration:
         self.full_data = sorted_data
         return sorted_data
 
+    def _generate_motor_dict(self):
+        '''Helper funciton to generate the flattened dictionary of motors in the calibration file. #TODO refactor to work with flattened arrays.'''
+                # print(self.full_data)
+        self.motor_dict = {}
+        for group, motor_dict in self.full_data.items():
+            if group not in ['wavelength', 'triax_positions']:
+                for motor_label, data in motor_dict.items():
+                    self.motor_dict[motor_label] = data
+        
+        return self.motor_dict
+        
+
+    def calibrate_all_motors(self):
+        '''#TODO: refactor so that calibrations use only the motor labels, not motor_groups. motor_groups can be held and referenced internally, and called wherever needed. Attempt to keep backwards compatibility'''
+        flattened_data = self._generate_motor_dict()
+        print(flattened_data)
+        breakpoint()
+        
+
+
     def build_motor_sorted_array(self, flattened_data, motor_set):
         # Extract motor positions
         wavelengths = np.array(flattened_data["wavelength"])
@@ -1552,7 +1572,8 @@ if __name__ == '__main__':
     # coefficients = calibration.calibrate_motor_axis('g1', poly_order=1)
     # coefficients = calibration.monochromator_calibration()
     # coefficients = calibration.calibrate_motor_axis('triax')
-    calibration.save_triax_calibrations()
+    # calibration.save_triax_calibrations()
+    calibration.calibrate_all_motors()
     breakpoint()
     
     calibration.save_all_calibrations()
