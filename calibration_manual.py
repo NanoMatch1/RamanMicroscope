@@ -1676,7 +1676,6 @@ if __name__ == '__main__':
     calibration.save_all_calibrations(update_master=True)
     breakpoint()
     
-    
     calibration.load_motor_recordings(filename='laser_motor_recordings.json')
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
