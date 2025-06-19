@@ -795,7 +795,7 @@ class Microscope(Instrument):
                 newmode = input("Enter current mode (imagemode/ramanmode): ").strip().lower()
                 if newmode in ['imagemode', 'ramanmode']:
                     self.microscope_mode = newmode
-                    self.motion_control.write_motor_positions({'mode': -self.mode_steps if newmode == 'ramanmode' else self.mode_steps})
+                    self.motion_control.write_motor_positions({'mode': -50000 if newmode == 'ramanmode' else 50000})
                     break
                 else:
                     print("Invalid mode. Please enter 'imagemode' or 'ramanmode'.")
