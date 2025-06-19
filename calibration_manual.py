@@ -213,6 +213,7 @@ class Calibration:
         return self.full_data
     
     def assign_calibration_data(self):
+        '''Assign the calibration data to the class attributes. This is required for the dev build to access the calibration data easily.'''
         # self.wavelength_data = self.full_data['wavelength']
         # self.laser_positions = self.full_data['laser_positions']
         # self.monochromator_positions = self.full_data['monochromator_positions']
@@ -309,12 +310,28 @@ class Calibration:
 
         return data
 
-    def calibrate_all_motors(self):
-        '''#TODO: refactor so that calibrations use only the motor labels, not motor_groups. motor_groups can be held and referenced internally, and called wherever needed. Attempt to keep backwards compatibility'''
+    def calibrate_all_motors(self, poly_order=None):
+        '''Poly order is hard-coded by the poly_dict in this method, but can be overwritten by the poly_order kwarg.
+          #TODO: refactor so that calibrations use only the motor labels, not motor_groups. motor_groups can be held and referenced internally, and called wherever needed. Attempt to keep backwards compatibility'''
+
+        poly_dict = {
+            'l1': 2,
+            'l2': 2,
+            'l3': 2,
+            'g1': 2,
+            'g2': 1,
+            'g3': 1,
+            'g4': 1,
+        }
         self.motor_dict = self._generate_motor_dict()
 
         for motor, data in self.motor_dict.items():
-            self.calibrate_motor_axis(motor)
+            if poly_order is None:
+                poly = poly_dict[motor]
+            else:
+                poly = poly_order
+                print("Calibration polynomial order overwritten to: {}".format(poly))
+            self.calibrate_motor_axis(motor, poly_order=poly)
         
         print("All motors calibrated successfully. Calibration data stored in 'self.calibrations'.")
         
@@ -648,7 +665,15 @@ class Calibration:
 
         print("Successfully saved TRIAX calibration data to 'TRIAX_calibration.json' file.")
 
-    def save_all_calibrations(self, update_master=False):
+    def save_all_calibrations(self, update_master=False, prompt=True):
+
+        if prompt is True:
+            print("You are about to save the current calibration data. This will overwrite the existing 'calibrations_main.json' file.")
+            confirm = input("Do you want to proceed? (yes/no): ").strip().lower()
+            if confirm != 'yes':
+                print("Calibration saving aborted.")
+                return
+
         
         with open(os.path.join(self.calibrationDir, 'calibrations_main.json'), 'w') as f:
             json.dump(self.calibrations, f, indent=4, sort_keys=True)
@@ -837,6 +862,13 @@ class Calibration:
             ax[0].plot(wavelength_axis, pred_steps, label='Fit', color='tab:purple')
             ax[0].set_ylabel('Steps')
             ax[0].set_title(f'Wavelength to {axis_label.upper()} Calibration')
+            #   add text box with fit metrics
+            fitstring = [float(round(x, 3)) for x in fit_coeff_fwd]
+            fitstring = ', '.join([str(x) for x in fitstring])
+            metrics_text = f'Fit coeff: {fitstring}\nR²: {metrics_fwd.r2:.4f}\nRMSE: {metrics_fwd.rmse:.4f}\nMAE: {metrics_fwd.mae:.4f}'
+            ax[0].text(0.05, 0.95, metrics_text, transform=ax[0].transAxes, fontsize=10,
+                       verticalalignment='top', bbox=dict(facecolor='white', alpha=0.1))
+            
             ax[0].legend()
 
             ax[1].plot(wavelength_axis, residuals_fwd, label='Residuals', marker='o')
@@ -1657,11 +1689,12 @@ if __name__ == '__main__':
 
 
 
-    skiplist = [715.2, 754, 759, 764, 784, 817]
-    skiplist = [710, 725, 730, 735, 740, 745, 750, 780, 785, 790,795,800,806,812,824]
+    # skiplist = [715.2, 754, 759, 764, 784, 817]
+    # skiplist = [710, 725, 730, 735, 740, 745, 750, 780, 785, 790,795,800,806,812,824]
+    skiplist = []
     # calibration, cal_data = initialise(showplots=False)
     calibration = Calibration(showplots=True)
-    calibration.load_motor_recordings(calculate_wavelength=True, skiplist=skiplist)
+    calibration.load_motor_recordings(calculate_wavelength=False, skiplist=skiplist)
     
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
@@ -1672,6 +1705,7 @@ if __name__ == '__main__':
     # calibration.save_triax_calibrations()
     # 754, 759, 764, 784, 817
     print(calibration.full_data['wavelength'])
+    print(calibration.full_data)
     calibration.calibrate_all_motors()
     calibration.save_all_calibrations(update_master=True)
     breakpoint()
