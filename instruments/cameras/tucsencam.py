@@ -291,7 +291,7 @@ class TucsenCamera(Camera):
                 # check temp at end of frame acquisition. If too hot, start again
                 temp = ctypes.c_double()
                 TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
-                if temp.value < target_temp:
+                if temp.value > target_temp:
                     self.logger.info(f"Frame acquired at {temp.value}°C. Discarding and retrying")
                     continue
 
