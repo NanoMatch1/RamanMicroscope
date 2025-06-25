@@ -176,22 +176,22 @@ class Calibration:
         else:
             print(f"Calibration file '{calibration_name}' not found. Proceeding with empty calibration data.")
 
-    def _remove_entries_by_wavelength(self, data, skiplist):
+    def remove_entries_by_wavelength(self, skiplist):
         '''Helper function removes all dictionary entries which have the wavelength specified in the skiplist.'''
         
         indexpop = []
-        for index, entry in data.items():
+        for index, entry in self.full_data.items():
             wavelength = entry.get('wavelength', None)
             if wavelength in skiplist:
                 print("skipping {}".format(wavelength))
                 indexpop.append(index)
             
         for index in indexpop:
-            data.pop(index)
+            self.full_data.pop(index)
 
-        return data
+        return self.full_data
 
-    def load_motor_recordings(self, filename=None, skiplist=[], calculate_wavelength=False):
+    def load_motor_recordings(self, filename=None):
         if not filename:
             motor_recordings_file = os.path.join(self.dataDir, 'motor_recordings.json')
         else:
@@ -202,14 +202,8 @@ class Calibration:
         
         
         with open(motor_recordings_file, 'r') as f:
-            data = json.load(f)
+            self.full_data = json.load(f)
 
-        
-        data = self._remove_entries_by_wavelength(data, skiplist)
-        if calculate_wavelength is True:
-            self._calculate_wavelength_from_triax(data)
-        self.full_data = self._flatten_calibration_data(data)
-        
         return self.full_data
     
     def assign_calibration_data(self):
@@ -220,12 +214,12 @@ class Calibration:
         # self.triax_positions = self.full_data['triax_positions']
         self.__dict__.update(self.full_data)
 
-    def _flatten_calibration_data(self, data):
+    def flatten_calibration_data(self):
         # Prepare output structure
         flattened = {}
 
         # Sort top-level keys numerically
-        sorted_entries = [data[key] for key in sorted(data, key=int)]
+        sorted_entries = [self.full_data[key] for key in sorted(self.full_data, key=int)]
 
         for entry in sorted_entries:
             for key, value in entry.items():
@@ -244,7 +238,8 @@ class Calibration:
             if isinstance(flattened[key], defaultdict):
                 flattened[key] = dict(flattened[key])
 
-        return flattened
+        self.full_data = flattened
+        return self.full_data
     
     def sort_flattened_data_by_wavelength(self):
         # Get the sorted indices from the wavelength list
@@ -266,7 +261,7 @@ class Calibration:
                 raise ValueError(f"Unsupported type for key {key}: {type(value)}")
 
         self.full_data = sorted_data
-        return sorted_data
+        return self.full_data
 
     def _generate_motor_dict(self):
         '''Helper funciton to generate the flattened dictionary of motors in the calibration file. #TODO refactor to work with flattened arrays.'''
@@ -279,7 +274,7 @@ class Calibration:
         
         return self.motor_dict
     
-    def _calculate_wavelength_from_triax(self, data, calibration_file='master_calibration_microsteps_32.json', prompt=True):
+    def calculate_wavelength_from_triax(self, calibration_file='master_calibration_microsteps_32.json', prompt=True, save=False):
         '''Attempts to full the value for wavelength from the most recent calibration file for the triax spectrometer. Designed for manual one-off use, do not use unless you have a good reason.'''
 
         with open(os.path.join(os.path.dirname(__file__), 'calibration', calibration_file)) as file:
@@ -298,7 +293,7 @@ class Calibration:
 
         new_wavelengths = []
 
-        for index, item in data.items():
+        for index, item in self.full_data.items():
             # print(index)
             triax_steps = item['triax_positions']
             given_wavelength = item['wavelength']
@@ -308,11 +303,66 @@ class Calibration:
             print('Given:', given_wavelength, '// New: ', calculated_wavelength)
             item['wavelength'] = calculated_wavelength
 
-        return data
+        if save is True:
+            with open(os.path.join(self.calibrationDir, 'recalculated_wavelengths.json'), 'w') as f:
+                json.dump({key: value for (key, value) in new_wavelengths}, f, indent=4)
+            print('Recalculated wavelengths saved to recalculated_wavelengths.json')
 
-    def calibrate_all_motors(self, poly_order=None):
+        return self.full_data, new_wavelengths
+    
+    def calculate_wavelength_from_laser(self, motor_label, calibration_file='master_calibration_microsteps_32.json', save=False):
+        '''Attempts to full the value for wavelength from the most recent calibration file for the l1 motor. Designed for manual one-off use, do not use unless you have a good reason.'''
+
+        with open(os.path.join(os.path.dirname(__file__), 'calibration', calibration_file)) as file:
+            calibrations = json.load(file)
+
+        laser_cals = None
+        for key, value in calibrations.items():
+            if motor_label in key:
+                laser_cals = calibrations[key]
+
+        if laser_cals is None:
+            print("No l1 values found in calibration dictionary: {}. Returning null...".format(calibrations))
+            return
+
+        cal_label = '{}_to_wl'.format(motor_label)
+        laser_to_wl = np.poly1d(laser_cals[cal_label])
+
+        new_wavelengths = {}
+
+        for index, item in self.full_data.items():
+            # print(index)
+            motor_steps = item['laser_positions'][motor_label]
+            given_wavelength = item['wavelength']
+            calculated_wavelength = laser_to_wl(motor_steps)
+            new_wavelengths[given_wavelength] = calculated_wavelength
+
+            print('Given:', given_wavelength, '// New: ', calculated_wavelength)
+            item['wavelength'] = calculated_wavelength
+
+        if save:
+            with open(os.path.join(self.calibrationDir, '{}_recalculated_wavelengths.json'.format(motor_label)), 'w') as f:
+                json.dump(new_wavelengths, f, indent=4)
+            print('Recalculated wavelengths saved to {}_recalculated_wavelengths.json'.format(motor_label))
+        else:
+            print("NOTE: Recalculated wavelengths not saved. Set save=True to save the recalculated wavelengths.")
+        
+        return self.full_data
+
+    def calibrate_all_motors(self, poly_order=None, motor_list=[]):
         '''Poly order is hard-coded by the poly_dict in this method, but can be overwritten by the poly_order kwarg.
           #TODO: refactor so that calibrations use only the motor labels, not motor_groups. motor_groups can be held and referenced internally, and called wherever needed. Attempt to keep backwards compatibility'''
+        
+        self.motor_dict = self._generate_motor_dict()
+        if len(motor_list) == 0:
+            new_motor_list = [key for key in self.motor_dict.keys()]
+        else:
+            new_motor_list = []
+            for motor in motor_list:
+                if motor in self.motor_dict.keys():
+                    new_motor_list.append(motor)
+                else:
+                    print("Motor {} not found in motor dictionary. Skipping...".format(motor))
 
         poly_dict = {
             'l1': 2,
@@ -323,9 +373,8 @@ class Calibration:
             'g3': 1,
             'g4': 1,
         }
-        self.motor_dict = self._generate_motor_dict()
 
-        for motor, data in self.motor_dict.items():
+        for motor in new_motor_list:
             if poly_order is None:
                 poly = poly_dict[motor]
             else:
@@ -1682,8 +1731,6 @@ class Calibration:
         return fit_coeff_g2_to_wavelength, fit_metrics
 
 
-
-
 if __name__ == '__main__':
 
 
@@ -1694,8 +1741,16 @@ if __name__ == '__main__':
     skiplist = []
     # calibration, cal_data = initialise(showplots=False)
     calibration = Calibration(showplots=True)
-    calibration.load_motor_recordings(calculate_wavelength=False, skiplist=skiplist)
+    calibration.load_motor_recordings(filename='recmot_manual_l2_25-06-25.json')
+    # calibration.remove_entries_by_wavelength(skiplist)
     
+    # calibration.calculate_wavelength_from_triax(save=False)
+
+
+    # breakpoint()
+    # calibration.calculate_wavelength_from_laser('l3', save=True)
+    calibration.flatten_calibration_data() # necessary for data processing
+        
     calibration.sort_flattened_data_by_wavelength()
     calibration.assign_calibration_data()
 

@@ -66,6 +66,9 @@ class ScanSequenceGenerator:
                             pol   if pol != prev[1] else None,
                             wl    if wl  != prev[2] else None
                         ]
+                        # if all(val is None for val in entry):
+                        # # Skip if all values are None (no change)
+                        #     continue
                         sequence.append(entry)
                         prev = [pos, pol, wl]
 
@@ -93,8 +96,13 @@ class ScanSequenceGenerator:
         num_steps = max(1, int(length / step))
 
         # Generate line points
-        xs = np.linspace(start['x'], end['x'], num_steps + 1)
-        ys = np.linspace(start['y'], end['y'], num_steps + 1)
+        if length == 0:
+            # If start and end are the same, just return one point
+            xs = [start['x']]
+            ys = [start['y']]
+        else:
+            xs = np.linspace(start['x'], end['x'], num_steps + 1)
+            ys = np.linspace(start['y'], end['y'], num_steps + 1)
 
         sequence = []
         prev_pos = None
@@ -109,8 +117,12 @@ class ScanSequenceGenerator:
                     target_positions = [x, y, z0]
                     current = [target_positions, pol, wl]
                     entry = [current[i] if current[i] != prev_pos[i] else None for i in range(3)]
+                    # if all(val is None for val in entry):
+                    #     # Skip if all values are None (no change)
+                    #     continue
                     sequence.append(entry)
                     prev_pos = current
+                    breakpoint()
 
         return sequence
 
@@ -622,6 +634,7 @@ class AcquisitionControl(QObject):
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
+                        breakpoint()
 
         self.scan_sequence = sequence
         return sequence
