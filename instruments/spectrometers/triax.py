@@ -122,17 +122,17 @@ class Triax(Instrument):
         response = self.send_command('mg {}'.format(position))
         return response
     
-    def go_to_wavelength(self, wavelength):
-        '''Moves the spectrometer to the specified wavelength.'''
+    def go_to_wavelength(self, wavelength, steps_correction=200):
+        '''Moves the spectrometer to the specified wavelength. Steps correction is an artificial adjustment to push the laser closer to 100 to prevent the laser from being too far to the left. #TODO recalibrate for pixel 100, not 50'''
         try:
             wavelength = float(wavelength)
         except ValueError:
             print('Invalid input')
             return
         
-        triax_steps = self.get_triax_steps()
+        triax_steps = self.get_triax_steps() 
         
-        target_steps = round(self.interface.microscope.calibration_service.wl_to_triax(wavelength))
+        target_steps = round(self.interface.microscope.calibration_service.wl_to_triax(wavelength)) - steps_correction
         # 
         new_steps = target_steps - triax_steps
         # return if no movement is required
