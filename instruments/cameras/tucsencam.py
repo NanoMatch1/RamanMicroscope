@@ -384,7 +384,7 @@ class TucsenCamera(Camera):
         return temp.value
 
 
-    def start_continuous_acquisition(self):
+    def start_continuous_acquisition(self, report=False):
         """
         Start a continuous acquisition thread until told to stop via stop_continuous_acquisition().
         Each frame is saved as .npy into self.transient_dir.
@@ -403,7 +403,7 @@ class TucsenCamera(Camera):
             while not self.stop_flag.is_set():
                 try:
                     for index in range(n_frames):
-                        self.logger.info(f"Acquiring frame {index+1}/{n_frames}...")
+                        # self.logger.debug(f"Acquiring frame {index+1}/{n_frames}...")
 
                         new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
