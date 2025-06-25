@@ -226,7 +226,7 @@ class ArduinoMEGA:
         timeout = 2  # Timeout in seconds
         while UNO_serial.in_waiting == 0:
             if time.time() - start_time > timeout:
-                print("Timeout waiting for Arduino to respond.")
+                print("Timeout waiting for Arduino to respond. Assuming connection is established in resume mode")
                 return UNO_serial
             time.sleep(0.1)
         
