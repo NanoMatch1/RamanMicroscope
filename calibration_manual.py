@@ -1,7 +1,7 @@
-import csv
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+from scipy.interpolate import UnivariateSpline
 import scipy.optimize as opt
 
 
@@ -1731,16 +1731,109 @@ class Calibration:
         return fit_coeff_g2_to_wavelength, fit_metrics
 
 
+    def pseudo_calibration(self, cal_filename='pseudo_cal_data.json', smoothing=0.5):
+        self.spline_calibrators = {}
+
+        '''Wrapper around the calibration data to calculate a temporary wavelength correction using spline fitting.'''
+        pseudo_cal = self.open_json_cal(cal_filename)
+
+        self.wavelengths_requested = np.array([float(k) for k in pseudo_cal.keys()])
+        self.wavelengths_actual = np.array([pseudo_cal[k] for k in pseudo_cal.keys()])
+
+        self._pseudo_forwards_spline(smoothing=smoothing)
+        self._pseudo_backwards_spline(smoothing=smoothing)
+
+        print('Pseudo calibration complete.')
+        print('Spline smoothing:', smoothing)
+
+    def _pseudo_forwards_spline(self, smoothing=0.5):
+        '''Fits a spline to get actual → requested wavelength (used for correcting drift).'''
+        spline = UnivariateSpline(self.wavelengths_actual, self.wavelengths_requested, s=smoothing)
+        y_pred = spline(self.wavelengths_actual)
+        residuals = self.wavelengths_requested - y_pred
+        fit_metrics = self.calculate_fit_metrics(self.wavelengths_requested, y_pred)
+
+        self.calibrations['pseudo_forwards'] = {
+            'type': 'spline',
+            'smoothing': smoothing,
+            'x': self.wavelengths_actual.tolist(),
+            'y': self.wavelengths_requested.tolist()
+        }
+        self.spline_calibrators['pseudo_forwards'] = spline
+
+        if self.showplots:
+            fig, ax = plt.subplots(2, 1)
+            ax[0].scatter(self.wavelengths_actual, self.wavelengths_requested, label='Actual vs Requested')
+            ax[0].plot(self.wavelengths_actual, y_pred, label='Spline Fit', color='tab:purple')
+            ax[0].legend()
+            ax[0].set_title('Pseudo Calibration Forwards (Spline)')
+            ax[1].plot(self.wavelengths_actual, residuals, marker='o', label='Residuals')
+            ax[1].legend()
+            plt.tight_layout()
+            plt.show()
+
+        self.calibration_metrics['pseudo_forwards'] = fit_metrics
+        self.report_dict['pseudo_forwards'] = (fit_metrics, {'smoothing': smoothing})
+        return spline, fit_metrics
+
+    def _pseudo_backwards_spline(self, smoothing=0.5):
+        '''Fits a spline to get requested → actual wavelength (used for reporting actual position).'''
+        spline = UnivariateSpline(self.wavelengths_requested, self.wavelengths_actual, s=smoothing)
+        y_pred = spline(self.wavelengths_requested)
+        residuals = self.wavelengths_actual - y_pred
+        fit_metrics = self.calculate_fit_metrics(self.wavelengths_actual, y_pred)
+
+        self.calibrations['pseudo_backwards'] = {
+            'type': 'spline',
+            'smoothing': smoothing,
+            'x': self.wavelengths_requested.tolist(),
+            'y': self.wavelengths_actual.tolist()
+        }
+        self.spline_calibrators['pseudo_backwards'] = spline
+
+        if self.showplots:
+            fig, ax = plt.subplots(2, 1)
+            ax[0].scatter(self.wavelengths_requested, self.wavelengths_actual, label='Requested vs Actual')
+            ax[0].plot(self.wavelengths_requested, y_pred, label='Spline Fit', color='tab:purple')
+            ax[0].legend()
+            ax[0].set_title('Pseudo Calibration Backwards (Spline)')
+            ax[1].plot(self.wavelengths_requested, residuals, marker='o', label='Residuals')
+            ax[1].legend()
+            plt.tight_layout()
+            plt.show()
+
+        self.calibration_metrics['pseudo_backwards'] = fit_metrics
+        self.report_dict['pseudo_backwards'] = (fit_metrics, {'smoothing': smoothing})
+        return spline, fit_metrics
+
+
+
+    def open_json_cal(self, filename):
+        '''Open a JSON file containing calibration data.'''
+        with open(os.path.join(self.dataDir, filename), 'r') as f:
+            cal_data = json.load(f)
+        return cal_data
+
+
+
 if __name__ == '__main__':
 
+    def pseudo_calibration():
+        calibration = Calibration(showplots=True)
+        calibration.pseudo_calibration(cal_filename='pseudo_cal_data.json')
 
 
 
+
+    # pseudo_calibration()
+    # breakpoint()
     # skiplist = [715.2, 754, 759, 764, 784, 817]
     # skiplist = [710, 725, 730, 735, 740, 745, 750, 780, 785, 790,795,800,806,812,824]
     skiplist = []
     # calibration, cal_data = initialise(showplots=False)
     calibration = Calibration(showplots=True)
+    
+
     calibration.load_motor_recordings(filename='recmot_manual_l2_25-06-25.json')
     # calibration.remove_entries_by_wavelength(skiplist)
     
