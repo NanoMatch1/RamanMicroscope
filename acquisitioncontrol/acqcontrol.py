@@ -122,7 +122,6 @@ class ScanSequenceGenerator:
                     #     continue
                     sequence.append(entry)
                     prev_pos = current
-                    breakpoint()
 
         return sequence
 
@@ -634,7 +633,6 @@ class AcquisitionControl(QObject):
                         entry = [current[i] if current[i] != prev[i] else None for i in range(3)]
                         sequence.append(entry)
                         prev = current
-                        breakpoint()
 
         self.scan_sequence = sequence
         return sequence
