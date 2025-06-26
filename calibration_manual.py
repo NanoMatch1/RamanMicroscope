@@ -1730,6 +1730,20 @@ class Calibration:
 
         return fit_coeff_g2_to_wavelength, fit_metrics
 
+class PseudoCalibration:
+
+    def __init__(self, cal_filename='pseudo_cal_data.json', smoothing=0.5, showplots=False):
+        self.cal_filename = cal_filename
+        self.dataDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calibration', 'motor_recordings')
+        self.smoothing = smoothing
+        self.showplots = showplots
+        self.calibrations = {}
+        self.calibration_metrics = {}
+        self.report_dict = {}
+        self.spline_calibrators = {}
+
+        # Load pseudo calibration data
+        self.pseudo_calibration(cal_filename, smoothing)
 
     def pseudo_calibration(self, cal_filename='pseudo_cal_data.json', smoothing=0.5):
         self.spline_calibrators = {}
@@ -1740,11 +1754,13 @@ class Calibration:
         self.wavelengths_requested = np.array([float(k) for k in pseudo_cal.keys()])
         self.wavelengths_actual = np.array([pseudo_cal[k] for k in pseudo_cal.keys()])
 
-        self._pseudo_forwards_spline(smoothing=smoothing)
-        self._pseudo_backwards_spline(smoothing=smoothing)
+        spline_frw, fit_metrics_frw = self._pseudo_forwards_spline(smoothing=smoothing)
+        spline_back, fit_metrics_back = self._pseudo_backwards_spline(smoothing=smoothing)
 
-        print('Pseudo calibration complete.')
-        print('Spline smoothing:', smoothing)
+        self.cal_forward = spline_frw
+        self.cal_backward = spline_back
+
+        return spline_frw, spline_back
 
     def _pseudo_forwards_spline(self, smoothing=0.5):
         '''Fits a spline to get actual → requested wavelength (used for correcting drift).'''
@@ -1819,13 +1835,12 @@ class Calibration:
 if __name__ == '__main__':
 
     def pseudo_calibration():
-        calibration = Calibration(showplots=True)
-        calibration.pseudo_calibration(cal_filename='pseudo_cal_data.json')
+        calibration = PseudoCalibration(showplots=True)
+        breakpoint()
 
 
 
-
-    # pseudo_calibration()
+    pseudo_calibration()
     # breakpoint()
     # skiplist = [715.2, 754, 759, 764, 784, 817]
     # skiplist = [710, 725, 730, 735, 740, 745, 750, 780, 785, 790,795,800,806,812,824]
