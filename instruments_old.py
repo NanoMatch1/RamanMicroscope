@@ -66,7 +66,7 @@ def apply_pseudocal_forwards(func):
     def wrapper(self, wavelength, *args, **kwargs):
         if getattr(self, 'apply_pseudocal', False) is True:
             # Apply offset correction before the function runs
-            corrected_wavelength = self.pseudocal_forwards(wavelength)
+            corrected_wavelength = float(self.pseudocal_forwards(wavelength))
         return func(self, corrected_wavelength, *args, **kwargs)
     return wrapper
 
@@ -78,8 +78,9 @@ def apply_pseudocal_backwards(func):
             # If apply_pseudocal is True, apply the backwards correction
             if isinstance(result, dict):
                 # If result is a dictionary, apply to each wavelength
-                result = {key: self.pseudocal_backwards(value) for key, value in result.items()}
+                result = {key: float(self.pseudocal_backwards(value)) for key, value in result.items()}
                 # result = self.pseudocal_backwards(result['l1'])
+                self.laser_wavelengths = result
         return result
     return wrapper
 
@@ -566,6 +567,8 @@ class Microscope(Instrument):
 
         self.command_functions = {
             'nyi': self.not_yet_implemented,
+            # calibration commands
+            'pscal': self.toggle_pseudocal,
             # general commands
             'wai': self.where_am_i,
             'rg': self.get_spectrometer_position,
@@ -589,6 +592,7 @@ class Microscope(Instrument):
             'rldr': self.read_ldr0,
             'autocal': self.run_calibration,
             'loadconfig': self.load_config,
+
             # Stage motion
             'x': self.move_x,
             'y': self.move_y,
@@ -678,6 +682,20 @@ class Microscope(Instrument):
     @ui_callable
     def not_yet_implemented(self, *args):
         self.micro_log.info("Not yet implemented")
+
+    @ui_callable
+    def toggle_pseudocal(self, *args):
+        '''Toggle the pseudocalibration correction.'''
+        if not args:
+            self.apply_pseudocal = not self.apply_pseudocal
+        elif len(args) == 1 and isinstance(args[0], bool):
+            self.apply_pseudocal = args[0]
+        else:
+            self.micro_log.error('Invalid argument for toggle_pseudocal. Use True or False to set the state.')
+        status = "enabled" if self.apply_pseudocal else "disabled"
+        self.micro_log.info(f"Pseudocalibration correction {status}")
+
+        return status
     
     @property
     def filename(self):
@@ -2309,6 +2327,7 @@ class Microscope(Instrument):
     def get_all_current_wavelengths(self):
         '''Get the current positions of all motors and calculate the corresponding wavelengths.'''
         laser_positions = self.calculate_laser_wavelength()
+
         grating_positions = self.calculate_grating_wavelength()
         monochromator_positions = self.calculate_monochromator_wavelength()
         spectrometer_position = self.calculate_spectrometer_wavelength()
@@ -2382,7 +2401,6 @@ class Microscope(Instrument):
                
         # Calculate wavelengths for each motor using calibration functions
         self.laser_wavelengths = self.calibration_service.steps_to_wl(current_pos)
-        self.laser_wavelengths['l1'] = self.calibration_service.pseudocal.cal_backward(self.laser_wavelengths['l1']) # corrects for laser drift. #TODO remove after recalibration
 
         return self.laser_wavelengths
     

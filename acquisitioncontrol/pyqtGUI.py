@@ -544,6 +544,20 @@ class MainWindow(QMainWindow):
                     d = d[p]
                 line_edit.setText(str(d))
 
+            # Pseudocal light
+            if getattr(self.interface.microscope, 'apply_pseudocal', False):
+                self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: green;")
+            else:
+                self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: red;")
+
+            # Instrument ready (example: set from some flag)
+            if getattr(self.interface.microscope, 'instrument_ready', True):
+                self.light_ready.setStyleSheet("border-radius: 10px; background-color: green;")
+            else:
+                self.light_ready.setStyleSheet("border-radius: 10px; background-color: red;")
+
+            # Placeholder always gray for now
+            self.light_placeholder.setStyleSheet("border-radius: 10px; background-color: gray;")
 
 
             # Update labels for mode, positions, and estimate
@@ -566,6 +580,9 @@ class MainWindow(QMainWindow):
             self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
             self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
             # self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_entrance_slit:.2f} nm")
+
+            self.btn_toggle_mode.setText(f"Mode: {self.interface.microscope.microscope_mode}")
+
 
             # self.update_instrument_state()
             # self.set_start()   # or otherwise update start/stop labels
@@ -604,9 +621,14 @@ class MainWindow(QMainWindow):
         self.chk_z_scan = QCheckBox("Enable Z Scan")
         self.chk_z_scan.setChecked(False)
         self.chk_z_scan.toggled.connect(lambda en: self.send_cli_command(f'nyi {en}'))
-        ag_layout.addWidget(self.chk_z_scan)
 
+        self.btn_developer = QPushButton("Developer Options")
+        self.btn_developer.clicked.connect(self.open_developer_window)
+
+        ag_layout.addWidget(self.btn_developer)
+        ag_layout.addWidget(self.chk_z_scan)
         ag_layout.addWidget(self.tabs)
+
         acq_group.setLayout(ag_layout)
         main_layout.addWidget(acq_group, 1)
 
@@ -652,6 +674,31 @@ class MainWindow(QMainWindow):
         top_button_layout.addSpacing(20)
         top_button_layout.addLayout(right_btn_layout)
 
+        # --- Status Lights ---
+        status_layout = QHBoxLayout()
+
+        def make_light(name):
+            label = QLabel(name)
+            light = QLabel()
+            light.setFixedSize(20, 20)
+            light.setStyleSheet("border-radius: 10px; background-color: gray;")
+            return label, light
+
+        lbl1, self.light_pseudocal = make_light("Pseudocal")
+        lbl2, self.light_ready = make_light("Instrument Ready")
+        lbl3, self.light_placeholder = make_light("...")
+
+        status_layout.addWidget(lbl1)
+        status_layout.addWidget(self.light_pseudocal)
+        status_layout.addSpacing(20)
+        status_layout.addWidget(lbl2)
+        status_layout.addWidget(self.light_ready)
+        status_layout.addSpacing(20)
+        status_layout.addWidget(lbl3)
+        status_layout.addWidget(self.light_placeholder)
+        right_layout.addLayout(status_layout)
+
+
         # Add to the top of the right_layout
         right_layout.addLayout(top_button_layout)
 
@@ -666,16 +713,25 @@ class MainWindow(QMainWindow):
 
         # Instrument Control
         instrument_group = QGroupBox("Instrument Control")
-        ig_layout = QHBoxLayout()
+        ig_layout = QVBoxLayout()  # Change from QHBoxLayout to vertical layout
+        stage_btns_layout = QHBoxLayout()
+
         self.btn_set_home = QPushButton("Set Home")
         self.btn_set_home.clicked.connect(lambda: self.send_cli_command('stagehome'))
         self.btn_set_start = QPushButton("Set Start")
         self.btn_set_start.clicked.connect(lambda: self.send_cli_command('setstart'))
         self.btn_set_stop = QPushButton("Set Stop")
         self.btn_set_stop.clicked.connect(lambda: self.send_cli_command('setstop'))
-        ig_layout.addWidget(self.btn_set_home)
-        ig_layout.addWidget(self.btn_set_start)
-        ig_layout.addWidget(self.btn_set_stop)
+
+        stage_btns_layout.addWidget(self.btn_set_home)
+        stage_btns_layout.addWidget(self.btn_set_start)
+        stage_btns_layout.addWidget(self.btn_set_stop)
+        ig_layout.addLayout(stage_btns_layout)
+
+        self.btn_toggle_mode = QPushButton("Mode: N/A")
+        self.btn_toggle_mode.clicked.connect(self.toggle_microscope_mode)
+        ig_layout.addWidget(self.btn_toggle_mode)
+
         instrument_group.setLayout(ig_layout)
 
         ctrl_state_layout.addWidget(instrument_group)
@@ -798,6 +854,43 @@ class MainWindow(QMainWindow):
 
     def handle_command(self, text):
         self.send_cli_command(text)
+
+    def toggle_microscope_mode(self):
+        current_mode = self.interface.microscope.microscope_mode
+        new_mode = "imagemode" if current_mode == "ramanmode" else "ramanmode"
+
+        confirm = QMessageBox.question(
+            self,
+            "Change Microscope Mode",
+            f"Switch to {new_mode}?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if confirm == QMessageBox.Yes:
+            self.handle_command(new_mode)
+            self.logger.info(f"Microscope mode changed to {new_mode}.")
+            self.refresh_ui()
+
+
+    def open_developer_window(self):
+        self.dev_window = QWidget()
+        self.dev_window.setWindowTitle("Developer Options")
+        layout = QVBoxLayout(self.dev_window)
+
+        self.chk_apply_pseudocal = QCheckBox("Apply Pseudocalibration")
+        self.chk_apply_pseudocal.setChecked(self.interface.microscope.apply_pseudocal)
+        self.chk_apply_pseudocal.toggled.connect(self.toggle_pseudocal)
+
+        layout.addWidget(self.chk_apply_pseudocal)
+
+        self.dev_window.setLayout(layout)
+        self.dev_window.resize(300, 100)
+        self.dev_window.show()
+    
+    def toggle_pseudocal(self, checked):
+        self.send_cli_command('pscal')
+        self.refresh_ui()  # Update lights
+
 
     def closeEvent(self, event):
         try:
