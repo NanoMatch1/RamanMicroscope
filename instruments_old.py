@@ -62,6 +62,27 @@ from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
 #         return wrapper
 #     return decorator
 
+def apply_pseudocal_forwards(func):
+    def wrapper(self, wavelength, *args, **kwargs):
+        if getattr(self, 'apply_pseudocal', False) is True:
+            # Apply offset correction before the function runs
+            corrected_wavelength = self.pseudocal_forwards(wavelength)
+        return func(self, corrected_wavelength, *args, **kwargs)
+    return wrapper
+
+def apply_pseudocal_backwards(func):
+    def wrapper(self, *args, **kwargs):
+        # Apply offset correction after the function runs
+        result = func(self, *args, **kwargs)
+        if getattr(self, 'apply_pseudocal', False) is True:
+            # If apply_pseudocal is True, apply the backwards correction
+            if isinstance(result, dict):
+                # If result is a dictionary, apply to each wavelength
+                result = {key: self.pseudocal_backwards(value) for key, value in result.items()}
+                # result = self.pseudocal_backwards(result['l1'])
+        return result
+    return wrapper
+
 def ui_callable(func):
     """
     Decorator that marks a method as UI-callable by
@@ -514,6 +535,7 @@ class Microscope(Instrument):
         self.spectrometer = spectrometer or interface.spectrometer
         self.calibration_service = calibration_service
         self.simulate = simulate
+        self.apply_pseudocal = True  # Whether to apply pseudocalibration corrections
 
         self.microscope_mode = 'ramanmode'
         camera_roi = self.interface.camera.roi
@@ -708,6 +730,15 @@ class Microscope(Instrument):
     def generate_wavelength_axis(self):
         spectrometer_wavelength = self.calculate_spectrometer_wavelength()['triax'] # TODO:change to getter
         self.wavelength_axis = self.calibration_service.generate_wavelength_axis(spectrometer_wavelength)
+
+    def pseudocal_forwards(self, wavelength):
+        '''Wrapper for the pseudocalibration forward function.'''
+        return self.calibration_service.pseudocal.cal_forward(wavelength)
+    
+    def pseudocal_backwards(self, wavelength):
+        '''Wrapper for the pseudocalibration backward function.'''
+        return self.calibration_service.pseudocal.cal_backward(wavelength)
+
 
     
     @ui_callable
@@ -1983,6 +2014,7 @@ class Microscope(Instrument):
         print('Calibration inverted')
     
     @ui_callable
+    @apply_pseudocal_forwards
     def go_to_laser_wavelength(self, wavelength):
         """
         Move the laser to the specified wavelength.
@@ -2331,6 +2363,7 @@ class Microscope(Instrument):
 
         return 
     
+    @apply_pseudocal_backwards
     def calculate_laser_wavelength(self, current_pos=None):
         """
         Calculate laser wavelength from motor positions.
@@ -2349,6 +2382,7 @@ class Microscope(Instrument):
                
         # Calculate wavelengths for each motor using calibration functions
         self.laser_wavelengths = self.calibration_service.steps_to_wl(current_pos)
+        self.laser_wavelengths['l1'] = self.calibration_service.pseudocal.cal_backward(self.laser_wavelengths['l1']) # corrects for laser drift. #TODO remove after recalibration
 
         return self.laser_wavelengths
     
