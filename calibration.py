@@ -107,6 +107,7 @@ class Calibration:
         self.z_steps_per_micron = 1 / 0.00625 
 
         self.generate_master_calibration()
+        self.pseudocal = PseudoCalibration() # Pseudocal for wavelength correction
     
     def _load_calibrations(self):
         """
@@ -363,7 +364,11 @@ class PseudoCalibration:
         self.spline_calibrators = {}
 
         # Load pseudo calibration data
-        self.pseudo_calibration(cal_filename, smoothing)
+        self.pseudo_calibration(smoothing)
+
+    def simulate_laser(self, wavelength):
+        '''Simulates the laser signal in the spectrum at a given wavelength. Can hand off to the camera interface for simulations.'''
+        pass
 
     def pseudo_calibration(self, smoothing=0.5):
         self.spline_calibrators = {}
@@ -374,11 +379,13 @@ class PseudoCalibration:
         self.wavelengths_requested = np.array([float(k) for k in pseudo_cal.keys()])
         self.wavelengths_actual = np.array([pseudo_cal[k] for k in pseudo_cal.keys()])
 
-        spline_frw, fit_metrics_frw = self._pseudo_forwards_spline(smoothing=smoothing)
-        spline_back, fit_metrics_back = self._pseudo_backwards_spline(smoothing=smoothing)
+        spline_frw = self._pseudo_forwards_spline(smoothing=smoothing)
+        spline_back = self._pseudo_backwards_spline(smoothing=smoothing)
 
         self.cal_forward = spline_frw
         self.cal_backward = spline_back
+
+        print("Pseudo calibration data loaded - NOW automatically correcting laser drift.")
 
         return spline_frw, spline_back
 
@@ -387,7 +394,7 @@ class PseudoCalibration:
         spline = UnivariateSpline(self.wavelengths_actual, self.wavelengths_requested, s=smoothing)
         y_pred = spline(self.wavelengths_actual)
         residuals = self.wavelengths_requested - y_pred
-        fit_metrics = self.calculate_fit_metrics(self.wavelengths_requested, y_pred)
+        # fit_metrics = self.calculate_fit_metrics(self.wavelengths_requested, y_pred)
 
         self.calibrations['pseudo_forwards'] = {
             'type': 'spline',
@@ -396,16 +403,16 @@ class PseudoCalibration:
             'y': self.wavelengths_requested.tolist()
         }
         self.spline_calibrators['pseudo_forwards'] = spline
-        self.calibration_metrics['pseudo_forwards'] = fit_metrics
-        self.report_dict['pseudo_forwards'] = (fit_metrics, {'smoothing': smoothing})
-        return spline, fit_metrics
+        # self.calibration_metrics['pseudo_forwards'] = fit_metrics
+        # self.report_dict['pseudo_forwards'] = (fit_metrics, {'smoothing': smoothing})
+        return spline
 
     def _pseudo_backwards_spline(self, smoothing=0.5):
         '''Fits a spline to get requested → actual wavelength (used for reporting actual position).'''
         spline = UnivariateSpline(self.wavelengths_requested, self.wavelengths_actual, s=smoothing)
         y_pred = spline(self.wavelengths_requested)
         residuals = self.wavelengths_actual - y_pred
-        fit_metrics = self.calculate_fit_metrics(self.wavelengths_actual, y_pred)
+        # fit_metrics = self.calculate_fit_metrics(self.wavelengths_actual, y_pred)
 
         self.calibrations['pseudo_backwards'] = {
             'type': 'spline',
@@ -414,9 +421,9 @@ class PseudoCalibration:
             'y': self.wavelengths_actual.tolist()
         }
         self.spline_calibrators['pseudo_backwards'] = spline
-        self.calibration_metrics['pseudo_backwards'] = fit_metrics
-        self.report_dict['pseudo_backwards'] = (fit_metrics, {'smoothing': smoothing})
-        return spline, fit_metrics
+        # self.calibration_metrics['pseudo_backwards'] = fit_metrics
+        # self.report_dict['pseudo_backwards'] = (fit_metrics, {'smoothing': smoothing})
+        return spline
 
     def open_json_cal(self, filename):
         '''Open a JSON file containing calibration data.'''

@@ -800,10 +800,6 @@ class MainWindow(QMainWindow):
         self.send_cli_command(text)
 
     def closeEvent(self, event):
-        # restore the real streams
-        # sys.stdout = self._orig_stdout
-        # sys.stderr = self._orig_stderr
-                # Disconnect the slot
         try:
             self.qt_handler.logMessage.disconnect(self.console.write)
         except TypeError:
