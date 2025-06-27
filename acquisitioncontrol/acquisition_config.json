@@ -1,7 +1,7 @@
 {
   "general_parameters": {
-    "acquisition_time": 0.2,
-    "filename": "duplicate_test",
+    "acquisition_time": 0.1,
+    "filename": "pseudocal_test_26-06-25",
     "raman_shift": 0.0,
     "laser_power": "4.5",
     "n_frames": 1
@@ -28,9 +28,9 @@
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 715.0,
-    "end_wavelength": 830.0,
-    "resolution": 10.0
+    "start_wavelength": 710.0,
+    "end_wavelength": 850.0,
+    "resolution": 2.0
   },
   "polarization_parameters": {
     "input": {
