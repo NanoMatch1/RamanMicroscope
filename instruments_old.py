@@ -62,6 +62,14 @@ from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
 #         return wrapper
 #     return decorator
 
+def auto_calibrate_laser(func):
+    def wrapper(self, wavelength, *args, **kwargs):
+        """
+        Decorator to automatically calculate the laser wavelength when using go_to_laser_wavelength. Needs the triax to be connected to correctly identify wavelength.
+        """
+        func(self, wavelength, *args, **kwargs)
+    pass
+
 def apply_pseudocal_forwards(func):
     def wrapper(self, wavelength, *args, **kwargs):
         if getattr(self, 'apply_pseudocal', False) is True:
@@ -1419,7 +1427,7 @@ class Microscope(Instrument):
         print("Laser power set to {power}".format(power))
 
     @ui_callable
-    def go_to_laser_steps(self, target_positions):
+    def go_to_laser_steps(self, target_positions, confirm_pos=True):
         '''
         Moves the laser motors to the specified positions in steps.
         
