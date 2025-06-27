@@ -74,8 +74,8 @@ def apply_pseudocal_forwards(func):
     def wrapper(self, wavelength, *args, **kwargs):
         if getattr(self, 'apply_pseudocal', False) is True:
             # Apply offset correction before the function runs
-            corrected_wavelength = float(self.pseudocal_forwards(wavelength))
-        return func(self, corrected_wavelength, *args, **kwargs)
+            wavelength = float(self.pseudocal_forwards(wavelength))
+        return func(self, wavelength, *args, **kwargs)
     return wrapper
 
 def apply_pseudocal_backwards(func):
@@ -588,6 +588,7 @@ class Microscope(Instrument):
             'referenceall': self.reference_calibration_from_wavelength,
             'referencelaser': self.reference_laser_from_wavelength,
             'referencegratings': self.reference_gratings_from_wavelength,
+            'referencemono': self.reference_monochromator_from_wavelength,
             'referencetriax': self.reference_calibration_from_triax,
             'invertcal': self.invert_calibrations,
             'allmotors': self.get_all_motor_positions,
@@ -1872,6 +1873,7 @@ class Microscope(Instrument):
         print('All Motors successfully shifted')
 
     @ui_callable
+    # @apply_pseudocal_forwards
     def reference_laser_from_wavelength(self, wavelength):
         '''
         Reference the current laser motor configuration to a known laser wavelength (in nm).
@@ -1931,6 +1933,39 @@ class Microscope(Instrument):
         self.write_motor_positions(motor_dict=motor_dict)
 
         print('Grating Motors successfully shifted')
+
+    @ui_callable
+    def reference_monochromator_from_wavelength(self, wavelength, shift=True):
+        '''
+        Reference the current monochromator motor configuration to a known laser wavelength (in nm).
+        Provide the true laser wavelength from an external reference.
+
+        Parameters
+        ----------
+        wavelength : float
+            Known laser wavelength (in nm).
+        shift : bool, optional
+            Whether to apply Raman shift correction. Default is True.
+        '''
+        true_wavelength_laser = float(wavelength)
+        print(f'True wavelength provided: {true_wavelength_laser} nm')
+
+        if shift:
+            grating_wavenumber = (10_000_000 / true_wavelength_laser) - self.current_shift
+            true_wavelength_grating = 10_000_000 / grating_wavenumber
+        else:
+            true_wavelength_grating = true_wavelength_laser
+
+        # Calculate target motor positions from the provided wavelength
+        target_mono_steps = self.calibration_service.wl_to_steps(true_wavelength_grating, self.action_groups['monochromator_wavelength'])
+
+
+        # write current position to motors
+        motor_dict = {}
+        motor_dict.update(target_mono_steps)
+        self.write_motor_positions(motor_dict=motor_dict)
+
+        print('Monochromator Motors successfully shifted')
 
     def wavenumber_to_wavelength(self, wavenumber):
         return 10_000_000/wavenumber
