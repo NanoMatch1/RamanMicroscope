@@ -3,6 +3,7 @@ import serial
 import time
 from ..instrument_base import Instrument
 from ..ui_decorators import ui_callable 
+from .laserwatchdog import LaserWatchdog
 
 
 class Laser(Instrument, ABC):
@@ -128,6 +129,7 @@ class MillenniaLaser(Laser):
         setpoint = self.get_power_setpoint()
         current_power = self.get_power()
         warmup = self.get_warmup_status()
+        self.watchdog = LaserWatchdog(timeout_seconds=300, shutdown_callback=self.turn_off)
 
         print("Laser initialised.")
         print("Current power setpoint: {}W".format(setpoint))

@@ -1,6 +1,7 @@
 # TRIAX: ~ 700 nm at 131343 steps
 import os
 import traceback
+import threading
 
 from controller import ArduinoMEGA
 from instruments_old import Instrument, Microscope
@@ -19,6 +20,15 @@ from instruments.cameras.tucsencam import TucsenCamera
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
 from logging_utils import LoggerInterface
 
+def thread_locked(method):
+    """
+    Decorator to ensure that a method is thread-safe by acquiring a lock. Any method decorated with this will be safe to call from multiple threads.
+    """
+    def wrapper(self, *args, **kwargs):
+        with self.lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
 class Interface:
 
     def __init__(self, simulate=False, com_port='COM10', baud=9600, debug_skip=[]):
@@ -36,6 +46,7 @@ class Interface:
         self.baud = baud
         self.debug_skip = debug_skip
         self.connected_to_camera = False
+        self.lock = threading.Lock()
 
         self.scriptDir = os.path.dirname(os.path.realpath(__file__))
         self.dataDir = os.path.join(self.scriptDir, 'data')
@@ -104,6 +115,8 @@ class Interface:
         self.laser.initialise()
         self.microscope.initialise()  #t be last as it relies on others
 
+        self.heartbeat = self.laser.watchdog.heartbeat
+
         # self.microscope.set_acquisition_time(1) # workaround for the camera not responsing correctly on startup
         
         self._integrity_checker()
@@ -166,11 +179,6 @@ class Interface:
                 self.logger.error(f"An error occurred: {e}")
                 error_details = traceback.format_exc()
                 self.logger.error(error_details)
-
-    def parse_command(self, command:str):
-        """
-        Parse a command and send on to the command handler"""
-        pass
 
 
     def gui(self):
@@ -324,7 +332,7 @@ class Interface:
 
     #     return motion_commands
 
-
+    @thread_locked
     def _command_handler(self, command:str):
         '''Handles the command and arguments passed to the Interface'''
 

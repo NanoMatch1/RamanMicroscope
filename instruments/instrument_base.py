@@ -44,6 +44,17 @@ class Instrument(ABC):
 
         print(f"{self.__class__} integrity check passed")
 
+    def interface_locked(method):
+        """ Decorator which allows any method to respect the interface lock, without having to code it in every method. """
+        def wrapper(self, *args, **kwargs):
+            lock = getattr(getattr(self, 'interface', None), 'lock', None)
+            if lock is None:
+                raise AttributeError(f"{self.__class__.__name__} does not have 'interface.lock'")
+            with lock:
+                return method(self, *args, **kwargs)
+        return wrapper
+
+
     
 
 
