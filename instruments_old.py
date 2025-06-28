@@ -1573,9 +1573,9 @@ class Microscope(Instrument):
     def report_laser_power(self):
         return(round(getattr(self.interface.laser, 'current_power', 'AttErr'), 2))
     
-    # @property
-    # def report_entrance_slit(self):
-    #     return round(self.interface.spectrometer.entrance_slit, 2)
+    @property
+    def report_spectrometer_slit_width(self):
+        return self.interface.spectrometer.read_enterance_slit()
     
     @property
     def current_monochromator_wavenumber(self):

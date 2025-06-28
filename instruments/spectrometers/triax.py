@@ -11,6 +11,7 @@ class Triax(Instrument):
         self.interface = interface
         self.simulate = simulate or interface.simulate
         self.calibration_service = interface.calibration_service
+        self.enterance_slit_width = 0
 
         self.command_functions = {
             'get_spectrometer_position': self.get_spectrometer_position,
@@ -91,12 +92,19 @@ class Triax(Instrument):
         response = self.send_command('specgrat2')
         # print(response)
         return response
+        
     
     @ui_callable
     def read_enterance_slit(self):
         '''Read the current position of the entrance slit.'''
         response = self.send_command('read_enter')
-        return response
+
+        try:
+            self.enterance_slit_width = int(response.strip()[1:])
+        except ValueError:
+            print('Error reading entrance slit width: {}'.format(response))
+            self.enterance_slit_width = 0
+        return self.enterance_slit_width
     
     @ui_callable
     def read_exit_slit(self):
@@ -107,8 +115,14 @@ class Triax(Instrument):
     @ui_callable
     def move_enterance_slit(self, position):
         '''Move the entrance slit to the specified position.'''
+        try:
+            int(position)
+        except ValueError:
+            print('Invalid input for entrance slit position: {}'.format(position))
+            return
         response = self.send_command('men {}'.format(position))
-        return response
+        self.enterance_slit_width += int(position)
+        return self.enterance_slit_width
     
     @ui_callable
     def move_exit_slit(self, position):
@@ -187,6 +201,9 @@ class Triax(Instrument):
         # Open a connection to the instrument
         if self.simulate:
             self.spectrometer = SimulatedTriaxSerial()
+            self.state = True
+            return self.spectrometer, self.state
+        
         print("Connecting to TRIAX spectrometer...")
         rm = pyvisa.ResourceManager()
         rm.list_resources()
