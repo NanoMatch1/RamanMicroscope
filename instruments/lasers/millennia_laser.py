@@ -4,6 +4,8 @@ import time
 from ..instrument_base import Instrument
 from ..ui_decorators import ui_callable 
 from .laserwatchdog import LaserWatchdog
+from instruments.instrument_base import interface_locked
+
 
 
 class Laser(Instrument, ABC):
@@ -377,8 +379,11 @@ class MillenniaLaser(Laser):
             self.status = "WARMUP"
             return False
         
+    def smart_enable(self):
+        """Use the watchdog to manage the warmup and power on of laser"""
+        pass
 
-
+    @interface_locked
     def send_command(self, cmd):
         """Internal helper: send a command string to the laser and return raw response."""
         full = cmd.strip() + '\r\n'
