@@ -3,10 +3,12 @@ import time
 from instruments.util_decorators import interface_locked
 
 class LaserWatchdog:
-    def __init__(self, interface, timeout_seconds=300, shutdown_callback=None):
+    def __init__(self, interface, timeout_seconds=600, showdown_timeout_multiplier=3):
+        """Timeout is in seconds, default is 10 minutes.
+        shutdown_timeout_multiplier is how many times the timeout is multiplied to trigger a hard shutdown."""
         self.interface = interface
         self.timeout = timeout_seconds
-        self.shutdown_callback = shutdown_callback or self.default_shutdown
+        self.showdown_timeout_multiplier = showdown_timeout_multiplier
         self._lock = threading.Lock()
         self._last_heartbeat = time.time()
 
@@ -53,7 +55,7 @@ class LaserWatchdog:
                 if elapsed > self.timeout:
                     self.power_down()
 
-            if elapsed > self.timeout * 6:
+            if elapsed > self.timeout * self.showdown_timeout_multiplier:
                 self.default_shutdown()
                 self._active = False  # triggers exit from while loop
 
@@ -68,5 +70,5 @@ class LaserWatchdog:
     @interface_locked
     def default_shutdown(self):
         """Hard laser shutdown."""
-        self.interface.laser.turn_off()
         self.interface.logger.info("\n[Watchdog] Max inactivity exceeded. Laser turned OFF.")
+        self.interface.laser.turn_off()
