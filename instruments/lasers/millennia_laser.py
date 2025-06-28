@@ -1,12 +1,10 @@
 from abc import ABC, abstractmethod
 import serial
 import time
-from ..instrument_base import Instrument
-from ..ui_decorators import ui_callable 
-from .laserwatchdog import LaserWatchdog
+from instruments.instrument_base import Instrument
+from instruments.util_decorators import ui_callable 
+from instruments.lasers.laserwatchdog import LaserWatchdog
 from instruments.instrument_base import interface_locked
-
-
 
 class Laser(Instrument, ABC):
     """

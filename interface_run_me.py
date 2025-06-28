@@ -3,6 +3,7 @@ import os
 import traceback
 import threading
 
+from instruments.util_decorators import heartbeat, thread_locked
 from controller import ArduinoMEGA
 from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
@@ -333,6 +334,7 @@ class Interface:
     #     return motion_commands
 
     @thread_locked
+    @heartbeat
     def _command_handler(self, command:str):
         '''Handles the command and arguments passed to the Interface'''
 

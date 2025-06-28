@@ -10,6 +10,8 @@ import math
 import traceback
 
 from PyQt5.QtCore import QObject, pyqtSignal
+# from ..instruments.instrument_base import heartbeat
+from instruments.util_decorators import heartbeat
 
 class ScanSequenceGenerator:
 
@@ -234,6 +236,7 @@ class CameraScanner:
         percentage = round((idx / total) * 100)
         progress_cb(percentage)
 
+    @heartbeat
     def _execute_step(self, step, timeout, retries=5):
         """
         Apply scan commands for a step, then grab and average frames.

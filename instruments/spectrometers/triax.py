@@ -1,7 +1,7 @@
 import time
 import pyvisa
-from ..instrument_base import Instrument
-from ..ui_decorators import ui_callable
+from instruments.instrument_base import Instrument
+from instruments.util_decorators import ui_callable
 from .simulated_triax import SimulatedTriaxSerial
 
 

@@ -1,6 +1,7 @@
 import threading
 import time
-from instruments.instrument_base import interface_locked
+import instruments.util_decorators.interface_locked
+# from instruments.instrument_base import interface_locked
 
 class LaserWatchdog:
     def __init__(self, interface, timeout_seconds=300, shutdown_callback=None):
