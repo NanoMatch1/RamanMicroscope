@@ -1568,6 +1568,10 @@ class Microscope(Instrument):
     @property
     def report_spectrometer_wavelength(self):
         return round(self.spectrometer_wavelength.get('triax', 'KeyError'), 2)
+
+    @property
+    def report_laser_power(self):
+        return(round(getattr(self.interface.laser, 'current_power', 'AttErr'), 2))
     
     # @property
     # def report_entrance_slit(self):

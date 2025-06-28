@@ -3,7 +3,7 @@ import os
 import traceback
 import threading
 
-from instruments.util_decorators import heartbeat, thread_locked
+from instruments.util_decorators import heartbeat
 from controller import ArduinoMEGA
 from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase

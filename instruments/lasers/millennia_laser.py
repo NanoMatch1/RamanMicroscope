@@ -1,10 +1,23 @@
 from abc import ABC, abstractmethod
 import serial
 import time
+import threading
 from instruments.instrument_base import Instrument
-from instruments.util_decorators import ui_callable 
+from instruments.util_decorators import ui_callable, interface_locked, heartbeat
 from instruments.lasers.laserwatchdog import LaserWatchdog
-from instruments.instrument_base import interface_locked
+
+def laser_locked(method):
+    """
+    Decorator to ensure that a method is called with the laser locked.
+    This is used to prevent concurrent access to the laser.
+    """
+    def wrapper(self, *args, **kwargs):
+        lock = getattr(self, 'laser_lock', None)
+        if lock is None:
+            raise AttributeError(f"{self.__class__} does not have 'laser_lock'")
+        with lock:
+            return method(self, *args, **kwargs)
+    return wrapper
 
 class Laser(Instrument, ABC):
     """
@@ -101,6 +114,9 @@ class MillenniaLaser(Laser):
         self.simulate = simulate or interface.simulate
         self.serial = None
         self.status = "OFF"
+        self.shutter_status = "CLOSED"
+        self.current_power = 0.0
+        self.laser_lock = threading.Lock()
 
         # UI-callable commands registry
         self.command_functions.update({
@@ -129,7 +145,7 @@ class MillenniaLaser(Laser):
         setpoint = self.get_power_setpoint()
         current_power = self.get_power()
         warmup = self.get_warmup_status()
-        self.watchdog = LaserWatchdog(timeout_seconds=300, shutdown_callback=self.turn_off)
+        self.watchdog = LaserWatchdog(self.interface, timeout_seconds=5, shutdown_callback=self.turn_off)
 
         print("Laser initialised.")
         print("Current power setpoint: {}W".format(setpoint))
@@ -234,6 +250,7 @@ class MillenniaLaser(Laser):
     @ui_callable
     def turn_on(self):
         """Turn the laser on: if warmed up, start lasing; otherwise begin warmup."""
+        self.watchdog.start()
         warmup_pct = self.get_warmup_status()
         if warmup_pct >= 100:
             self.send_command('ON')
@@ -249,6 +266,7 @@ class MillenniaLaser(Laser):
     @ui_callable
     def turn_off(self):
         """Turn the laser off and close the shutter."""
+        self.watchdog.stop()
         response = self.send_command('OFF')
         self.status = "OFF"
         self.close_shutter()
@@ -268,19 +286,23 @@ class MillenniaLaser(Laser):
         
         response = self.send_command('P:{}'.format(power_watts))
         print("Power set to {} Watts.".format(power_watts))
+        self.laser_setpoint = power_watts
+        self.current_power = power_watts
         return response
 
     @ui_callable
     def get_power(self):
         """Get the current measured laser power in Watts."""
         response = self.send_command('?P')
-        return float(response[:-1])
+        self.current_power = float(response[:-1])
+        return self.current_power
 
     @ui_callable
     def get_power_setpoint(self):
         """Get the current power setpoint in Watts."""
         response = self.send_command('?PSET')
-        return float(response[:-1])
+        self.laser_setpoint = float(response[:-1])
+        return self.laser_setpoint
 
     @ui_callable
     def warmup(self):
@@ -309,6 +331,7 @@ class MillenniaLaser(Laser):
     def get_shutter_status(self):
         """Query shutter state: returns '1' for open, '0' for closed."""
         resp = self.send_command('?SHUTTER')
+        self.shutter_status = 'OPEN' if resp == '1' else 'CLOSED'
         print("Shutter OPEN." if resp == '1' else "Shutter CLOSED.")
         return resp
 
@@ -336,7 +359,7 @@ class MillenniaLaser(Laser):
     
     @ui_callable
     def get_status(self):
-        print("Laser Status: {}".format(self.status))
+        print("Laser Status: {}, {} W".format(self.status, self.current_power))
         return self.status
 
     @ui_callable
@@ -381,7 +404,7 @@ class MillenniaLaser(Laser):
         """Use the watchdog to manage the warmup and power on of laser"""
         pass
 
-    @interface_locked
+    @laser_locked
     def send_command(self, cmd):
         """Internal helper: send a command string to the laser and return raw response."""
         full = cmd.strip() + '\r\n'

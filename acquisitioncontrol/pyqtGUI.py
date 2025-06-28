@@ -557,7 +557,7 @@ class MainWindow(QMainWindow):
                 self.light_ready.setStyleSheet("border-radius: 10px; background-color: red;")
 
             # Placeholder always gray for now
-            self.light_placeholder.setStyleSheet("border-radius: 10px; background-color: gray;")
+            self.light_laser.setStyleSheet("border-radius: 10px; background-color: gray;")
 
 
             # Update labels for mode, positions, and estimate
@@ -579,6 +579,7 @@ class MainWindow(QMainWindow):
             self.lbl_grating.setText(f"{self.interface.microscope.report_grating_wavelength:.2f} nm")
             self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
             self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
+            self.lbl_laser_power.setText(f"{self.interface.laser.current_power:.2f} W")
             # self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_entrance_slit:.2f} nm")
 
             self.btn_toggle_mode.setText(f"Mode: {self.interface.microscope.microscope_mode}")
@@ -686,7 +687,7 @@ class MainWindow(QMainWindow):
 
         lbl1, self.light_pseudocal = make_light("Pseudocal")
         lbl2, self.light_ready = make_light("Instrument Ready")
-        lbl3, self.light_placeholder = make_light("...")
+        lbl3, self.light_laser = make_light("...")
 
         status_layout.addWidget(lbl1)
         status_layout.addWidget(self.light_pseudocal)
@@ -695,7 +696,7 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.light_ready)
         status_layout.addSpacing(20)
         status_layout.addWidget(lbl3)
-        status_layout.addWidget(self.light_placeholder)
+        status_layout.addWidget(self.light_laser)
         right_layout.addLayout(status_layout)
 
 
@@ -744,11 +745,13 @@ class MainWindow(QMainWindow):
         self.lbl_monochromator = QLabel("N/A")
         self.lbl_spectrometer = QLabel("N/A")
         self.lbl_entrance_slit = QLabel("N/A")
+        self.lbl_laser_power = QLabel("N/A")
         sg_form.addRow("Laser wavelength:", self.lbl_laser)
         sg_form.addRow("Grating wavelength:", self.lbl_grating)
         sg_form.addRow("Monochromator wavelength:", self.lbl_monochromator)
         sg_form.addRow("Spectrometer wavelength:", self.lbl_spectrometer)
         sg_form.addRow("Entrance slit:", self.lbl_entrance_slit)
+        sg_form.addRow("Laser Power", self.lbl_laser_power)
         state_group.setLayout(sg_form)
 
         ctrl_state_layout.addWidget(state_group)
