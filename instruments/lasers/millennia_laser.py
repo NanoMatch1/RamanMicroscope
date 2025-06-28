@@ -145,7 +145,7 @@ class MillenniaLaser(Laser):
         setpoint = self.get_power_setpoint()
         current_power = self.get_power()
         warmup = self.get_warmup_status()
-        self.watchdog = LaserWatchdog(self.interface, timeout_seconds=5, shutdown_callback=self.turn_off)
+        self.watchdog = LaserWatchdog(self.interface, timeout_seconds=5)
 
         print("Laser initialised.")
         print("Current power setpoint: {}W".format(setpoint))
