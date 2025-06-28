@@ -86,7 +86,7 @@ class Interface:
                 
                 # Replace individual components with simulated versions as specified in debug_skip
             if 'TRIAX' in debug_skip:
-                self.spectrometer = SimulatedTriax(self)
+                self.spectrometer.simulate = True
                 
             if 'UNO' in debug_skip:
                 self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=True, dtr=False)

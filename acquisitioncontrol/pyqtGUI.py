@@ -580,7 +580,7 @@ class MainWindow(QMainWindow):
             self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
             self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
             self.lbl_laser_power.setText(f"{self.interface.laser.current_power:.2f} W")
-            # self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_entrance_slit:.2f} nm")
+            self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_spectrometer_slit_width:.2f} um")
 
             self.btn_toggle_mode.setText(f"Mode: {self.interface.microscope.microscope_mode}")
 
