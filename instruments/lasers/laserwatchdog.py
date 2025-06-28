@@ -1,6 +1,6 @@
 import threading
 import time
-import instruments.util_decorators.interface_locked
+from instruments.util_decorators import ui_callable, interface_locked, heartbeat
 # from instruments.instrument_base import interface_locked
 
 class LaserWatchdog:
