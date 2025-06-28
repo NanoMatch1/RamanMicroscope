@@ -22,10 +22,10 @@ def heartbeat(method):
     This is used to keep the laser watchdog active.
     """
     def wrapper(self, *args, **kwargs):
-        heartbeat = getattr(getattr(self, 'interface', None), 'heartbeat', None)
+        heartbeat = getattr(getattr(self, 'interface', None), 'heartbeat', None) or getattr(self, 'heartbeat', None)
         if heartbeat is None:
             raise AttributeError(f"{self.__class__.__name__} does not have 'interface.heartbeat', check if the interface is initialised correctly.")
         
-        self.interface.heartbeat()  # Update the heartbeat to keep the watchdog active
+        heartbeat()  # Update the heartbeat to keep the watchdog active
         return method(self, *args, **kwargs)
     return wrapper
