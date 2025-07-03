@@ -144,6 +144,7 @@ class CameraScanner:
 
     def __init__(self, acq_ctrl, timeout=100000):
         self.acq_ctrl = acq_ctrl
+        self.interface = acq_ctrl.interface
         self.microscope = acq_ctrl.interface.microscope
         self.camera = acq_ctrl.interface.camera
         self.timeout = timeout
@@ -236,7 +237,6 @@ class CameraScanner:
         percentage = round((idx / total) * 100)
         progress_cb(percentage)
 
-    @heartbeat
     def _execute_step(self, step, timeout, retries=5):
         """
         Apply scan commands for a step, then grab and average frames.
@@ -251,6 +251,7 @@ class CameraScanner:
         image_data = None
         n_frames = self.acq_ctrl.general_parameters['n_frames']
         for frame_idx in range(n_frames):
+            self.interface.heartbeat()  # Update heartbeat to keep watchdog active during long scans
             new_frame = self.camera.grab_frame_safe(timeout=timeout)
             if new_frame is None:
                 new_frame = self._retry_frame(timeout, retries)
