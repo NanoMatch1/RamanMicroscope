@@ -4,7 +4,25 @@ from scipy.stats import median_abs_deviation
 
 import numpy as np
 
+class DataObject:
+    '''A class to represent data which is manually added or generated. Used for internal or calibration uses.'''
+
+    def __init__(self, data=None, image_data=None, filename=None, dataDir=None, metadata=None, header=None, **kwargs):
+        self.data = data if data is not None else np.array([])
+        self.image_data = image_data if image_data is not None else np.array([])
+        self.filename = filename
+        self.dataDir = dataDir if dataDir else os.path.dirname(filename)
+        self.metadata = metadata if metadata is not None else {}
+        self.header = header if header is not None else {}
+
+        self.__dict__.update(kwargs)  # Allow additional attributes to be set dynamically
+    
+    def __repr__(self):
+        return f'DataObject(filename={self.filename}, dataDir={self.dataDir})'
+
 class LaserDetection:
+
+    '''Class for detecting laser signals in spectrograph images. Used during live calibration to find the laser line position.'''
 
     def __init__(self):
         pass
@@ -16,9 +34,7 @@ class LaserDetection:
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
         is_laser_present, laser_position = self.detect_laser_signal(image)
-        self.peakfit_laser(image, initial_guess=laser_position)
-
-
+        self.peakfit_laser(image, wavelength_axis, initial_guess=laser_position)
 
         return
 
@@ -130,25 +146,18 @@ class LaserDetection:
 
     
     # def peakfit_laser_signal(self, profile_x, signal_mask)
-    def peakfit_laser(self, image, initial_guess=None):
+    def peakfit_laser(self, image, wavelength_axis, initial_guess=None, binning_width=20):
+        
+        if initial_guess is None:
+            initial_guess = (np.argmax(image, axis=0), np.argmax(np.median(image, axis=0)))
+
+        xpos, ypos = initial_guess
         
 
-        def raman_to_wavelength(peak, raman_shift):
-            '''Converts the peak position (wavelength) to Raman shift, then determine laser wavelength as the 0 cm-1 position. Use this if there is a well-defined Raman mode to calibrate against.'''
-            
-            peak_wavenumbers = 1e7 / peak
-            wavelength = (1e7 / (peak_wavenumbers + raman_shift))
+        spectrum = np.median(image[ypos - binning_width:ypos + binning_width, :], axis=0)
+        dataX = wavelength_axis  # Assuming wavelength_axis is provided
 
-            return wavelength
-        
-        calibration_dict = {}
-
-        # first_spectrum = next(iter(self.data_dict.values()))
-        # peakfits = PeakFitter(first_spectrum, peak_detect=None)
-
-
-        data_range = (0, 200)
-
+        data = np.column_stack((dataX, spectrum))  # shape (2, N)
 
         peakfits = PeakFitter(obj, peak_detect=None)
 
@@ -196,9 +205,10 @@ if __name__ == "__main__":
                                                      background_level=4000, noise_level=150, plot=False)
     
     # Detect the laser signal in the generated image
-    is_laser_present, profile_x, signal_mask = laser_detector.detect_laser_signal(test_image, plot=True)
+    # is_laser_present, initial_guess = laser_detector.detect_laser_signal(test_image, plot=False)
     
-    print(f"Laser signal detected: {is_laser_present}")
-    print(f"Profile X shape: {profile_x.shape}, Signal mask shape: {signal_mask.shape}")
-    print(f"laser line position: {np.argmax(signal_mask)}")
+    laser_detector(test_image, np.arange(test_image.shape[1]))  # Assuming wavelength_axis is just pixel indices for this test
+    # print(f"Laser signal detected: {is_laser_present}")
+    # print(f"Profile X shape: {profile_x.shape}, Signal mask shape: {signal_mask.shape}")
+    # print(f"laser line position: {np.argmax(signal_mask)}")
     breakpoint()
