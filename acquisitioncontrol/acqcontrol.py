@@ -735,6 +735,16 @@ class AcquisitionControl(QObject):
             return
 
         return image_data
+    
+    def _acquire_laser(self):
+        '''Acquires a single frame for the live laser calibration. Not intented to save data, and returns image and wavelength axis.'''
+        
+        image_data = self._acquire_one_frame()
+        if image_data is None:
+            print("Error: image data is None. Aborting acquisition.")
+            return None, None
+        return image_data, self.wavelength_axis
+        
 
     def acquire_once(self, filename=None):
         '''Acquires a single frame and saves it.'''
