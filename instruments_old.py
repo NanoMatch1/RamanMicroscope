@@ -687,6 +687,18 @@ class Microscope(Instrument):
         if command not in self.command_functions:
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
+
+    def live_calibration_laser(self):
+        '''Handles the calibration of the laser wavelength on the fly.
+        Logic:
+        1. Move laser.
+        2. Move spectrograph to laser wavelength
+        3. Move slit to zero
+        4. Loop:
+            a. Acquire spectrum for 0.2s
+            b. if max pixel >> median/average'''
+
+
     
     @ui_callable
     def not_yet_implemented(self, *args):
@@ -709,6 +721,7 @@ class Microscope(Instrument):
     @property
     def filename(self):
         return self.interface.acq_ctrl.filename
+
 
 
     @ui_callable
