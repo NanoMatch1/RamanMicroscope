@@ -4,21 +4,71 @@ from scipy.stats import median_abs_deviation
 
 import numpy as np
 
-class DataObject:
-    '''A class to represent data which is manually added or generated. Used for internal or calibration uses.'''
+import numpy as np
+from scipy.signal import find_peaks
+from data_fit import data_fit
 
-    def __init__(self, data=None, image_data=None, filename=None, dataDir=None, metadata=None, header=None, **kwargs):
-        self.data = data if data is not None else np.array([])
-        self.image_data = image_data if image_data is not None else np.array([])
-        self.filename = filename
-        self.dataDir = dataDir if dataDir else os.path.dirname(filename)
-        self.metadata = metadata if metadata is not None else {}
-        self.header = header if header is not None else {}
+class AutoPeakFitter:
+    def __init__(self, dataX, dataY,
+                 peak_type='gaussian',
+                 peak_sign='positive',
+                 ftol=1e-4, gtol=1e-4, xtol=1e-4):
+        self.dataY = dataY
+        self.dataX = dataX
+        self.peak_type = peak_type.lower()
+        self.peak_sign = peak_sign
+        self.ftol, self.gtol, self.xtol = ftol, gtol, xtol
 
-        self.__dict__.update(kwargs)  # Allow additional attributes to be set dynamically
-    
-    def __repr__(self):
-        return f'DataObject(filename={self.filename}, dataDir={self.dataDir})'
+        self.Fit = data_fit()
+        self.peaks = []
+        self.peakfit_list = []
+
+    def add_initial_peak(self, peak_index):
+        """Add a single peak guess using a dataX index."""
+        peak_pos = self.dataX[peak_index]
+        amp = self.dataY[peak_index]
+        data_range = self.dataX[-1] - self.dataX[0]
+
+        # Estimate width (fallback = 1% of X range)
+        half_max = amp / 2
+        left = np.where(self.dataY[:peak_index] < half_max)[0]
+        right = np.where(self.dataY[peak_index:] < half_max)[0]
+
+        if left.size > 0 and right.size > 0:
+            fwhm = self.dataX[peak_index + right[0]] - self.dataX[left[-1]]
+        else:
+            fwhm = data_range / 100
+
+        self.peaks.append([
+            self.peak_type,
+            [peak_pos, self.dataX[0], self.dataX[-1]],                       # position + bounds
+            [amp, np.min(self.dataY), np.max(self.dataY) * 2],              # amplitude + bounds
+            [fwhm, data_range / 200, data_range / 10]                        # width + bounds
+        ])
+
+    def setup_fit(self):
+        self.Fit.reset_functions()
+        self.Fit.set_data(np.column_stack((self.dataX, self.dataY)))
+
+        for peak in self.peaks:
+            name, posB, ampB, wB = peak
+            args = [posB[0], ampB[0], wB[0]]
+            bounds = [posB[1:], ampB[1:], wB[1:]]
+            self.Fit.add_function(name, *args, bounds=bounds)
+
+    def optimise(self):
+        self.setup_fit()
+        self.Fit.optimise(ftol=self.ftol, gtol=self.gtol, xtol=self.xtol, maxfev=100000)
+        self.peakfit_list = self.Fit.get_functions()
+
+    def run(self, initial_index=None):
+        """Run the full peak fit given an index guess."""
+
+        if initial_index is None:
+            initial_index = np.argmax(self.dataY)
+        self.add_initial_peak(int(initial_index))
+        self.optimise()
+        return self.peakfit_list
 
 class LaserDetection:
 
@@ -33,10 +83,28 @@ class LaserDetection:
         - image: 2D numpy array representing the spectrograph image.
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
+        # breakpoint()
         is_laser_present, laser_position = self.detect_laser_signal(image)
-        self.peakfit_laser(image, wavelength_axis, initial_guess=laser_position)
+        if not is_laser_present:
+            print("No laser signal detected in the image.")
+            return
+
+        dataY = self.image_to_spectrum(image, laser_position)
+        dataX = wavelength_axis
+        fitter = AutoPeakFitter(dataX, dataY)
+
+        self.results = fitter.run(initial_index=laser_position[0])
 
         return
+    
+    def image_to_spectrum(self, image, laser_position, binning_width=20):
+        """Generate a 1D spectrum by averaging over a specified width in the Y dimension."""
+
+        xpos, ypos = laser_position
+        spectrum = np.median(image[ypos - binning_width:ypos + binning_width, :], axis=0)
+        self.dataY = spectrum
+
+        return self.dataY
 
     def generate_test_image(self, width=2048, height=148, 
                             laser_position=None, laser_width=5, 
@@ -145,52 +213,52 @@ class LaserDetection:
 
 
     
-    # def peakfit_laser_signal(self, profile_x, signal_mask)
-    def peakfit_laser(self, image, wavelength_axis, initial_guess=None, binning_width=20):
+    # # def peakfit_laser_signal(self, profile_x, signal_mask)
+    # def peakfit_laser(self, image, wavelength_axis, initial_guess=None, binning_width=20):
         
-        if initial_guess is None:
-            initial_guess = (np.argmax(image, axis=0), np.argmax(np.median(image, axis=0)))
+    #     if initial_guess is None:
+    #         initial_guess = (np.argmax(image, axis=0), np.argmax(np.median(image, axis=0)))
 
-        xpos, ypos = initial_guess
+    #     xpos, ypos = initial_guess
         
 
-        spectrum = np.median(image[ypos - binning_width:ypos + binning_width, :], axis=0)
-        dataX = wavelength_axis  # Assuming wavelength_axis is provided
+    #     spectrum = np.median(image[ypos - binning_width:ypos + binning_width, :], axis=0)
+    #     dataX = wavelength_axis  # Assuming wavelength_axis is provided
 
-        data = np.column_stack((dataX, spectrum))  # shape (2, N)
+    #     data = np.column_stack((dataX, spectrum))  # shape (2, N)
 
-        peakfits = PeakFitter(obj, peak_detect=None)
+    #     peakfits = PeakFitter(obj, peak_detect=None)
 
-        peakfits.select_region_2(set_range=data_range) 
-        peakfits._baseline_data(lam=1000, p=0.001)
-        # template_peak = (peakfits.dataX[-1] + peakfits.dataX[0])/2
-        # peakfits.add_template_peak(template_peak)
-        peakfits.detect_initial_peak() # finds and adds a single peak, assuming laser line
-        peakfits.optimise()
+    #     peakfits.select_region_2(set_range=data_range) 
+    #     peakfits._baseline_data(lam=1000, p=0.001)
+    #     # template_peak = (peakfits.dataX[-1] + peakfits.dataX[0])/2
+    #     # peakfits.add_template_peak(template_peak)
+    #     peakfits.detect_initial_peak() # finds and adds a single peak, assuming laser line
+    #     peakfits.optimise()
 
 
-        peakfits.save_results()
+    #     peakfits.save_results()
 
-        if len(obj.peakfit_dict) == 0:
-            print(f'No peaks found in {file}. Skipping...')
-            # continue
+    #     if len(obj.peakfit_dict) == 0:
+    #         print(f'No peaks found in {file}. Skipping...')
+    #         # continue
 
-        peak = obj.peakfit_dict['peaks'][0][1]
+    #     peak = obj.peakfit_dict['peaks'][0][1]
 
-        if raman_shift is not None:
-            peak = raman_to_wavelength(peak, raman_shift)
+    #     if raman_shift is not None:
+    #         peak = raman_to_wavelength(peak, raman_shift)
 
-        obj.excitation_wavelength = peak
-        calibration_dict[f"{original_wavelength:.2f}"] = obj.excitation_wavelength
-        print('Laser wavelength: {}'.format(peak))
+    #     obj.excitation_wavelength = peak
+    #     calibration_dict[f"{original_wavelength:.2f}"] = obj.excitation_wavelength
+    #     print('Laser wavelength: {}'.format(peak))
         
         
-        if save_cal is True:
-            exportDir = os.path.join(self.data_dir, 'export')
-            if not os.path.exists(exportDir):
-                os.makedirs(exportDir)
-            with open(os.path.join(exportDir, 'calibration.json'), 'w') as outfile:
-                json.dump(calibration_dict, outfile, indent=4)
+    #     if save_cal is True:
+    #         exportDir = os.path.join(self.data_dir, 'export')
+    #         if not os.path.exists(exportDir):
+    #             os.makedirs(exportDir)
+    #         with open(os.path.join(exportDir, 'calibration.json'), 'w') as outfile:
+    #             json.dump(calibration_dict, outfile, indent=4)
         
 
     # === Example usage ===
@@ -211,4 +279,6 @@ if __name__ == "__main__":
     # print(f"Laser signal detected: {is_laser_present}")
     # print(f"Profile X shape: {profile_x.shape}, Signal mask shape: {signal_mask.shape}")
     # print(f"laser line position: {np.argmax(signal_mask)}")
+    # fitter = AutoPeakFitter(dataX, dataY)
+    # results = fitter.run(initial_index=1000)
     breakpoint()
