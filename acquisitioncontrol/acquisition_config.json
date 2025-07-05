@@ -3,8 +3,8 @@
     "acquisition_time": 0.5,
     "filename": "pseudocal_test_26-06-25",
     "raman_shift": 0.0,
-    "laser_power": "4.5",
-    "n_frames": 1
+    "laser_power": 4.5,
+    "n_frames": 5
   },
   "hidden_parameters": {
     "scan_mode": "linescan",
@@ -12,24 +12,24 @@
   },
   "motion_parameters": {
     "start_position": {
-      "x": 0,
-      "y": 0,
-      "z": 0
+      "x": -456.6363636363636,
+      "y": -1440.909090909091,
+      "z": 7.0
     },
     "end_position": {
-      "x": 0,
-      "y": 0,
-      "z": 0
+      "x": -456.6363636363636,
+      "y": -1433.909090909091,
+      "z": 9.0
     },
     "resolution": {
-      "x": 1.0,
-      "y": 0.1,
-      "z": 0.1
+      "x": 0.5,
+      "y": 0.4,
+      "z": 0.0
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 710.0,
-    "end_wavelength": 850.0,
+    "start_wavelength": 785.0,
+    "end_wavelength": 785.0,
     "resolution": 2.0
   },
   "polarization_parameters": {
