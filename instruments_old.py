@@ -39,6 +39,7 @@ from functools import wraps
 
 from calibration import Calibration, LdrScan
 from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
+from datafit.laser_detection import LaserDetection
 
 # def simulate(expected_value=None, function_handler=None):
 #     """
@@ -533,6 +534,7 @@ class Microscope(Instrument):
         self.interface = interface
         self.logger = interface.logger
         self.micro_log = self.logger.getChild('Microscope')
+        self.laser_detector = LaserDetection()
 
 
         self.scriptDir = interface.scriptDir
@@ -687,18 +689,67 @@ class Microscope(Instrument):
         if command not in self.command_functions:
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
+    
+    def capture_instrument_state(self):
+        '''Not yet implemented. #TODO
+        Capture the current state of the instrument by getting all relavent attributes.
+        Needs new attributes for instrument state, and porting of old commands. For instance, self.laser_wavelength needs to be the stored wavelength, not a wrapper for calculating the wavelength from the controller.'''
+        pass
 
     def live_calibration_laser(self):
-        '''Handles the calibration of the laser wavelength on the fly.
+        '''Handles the calibration of the laser wavelength on the fly. This function is called by the @live_calibration wrapper which is applied to the go_to_laser_wavelength function. It is used to automatically calibrate the laser wavelength when moving to a new laser wavelength. After a new go_to_laser_wavelength command, tt will move the spectrometer to the new laser wavelength, acquire a spectrum, and then run the laser detection and peak fitting functions. If the laser is found, it will set the laser wavelength and return the true laser wavelength. Further functions can then use this true laser wavelength to move the monochromator or spectrometer to the correct wavelength.
+
         Logic:
-        1. Move laser.
-        2. Move spectrograph to laser wavelength
-        3. Move slit to zero
-        4. Loop:
+        1. Move spectrograph to laser wavelength
+        2. Move slit to zero
+        3. Loop:
             a. Acquire spectrum for 0.2s
-            b. if max pixel >> median/average'''
+            b. Run laser detectg and peakfit
+        4. If laser found, set laser wavelength and move monochromator to that wavelength
+            a. if not found, move g4 2 steps and repeat, up to 5 times. If no laser is found, report issue and stay at current wavelength
+        5. return true laser wavelength for passing to other functions
+        '''
+        original_slit_width = self.report_spectrometer_slit_width()
+        original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
+        
+        self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
+        self.go_to_spectrometer_wavelength(self.laser_wavelength)
+        self.set_spectrometer_enter_slit(0)
+        self.go_to_monochromator_wavelength(self.laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
+        image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
 
+        attempts = 0
+        while attempts < 5:
+            result = self.laser_detector(image_data, wavelength_axis)
+            if result is not None:
+                break
 
+            self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
+            self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
+            attempts += 1
+
+        if result is not None:
+            
+        self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
+        self.set_spectrometer_enter_slit(original_slit_width)
+
+        
+
+        
+        
+    def move_motors(self, motor_dict, backlash=False):
+        """
+        Moves the motors by the values specified in the motor_dict. This is a wrapper for motion_control.move_motors. 
+        Actively waits for motors to stop moving by polling controller. Backlash correction is applied to movements in the negative direction.
+        
+        Parameters:
+        motor_dict (dict): Dictionary mapping motor labels to step counts, e.g. {'1X': 100, '1Y': -50}
+        backlash (bool): Whether to apply backlash correction
+        
+        Returns:
+        str: Response from the controller
+        """
+        return self.motion_control.move_motors(motor_dict, backlash=backlash)
     
     @ui_callable
     def not_yet_implemented(self, *args):

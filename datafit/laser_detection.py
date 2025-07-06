@@ -7,21 +7,93 @@ import numpy as np
 import numpy as np
 from scipy.signal import find_peaks
 from data_fit import data_fit
+from baseline import baseline_als
+
+class SimpleLogger:
+
+    """A simple logger class to handle logging messages."""
+
+    heirachy = {
+        'DEBUG': 10,
+        'INFO': 20,
+        'WARNING': 30,
+        'ERROR': 40,
+        'CRITICAL': 50
+    }
+
+    def __init__(self, level='INFO'):
+        self.level = level if level in self.heirachy else 'INFO'
+
+    def log(self, message, level='INFO'):
+        """Log a message at the specified level."""
+        if self.heirachy[level] >= self.heirachy[self.level]:
+            print(f"[{level}] {message}")
+
+    def set_level(self, level):
+        """Set the logging level."""
+        if level in self.heirachy:
+            self.level = level
+        else:
+            raise ValueError(f"Invalid logging level: {level}. Choose from {list(self.heirachy.keys())}.")
+
+    def debug(self, message):
+        """Log a debug message."""
+        self.log(message, 'DEBUG')
+    def info(self, message):
+        """Log an info message."""
+        self.log(message, 'INFO')
+    def warning(self, message):
+        """Log a warning message."""
+        self.log(message, 'WARNING')
+    def error(self, message):
+        """Log an error message."""
+        self.log(message, 'ERROR')
+    def critical(self, message):
+        """Log a critical message."""
+        self.log(message, 'CRITICAL')
+
+def baseline_data(dataY, lam=100000, p=1e-6, subtract_median=True):
+    """Apply baseline correction to the data using asymmetric least squares."""
+    baseline = baseline_als(dataY, lam=lam, p=p)
+    baselinedY = dataY - baseline  # Subtract baseline from original data
+    if subtract_median:
+        med = np.median(baselinedY)
+        baselinedY -= med  # Center around zero
+
+    return baselinedY
+
+class Peak:
+
+    def __init__(self, position, amplitude, width, peak_type='gaussian'):
+        self.pos = position
+        self.amp = amplitude
+        self.width = width
+        self.peak_type = peak_type
+
+    def __repr__(self):
+        return f"Peak(type={self.peak_type}, pos={self.position:.2f}, amp={self.amplitude:.2f}, width={self.width:.2f})"
 
 class AutoPeakFitter:
     def __init__(self, dataX, dataY,
                  peak_type='gaussian',
                  peak_sign='positive',
-                 ftol=1e-4, gtol=1e-4, xtol=1e-4):
+                 ftol=1e-4, gtol=1e-4, xtol=1e-4,
+                 show_plot=False):
+        
         self.dataY = dataY
         self.dataX = dataX
         self.peak_type = peak_type.lower()
         self.peak_sign = peak_sign
         self.ftol, self.gtol, self.xtol = ftol, gtol, xtol
 
+
         self.Fit = data_fit()
         self.peaks = []
         self.peakfit_list = []
+
+    def package_peaks(self, peak_list):
+        '''Convert the list of peaks into a list of Peak objects.'''
+        return [Peak(*peak[1:4], peak_type=peak[0]) for peak in peak_list]
 
     def add_initial_peak(self, peak_index):
         """Add a single peak guess using a dataX index."""
@@ -68,34 +140,65 @@ class AutoPeakFitter:
             initial_index = np.argmax(self.dataY)
         self.add_initial_peak(int(initial_index))
         self.optimise()
-        return self.peakfit_list
+        return self.package_peaks(self.peakfit_list)
+    
 
 class LaserDetection:
 
     '''Class for detecting laser signals in spectrograph images. Used during live calibration to find the laser line position.'''
 
-    def __init__(self):
+    def __init__(self, logger_level='INFO'):
+        self.logger = SimpleLogger(level=logger_level)
         pass
 
-    def __call__(self, image, wavelength_axis):
+    def __call__(self, image, wavelength_axis, show_plot=False):
         """
         Call method to process the image and detect laser signal. Requires:
         - image: 2D numpy array representing the spectrograph image.
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
-        # breakpoint()
+        # 
         is_laser_present, laser_position = self.detect_laser_signal(image)
         if not is_laser_present:
             print("No laser signal detected in the image.")
-            return
+            return None
 
         dataY = self.image_to_spectrum(image, laser_position)
+        dataY = self.baseline_data(dataY, show_plot=show_plot, subtract_median=True)
         dataX = wavelength_axis
-        fitter = AutoPeakFitter(dataX, dataY)
+        fitter = AutoPeakFitter(dataX, dataY, show_plot=show_plot)
+        results = fitter.run(initial_index=laser_position[0])
 
-        self.results = fitter.run(initial_index=laser_position[0])
+        if show_plot == True:
+            plt.figure(figsize=(10, 5))
+            plt.plot(dataX, dataY, label='Spectrum')
+            for peak in results:
+                pos, amp, width = peak.pos, peak.amp, peak.width
+                plt.plot(dataX, amp * np.exp(-((dataX - pos) ** 2) / (2 * width ** 2)), label=f'Peak at {pos:.2f}')
+            plt.xlabel('Wavelength (nm)')
+            plt.ylabel('Intensity')
+            plt.title('Detected Laser Spectrum')
+            plt.legend()
+            plt.show()
+        
 
-        return
+        return results
+    
+    def baseline_data(self, dataY, lam=10000, p=1e-6, show_plot=False, subtract_median=True):
+        baselinedY = baseline_data(dataY, lam=lam, p=p, subtract_median=subtract_median)
+        
+        if show_plot:
+            plt.figure(figsize=(10, 5))
+            plt.plot(np.arange(len(dataY)), dataY, label='Original Spectrum')
+            plt.plot(np.arange(len(baselinedY)), baselinedY, label='Baselined Spectrum', alpha=0.7)
+            plt.xlabel('Pixel Index')
+            plt.ylabel('Intensity')
+            plt.title('Baseline Correction')
+            plt.legend()
+            plt.show()
+        
+        return baselinedY
+
     
     def image_to_spectrum(self, image, laser_position, binning_width=20):
         """Generate a 1D spectrum by averaging over a specified width in the Y dimension."""
@@ -109,7 +212,7 @@ class LaserDetection:
     def generate_test_image(self, width=2048, height=148, 
                             laser_position=None, laser_width=5, 
                             background_level=4000, noise_level=150, 
-                            y_center=85, y_spread=20, plot=False):
+                            y_center=85, y_spread=20, show_plot=False):
         """
         Generate a synthetic 2D spectrograph image with a simulated laser signal.
 
@@ -148,9 +251,14 @@ class LaserDetection:
         laser_signal *= 5000
 
         # Add background and Gaussian noise
+        if np.random.random() < 0.1:
+            image = background_level + np.random.normal(0, noise_level, size=(height, width))
+            # sometimes, return a completely noisy image
+            return image
+        
         image = background_level + laser_signal + np.random.normal(0, noise_level, size=(height, width))
 
-        if plot==True:
+        if show_plot==True:
             plt.figure(figsize=(10, 5))
             plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
             plt.colorbar(label='Intensity')
@@ -164,13 +272,17 @@ class LaserDetection:
         return image
 
 
-    def detect_laser_signal(self, image, threshold_sigma=10, min_width=3, plot=False):
+    def detect_laser_signal(self, image, threshold_sigma=10, min_width=3, show_plot=False):
         # Step 1: Collapse in Y to get intensity along X
         profile_x = np.median(image, axis=0)  # shape = (X,)
         
         # Step 2: Estimate background using robust statistics
         med = np.median(profile_x)
         mad = median_abs_deviation(profile_x)
+
+
+        self.logger.info(f"Median: {med}, MAD: {mad}")
+
         threshold = med + threshold_sigma * mad
 
         # Step 3: Find where signal exceeds threshold
@@ -189,7 +301,7 @@ class LaserDetection:
         y_max = np.argmax(image[:, x_max])  # Find the Y position of the maximum signal in the X profile
 
         
-        if plot:
+        if self.logger.level == 'DEBUG' or show_plot:
             plt.figure(figsize=(8, 4))
             plt.plot(profile_x, label='X-profile')
             plt.axhline(med, color='gray', linestyle='--', label='Median')
@@ -270,15 +382,16 @@ if __name__ == "__main__":
     
     # Generate a test image with a laser signal
     test_image = laser_detector.generate_test_image(laser_width=5, 
-                                                     background_level=4000, noise_level=150, plot=False)
+                                                     background_level=4000, noise_level=150, show_plot=True)
     
     # Detect the laser signal in the generated image
     # is_laser_present, initial_guess = laser_detector.detect_laser_signal(test_image, plot=False)
     
-    laser_detector(test_image, np.arange(test_image.shape[1]))  # Assuming wavelength_axis is just pixel indices for this test
+    laser_detector(test_image, np.arange(test_image.shape[1]), show_plot=True)  # Assuming wavelength_axis is just pixel indices for this test
     # print(f"Laser signal detected: {is_laser_present}")
     # print(f"Profile X shape: {profile_x.shape}, Signal mask shape: {signal_mask.shape}")
     # print(f"laser line position: {np.argmax(signal_mask)}")
     # fitter = AutoPeakFitter(dataX, dataY)
     # results = fitter.run(initial_index=1000)
-    breakpoint()
+
+    
