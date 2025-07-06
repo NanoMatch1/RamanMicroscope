@@ -115,6 +115,7 @@ class SimulatedCameraInterface:
         """
         Generate a simulated laser signal based on the simulated setup parameters.
         peak_sigma is used to control the randomization of the peak height. higher Numbers push the signal higher.
+        #TODO when laser is not in spectral range, the signal should be zero.
         
         """
         wavelength_axis = self.interface.microscope.wavelength_axis
@@ -128,6 +129,10 @@ class SimulatedCameraInterface:
         if laser_wavelength is not None and wavelength_axis is not None:
             # If a laser position is given, convert it to pixel index
             index = np.argmin(abs(wavelength_axis - laser_wavelength))
+            if index == 0 or index == len(wavelength_axis) - 1:
+                self.logger.debug("Laser wavelength does not fall within the wavelength axis range. Signal will be zero.")
+                return np.zeros((height, width), dtype=np.float32)  # Return zero signal if out of bounds
+                laser_position = np.random.randint(0, width)
             laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
         else: 
             laser_position = np.random.randint(0, width)  # Random position in the X dimension
