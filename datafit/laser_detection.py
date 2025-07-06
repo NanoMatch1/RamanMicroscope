@@ -211,6 +211,12 @@ class LaserDetection:
         self.dataY = spectrum
 
         return self.dataY
+    
+    def generate_laser_signal(self, width=2048, height=148, 
+                              laser_position=None, wavelength_axis=None, laser_width=5, y_centre=85, y_spread=20):
+        """Generates a synthetic laser signal for testing purposes."""
+        pass
+
 
     def generate_test_image(self, width=2048, height=148, 
                             laser_position=None, wavelength_axis=None, laser_width=5, 

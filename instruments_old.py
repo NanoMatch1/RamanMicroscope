@@ -514,7 +514,18 @@ class Instrument(ABC):
 
         print(f"{self.__class__} integrity check passed")
 
-
+def live_laser_calibration(func):
+    """
+    Decorator to automatically calculate the laser wavelength when using go_to_laser_wavelength.
+    Needs the triax to be connected to correctly identify wavelength.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Call the original function first
+        func(self, *args, **kwargs)
+        # Then run the live calibration
+        self.live_calibration_laser()
+    return wrapper
 
 class Microscope(Instrument):
 
@@ -715,6 +726,10 @@ class Microscope(Instrument):
             a. if not found, move g4 2 steps and repeat, up to 5 times. If no laser is found, report issue and stay at current wavelength
         5. return true laser wavelength for passing to other functions
         '''
+        if self.interface.spectrometer.is_simulated:
+            self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
+            return None
+        
         original_slit_width = self.report_spectrometer_slit_width()
         original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
         calibrated_wavelength = None
@@ -765,6 +780,7 @@ class Microscope(Instrument):
     
     @ui_callable
     def not_yet_implemented(self, *args):
+        '''Placeholder for commands that are not yet implemented.'''
         self.micro_log.info("Not yet implemented")
 
     @ui_callable

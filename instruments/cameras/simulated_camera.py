@@ -3,11 +3,68 @@ import threading
 import numpy as np
 import traceback
 
+from matplotlib import pyplot as plt
 
 # everywhere you have `print("…")`, replace with:
 # self.logger.info("Acquiring frame %d/%d…", i+1, n_frames)
 # or for errors:
 # self.logger.error("Failed to acquire frame.")
+
+class DummyAcquisitionControl:
+    """A dummy acquisition control class to simulate the acquisition control interface."""
+    
+    def __init__(self):
+        self.general_parameters = {'n_frames': 1}  # Default number of frames for simulation
+        self.save_spectrum_transient = lambda data, wavelengths: print("Saving transient spectrum...")  # Dummy save function
+
+class SimpleLogger:
+
+    """A simple logger class to handle logging messages."""
+
+    heirachy = {
+        'DEBUG': 10,
+        'INFO': 20,
+        'WARNING': 30,
+        'ERROR': 40,
+        'CRITICAL': 50
+    }
+
+    def __init__(self, level='INFO'):
+        self.level = level if level in self.heirachy else 'INFO'
+
+    def log(self, message, level='INFO'):
+        """Log a message at the specified level."""
+        if self.heirachy[level] >= self.heirachy[self.level]:
+            print(f"[{level}] {message}")
+
+    def set_level(self, level):
+        """Set the logging level."""
+        if level in self.heirachy:
+            self.level = level
+        else:
+            raise ValueError(f"Invalid logging level: {level}. Choose from {list(self.heirachy.keys())}.")
+
+    def debug(self, message):
+        """Log a debug message."""
+        self.log(message, 'DEBUG')
+    def info(self, message):
+        """Log an info message."""
+        self.log(message, 'INFO')
+    def warning(self, message):
+        """Log a warning message."""
+        self.log(message, 'WARNING')
+    def error(self, message):
+        """Log an error message."""
+        self.log(message, 'ERROR')
+    def critical(self, message):
+        """Log a critical message."""
+        self.log(message, 'CRITICAL')
+
+    def getChild(self, name):
+        """Get a child logger with the specified name."""
+        return SimpleLogger(level=self.level)
+
+
 
 class SimulatedCameraInterface:
 
@@ -60,45 +117,72 @@ class SimulatedCameraInterface:
         except ValueError:
             self.logger.error("Invalid ROI format. Expected (x1, y1, x2, y2)")
 
+    def _generate_simulated_laser_signal(self, width=2048, height=148,
+                                         laser_position=None, wavelength_axis=None, laser_width=5, y_spread=20, peak_height=30000):
+        """
+        Generate a simulated laser signal based on the simulated setup parameters.
+        
+        """
+        wavelength_axis = self.interface.microscope.wavelength_axis
+        laser_wavelength = self.interface.microscope.laser_wavelengths.get('l1', 785)  # Default to 785nm if not set
+        Y, X = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
+
+        if laser_position is not None and wavelength_axis is not None:
+            # If a laser position is given, convert it to pixel index
+            index = np.argmin(np.abs(wavelength_axis - laser_position))
+            laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
+        else: 
+            laser_position = np.random.randint(0, width)  # Random position in the X dimension
+
+        # 2D Gaussian signal: exp(-(X-x0)^2 / 2σx^2) * exp(-(Y-y0)^2 / 2σy^2)
+        laser_signal = np.exp(-0.5 * ((X - laser_position) / laser_width) ** 2) * \
+                    np.exp(-0.5 * ((Y - height / 2) / y_spread) ** 2)
+        
+        # Scale the signal to a 16-bit range
+        laser_signal = (laser_signal * np.random.randint(0, peak_height)).astype(np.uint16)  # Scale to 16-bit unsigned integer range
+
+        # Add some noise to the signal
+        noise_level = 1000
+        noise = np.random.normal(0, noise_level, laser_signal.shape)
+        laser_signal = np.clip(laser_signal + noise, 0, 65535).astype(np.uint16)  # Clip to 16-bit range
+
+        plt.imshow(laser_signal, cmap='gray')
+        plt.title("Simulated Laser Signal")
+        plt.show()
+
+        return laser_signal
+
+        
+
     def _generate_simulated_image(self, width=2048, height=148):
         """
         Generate simulated image data with a Gaussian peak in the center.
         Used for simulation mode to return realistic-looking spectral data.
         """
         # Create a 2D array of zeros with the specified dimensions
-        img = np.zeros((height, width), dtype=np.uint16)
 
-        # Create a 1D Gaussian peak profile for spectral data
-        x = np.arange(width)
-        center = width // 2
-        sigma = width // 40  # Width of the peak
-        amplitude = 40000  # Height of the peak (16-bit so max is 65535)
-        
-        # Calculate Gaussian
-        gaussian = amplitude * np.exp(-(x - center)**2 / (2 * sigma**2))
+        wavelength_axis = self.interface.microscope.wavelength_axis  # Ensure wavelength axis is generated
+
+        if wavelength_axis is None:
+            wavelength_axis = np.arange(width).astype(int)  # Default to a simple range if not set
+        background = 4000 # Background level
+        laser_signal = self._generate_simulated_laser_signal(width=width, height=height)
         
         # Add some noise
-        noise_level = 800
+        noise_level = 150
         noise = np.random.normal(0, noise_level, width)
         
         # Create the spectral line (same for all rows)
-        spectral_line = gaussian + noise
-        spectral_line = np.clip(spectral_line, 0, 65535).astype(np.uint16)
+        spectrum_image = background + laser_signal + noise
+        spectrum_image = np.clip(spectrum_image, 0, 65535).astype(np.uint16)
+
+        plt.imshow(spectrum_image, cmap='gray')
+        plt.title("Simulated Camera Frame")
+        plt.show()
+
+        breakpoint()
         
-        # Fill all rows with this spectral line, with slight variations
-        for i in range(height):
-            row_noise = np.random.normal(0, noise_level * 0.2, width)
-            img[i, :] = np.clip(spectral_line + row_noise, 0, 65535).astype(np.uint16)
-            
-        # Add a simulated peak shift based on instance parameters
-        # In simulation, we can modify the peak position based on internal state
-        # For example, the current simulated wavelength setting
-        
-        # For a multi-channel image (like RGB), expand dimensions
-        # This simulates a single-channel image for now
-        sim_frame = np.expand_dims(img, axis=2)
-        
-        return sim_frame
+        return spectrum_image
     
     def grab_frame_safe(self, timeout=100000):
         '''Workaround for temperature checking'''
@@ -184,3 +268,26 @@ class SimulatedCameraInterface:
         self.close_stream()
         self.logger.info("Continuous acquisition stopped.")
 
+
+if __name__ == "__main__":
+    # Example usage
+    class MockInterface:
+        def __init__(self):
+            self.logger = SimpleLogger()  # Mock logger
+            self.microscope = type('Microscope', (), {'wavelength_axis': np.arange(2048), 'laser_wavelengths': {'l1': 785}})()
+            self.acq_ctrl = DummyAcquisitionControl()
+
+    interface = MockInterface()
+    camera = SimulatedCameraInterface(interface)
+    camera.initialise()
+    camera.set_exposure_time(0.5)
+    camera.set_roi((0, 0, 2048, 148))
+    frame = camera.grab_frame_safe()
+    plt.imshow(frame, cmap='gray')
+    plt.title("Simulated Camera Frame")
+    plt.show()
+    # camera.start_continuous_acquisition()
+    # camera.acquire_frame_safe()  # Simulate a single frame acquisition
+    
+    # time.sleep(5)  # Let it run for a while
+    # camera.stop_continuous_acquisition()

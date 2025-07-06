@@ -11,6 +11,7 @@ class SimulatedTriaxSerial:
         self.spectrometer_position = 105000
         self.enterance_slit_width = 0
         self.response = 'o'
+        self.simulate = True  # Flag to indicate this is a simulated interface
 
         self.command_map = {
         'H0': self.get_spectrometer_position,

@@ -65,6 +65,14 @@ class Triax(Instrument):
     def __str__(self):
         return "TRIAX Spectrometer"
     
+    @property
+    def is_simulated(self):
+        '''Returns True if the spectrometer is simulated, False otherwise.
+        When connected to a simulated spectrometer, the communication interface will have a "simulate" attribute.'''
+        
+        simulation_status = getattr(self.spectrometer, 'simulate', False) 
+        return simulation_status
+    
     def initialise(self):
         '''Connect and establish primary attributes.'''
         self.connect()
