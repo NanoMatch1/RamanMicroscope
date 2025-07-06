@@ -6,8 +6,8 @@ import numpy as np
 
 import numpy as np
 from scipy.signal import find_peaks
-from data_fit import data_fit
-from baseline import baseline_als
+from .data_fit import data_fit
+from .baseline import baseline_als
 
 class SimpleLogger:
 
@@ -338,6 +338,13 @@ class LaserDetection:
         return is_laser_present, (x_max, y_max)  
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parents[1]))  # Add main_folder to path manually
+
+    from datafit.data_fit import data_fit
+    from datafit.baseline import baseline_als
+
     laser_detector = LaserDetection(logger_level='INFO')
     test_image = laser_detector.generate_test_image(laser_width=5, laser_position=785, wavelength_axis=np.arange(2048), background_level=4000, noise_level=150)
     laser_detector.detect_laser(test_image, np.arange(test_image.shape[1]))  # Assuming 

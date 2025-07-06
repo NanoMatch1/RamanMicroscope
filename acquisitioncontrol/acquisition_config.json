@@ -1,10 +1,10 @@
 {
   "general_parameters": {
-    "acquisition_time": 0.5,
+    "acquisition_time": 0.1,
     "filename": "pseudocal_test_26-06-25",
     "raman_shift": 0.0,
     "laser_power": 4.5,
-    "n_frames": 5
+    "n_frames": 1
   },
   "hidden_parameters": {
     "scan_mode": "linescan",
@@ -12,14 +12,14 @@
   },
   "motion_parameters": {
     "start_position": {
-      "x": -456.6363636363636,
-      "y": -1440.909090909091,
-      "z": 7.0
+      "x": 50.0,
+      "y": 40.0,
+      "z": 0
     },
     "end_position": {
-      "x": -456.6363636363636,
-      "y": -1433.909090909091,
-      "z": 9.0
+      "x": 272.0,
+      "y": 40.0,
+      "z": 0
     },
     "resolution": {
       "x": 0.5,

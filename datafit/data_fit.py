@@ -2,7 +2,7 @@ import csv
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-from Function import FitFunctionFactory
+from .Function import FitFunctionFactory
 
 class data_fit():
 
