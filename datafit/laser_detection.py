@@ -184,6 +184,7 @@ class LaserDetection:
             plt.legend()
             plt.show()
         
+        self.calibrated_wavelength = round(peak.pos, 3)
         self.logger.info(f"Detected laser peak at position: {peak.pos:.2f} with amplitude: {peak.amp:.2f} and width: {peak.width:.2f}")
         return peak
     
@@ -202,7 +203,6 @@ class LaserDetection:
         
         return baselinedY
 
-    
     def image_to_spectrum(self, image, laser_position, binning_width=20):
         """Generate a 1D spectrum by averaging over a specified width in the Y dimension."""
 
