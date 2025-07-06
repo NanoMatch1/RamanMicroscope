@@ -93,7 +93,8 @@ class AutoPeakFitter:
 
     def package_peaks(self, peak_list):
         '''Convert the list of peaks into a list of Peak objects.'''
-        return [Peak(*peak[1:4], peak_type=peak[0]) for peak in peak_list]
+        peak = peak_list[0]
+        return Peak(*peak[1:4], peak_type=peak[0])
 
     def add_initial_peak(self, peak_index):
         """Add a single peak guess using a dataX index."""
@@ -115,7 +116,7 @@ class AutoPeakFitter:
             self.peak_type,
             [peak_pos, self.dataX[0], self.dataX[-1]],                       # position + bounds
             [amp, np.min(self.dataY), np.max(self.dataY) * 2],              # amplitude + bounds
-            [fwhm, data_range / 200, data_range / 10]                        # width + bounds
+            [fwhm, data_range / 5000, data_range / 10]                        # width + bounds
         ])
 
     def setup_fit(self):
@@ -145,13 +146,15 @@ class AutoPeakFitter:
 
 class LaserDetection:
 
-    '''Class for detecting laser signals in spectrograph images. Used during live calibration to find the laser line position.'''
+    '''Class for detecting laser signals in spectrograph images. Used during live calibration to find the laser line position.
+    Also handles simulation of laser signals for simulated cameras.'''
 
     def __init__(self, logger_level='INFO'):
         self.logger = SimpleLogger(level=logger_level)
+        self.calibrated_wavelength = None
         pass
 
-    def __call__(self, image, wavelength_axis, show_plot=False):
+    def detect_laser(self, image, wavelength_axis, show_plot=False):
         """
         Call method to process the image and detect laser signal. Requires:
         - image: 2D numpy array representing the spectrograph image.
@@ -167,27 +170,27 @@ class LaserDetection:
         dataY = self.baseline_data(dataY, show_plot=show_plot, subtract_median=True)
         dataX = wavelength_axis
         fitter = AutoPeakFitter(dataX, dataY, show_plot=show_plot)
-        results = fitter.run(initial_index=laser_position[0])
+        peak = fitter.run(initial_index=laser_position[0])
 
-        if show_plot == True:
+        if self.logger.level == "DEBUG" or show_plot == True:
             plt.figure(figsize=(10, 5))
             plt.plot(dataX, dataY, label='Spectrum')
-            for peak in results:
-                pos, amp, width = peak.pos, peak.amp, peak.width
-                plt.plot(dataX, amp * np.exp(-((dataX - pos) ** 2) / (2 * width ** 2)), label=f'Peak at {pos:.2f}')
+
+            pos, amp, width = peak.pos, peak.amp, peak.width
+            plt.plot(dataX, amp * np.exp(-((dataX - pos) ** 2) / (2 * width ** 2)), label=f'Peak at {pos:.2f}')
             plt.xlabel('Wavelength (nm)')
             plt.ylabel('Intensity')
             plt.title('Detected Laser Spectrum')
             plt.legend()
             plt.show()
         
-
-        return results
+        self.logger.info(f"Detected laser peak at position: {peak.pos:.2f} with amplitude: {peak.amp:.2f} and width: {peak.width:.2f}")
+        return peak
     
     def baseline_data(self, dataY, lam=10000, p=1e-6, show_plot=False, subtract_median=True):
         baselinedY = baseline_data(dataY, lam=lam, p=p, subtract_median=subtract_median)
         
-        if show_plot:
+        if self.logger.level == "DEBUG" or show_plot == True:
             plt.figure(figsize=(10, 5))
             plt.plot(np.arange(len(dataY)), dataY, label='Original Spectrum')
             plt.plot(np.arange(len(baselinedY)), baselinedY, label='Baselined Spectrum', alpha=0.7)
@@ -210,7 +213,7 @@ class LaserDetection:
         return self.dataY
 
     def generate_test_image(self, width=2048, height=148, 
-                            laser_position=None, laser_width=5, 
+                            laser_position=None, wavelength_axis=None, laser_width=5, 
                             background_level=4000, noise_level=150, 
                             y_center=85, y_spread=20, show_plot=False):
         """
@@ -226,6 +229,7 @@ class LaserDetection:
         - height (int): Height of the image (Y dimension, i.e., spatial axis).
         - laser_position (int or None): X-coordinate of the laser peak center. 
         If None, a random position within the image width is chosen.
+        - wavelength_axis (1D np.ndarray): Wavelength axis, to be used with the laser_position in order to calibrate laser_position to the CCD array.
         - laser_width (float): Standard deviation of the laser signal in X (spectral width).
         - background_level (float): Mean background intensity across the image.
         - noise_level (float): Standard deviation of the Gaussian noise added to all pixels.
@@ -238,8 +242,12 @@ class LaserDetection:
         # Create coordinate grid
         Y, X = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
 
-        if laser_position is None:
-            laser_position = np.random.randint(laser_width, width - laser_width)
+        if laser_position is not None and wavelength_axis is not None:
+            # If a laser position is given, convert it to pixel index
+            index = np.argmin(np.abs(wavelength_axis - laser_position))
+            laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
+        else: 
+            laser_position = np.random.randint(0, width)  # Random position in the X dimension
         # else:
             # laser_position = np.random.randint(laser_position-50, laser_position+50)
 
@@ -258,7 +266,7 @@ class LaserDetection:
         
         image = background_level + laser_signal + np.random.normal(0, noise_level, size=(height, width))
 
-        if show_plot==True:
+        if self.logger.level == "DEBUG" or show_plot==True:
             plt.figure(figsize=(10, 5))
             plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
             plt.colorbar(label='Intensity')
@@ -321,77 +329,10 @@ class LaserDetection:
 
         
         
-        return is_laser_present, (x_max, y_max)
-
-
-    
-    # # def peakfit_laser_signal(self, profile_x, signal_mask)
-    # def peakfit_laser(self, image, wavelength_axis, initial_guess=None, binning_width=20):
-        
-    #     if initial_guess is None:
-    #         initial_guess = (np.argmax(image, axis=0), np.argmax(np.median(image, axis=0)))
-
-    #     xpos, ypos = initial_guess
-        
-
-    #     spectrum = np.median(image[ypos - binning_width:ypos + binning_width, :], axis=0)
-    #     dataX = wavelength_axis  # Assuming wavelength_axis is provided
-
-    #     data = np.column_stack((dataX, spectrum))  # shape (2, N)
-
-    #     peakfits = PeakFitter(obj, peak_detect=None)
-
-    #     peakfits.select_region_2(set_range=data_range) 
-    #     peakfits._baseline_data(lam=1000, p=0.001)
-    #     # template_peak = (peakfits.dataX[-1] + peakfits.dataX[0])/2
-    #     # peakfits.add_template_peak(template_peak)
-    #     peakfits.detect_initial_peak() # finds and adds a single peak, assuming laser line
-    #     peakfits.optimise()
-
-
-    #     peakfits.save_results()
-
-    #     if len(obj.peakfit_dict) == 0:
-    #         print(f'No peaks found in {file}. Skipping...')
-    #         # continue
-
-    #     peak = obj.peakfit_dict['peaks'][0][1]
-
-    #     if raman_shift is not None:
-    #         peak = raman_to_wavelength(peak, raman_shift)
-
-    #     obj.excitation_wavelength = peak
-    #     calibration_dict[f"{original_wavelength:.2f}"] = obj.excitation_wavelength
-    #     print('Laser wavelength: {}'.format(peak))
-        
-        
-    #     if save_cal is True:
-    #         exportDir = os.path.join(self.data_dir, 'export')
-    #         if not os.path.exists(exportDir):
-    #             os.makedirs(exportDir)
-    #         with open(os.path.join(exportDir, 'calibration.json'), 'w') as outfile:
-    #             json.dump(calibration_dict, outfile, indent=4)
-        
-
-    # === Example usage ===
-    # image = your 2D numpy array, e.g. from a CCD
-# is_laser, profile, mask = detect_laser_signal(image, plot=True)
+        return is_laser_present, (x_max, y_max)  
 
 if __name__ == "__main__":
-    laser_detector = LaserDetection()
-    
-    # Generate a test image with a laser signal
-    test_image = laser_detector.generate_test_image(laser_width=5, 
-                                                     background_level=4000, noise_level=150, show_plot=True)
-    
-    # Detect the laser signal in the generated image
-    # is_laser_present, initial_guess = laser_detector.detect_laser_signal(test_image, plot=False)
-    
-    laser_detector(test_image, np.arange(test_image.shape[1]), show_plot=True)  # Assuming wavelength_axis is just pixel indices for this test
-    # print(f"Laser signal detected: {is_laser_present}")
-    # print(f"Profile X shape: {profile_x.shape}, Signal mask shape: {signal_mask.shape}")
-    # print(f"laser line position: {np.argmax(signal_mask)}")
-    # fitter = AutoPeakFitter(dataX, dataY)
-    # results = fitter.run(initial_index=1000)
-
+    laser_detector = LaserDetection(logger_level='INFO')
+    test_image = laser_detector.generate_test_image(laser_width=5, laser_position=785, wavelength_axis=np.arange(2048), background_level=4000, noise_level=150)
+    laser_detector.detect_laser(test_image, np.arange(test_image.shape[1]))  # Assuming 
     

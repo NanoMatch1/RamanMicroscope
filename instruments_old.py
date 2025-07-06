@@ -534,7 +534,7 @@ class Microscope(Instrument):
         self.interface = interface
         self.logger = interface.logger
         self.micro_log = self.logger.getChild('Microscope')
-        self.laser_detector = LaserDetection()
+        self.laser_detection = LaserDetection()
 
 
         self.scriptDir = interface.scriptDir
@@ -713,14 +713,14 @@ class Microscope(Instrument):
         original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
         
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
-        self.go_to_spectrometer_wavelength(self.laser_wavelength)
+        self.go_to_spectrometer_wavelength(self.laser_wavelengths.get('l1'))  # Move spectrometer to laser wavelength
         self.set_spectrometer_enter_slit(0)
         self.go_to_monochromator_wavelength(self.laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
         image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
 
         attempts = 0
         while attempts < 5:
-            result = self.laser_detector(image_data, wavelength_axis)
+            result = self.laser_detection(image_data, wavelength_axis)
             if result is not None:
                 break
 
@@ -729,6 +729,7 @@ class Microscope(Instrument):
             attempts += 1
 
         if result is not None:
+            self.laser_wavelength
             
         self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
         self.set_spectrometer_enter_slit(original_slit_width)
