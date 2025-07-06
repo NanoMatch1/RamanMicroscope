@@ -3,13 +3,6 @@ import threading
 import numpy as np
 import traceback
 
-from matplotlib import pyplot as plt
-
-# everywhere you have `print("…")`, replace with:
-# self.logger.info("Acquiring frame %d/%d…", i+1, n_frames)
-# or for errors:
-# self.logger.error("Failed to acquire frame.")
-
 class DummyAcquisitionControl:
     """A dummy acquisition control class to simulate the acquisition control interface."""
     
@@ -118,18 +111,23 @@ class SimulatedCameraInterface:
             self.logger.error("Invalid ROI format. Expected (x1, y1, x2, y2)")
 
     def _generate_simulated_laser_signal(self, width=2048, height=148,
-                                         laser_position=None, wavelength_axis=None, laser_width=5, y_spread=20, peak_height=30000):
+                                         laser_position=None, wavelength_axis=None, laser_width=5, y_spread=20, peak_height=30000, peak_sigma=0.1):
         """
         Generate a simulated laser signal based on the simulated setup parameters.
+        peak_sigma is used to control the randomization of the peak height. higher Numbers push the signal higher.
         
         """
         wavelength_axis = self.interface.microscope.wavelength_axis
-        laser_wavelength = self.interface.microscope.laser_wavelengths.get('l1', 785)  # Default to 785nm if not set
+        if laser_position:
+            laser_wavelength = laser_position
+        else:
+            laser_wavelength = self.interface.microscope.laser_wavelengths.get('l1', 785)  # Default to 785nm if not set
+
         Y, X = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
 
-        if laser_position is not None and wavelength_axis is not None:
+        if laser_wavelength is not None and wavelength_axis is not None:
             # If a laser position is given, convert it to pixel index
-            index = np.argmin(np.abs(wavelength_axis - laser_position))
+            index = np.argmin(abs(wavelength_axis - laser_wavelength))
             laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
         else: 
             laser_position = np.random.randint(0, width)  # Random position in the X dimension
@@ -138,28 +136,16 @@ class SimulatedCameraInterface:
         laser_signal = np.exp(-0.5 * ((X - laser_position) / laser_width) ** 2) * \
                     np.exp(-0.5 * ((Y - height / 2) / y_spread) ** 2)
         
-        # Scale the signal to a 16-bit range
-        laser_signal = (laser_signal * np.random.randint(0, peak_height)).astype(np.uint16)  # Scale to 16-bit unsigned integer range
-
-        # Add some noise to the signal
-        noise_level = 1000
-        noise = np.random.normal(0, noise_level, laser_signal.shape)
-        laser_signal = np.clip(laser_signal + noise, 0, 65535).astype(np.uint16)  # Clip to 16-bit range
-
-        plt.imshow(laser_signal, cmap='gray')
-        plt.title("Simulated Laser Signal")
-        plt.show()
+        scale = np.abs(np.random.normal(peak_height, peak_height * peak_sigma))  # Peak centered at 30000, ~10% variation
+        laser_signal *= scale
 
         return laser_signal
-
-        
 
     def _generate_simulated_image(self, width=2048, height=148):
         """
         Generate simulated image data with a Gaussian peak in the center.
         Used for simulation mode to return realistic-looking spectral data.
         """
-        # Create a 2D array of zeros with the specified dimensions
 
         wavelength_axis = self.interface.microscope.wavelength_axis  # Ensure wavelength axis is generated
 
@@ -169,18 +155,12 @@ class SimulatedCameraInterface:
         laser_signal = self._generate_simulated_laser_signal(width=width, height=height)
         
         # Add some noise
-        noise_level = 150
-        noise = np.random.normal(0, noise_level, width)
+        noise_level = 300
+        noise = np.random.randint(-noise_level, noise_level, laser_signal.shape)
         
         # Create the spectral line (same for all rows)
         spectrum_image = background + laser_signal + noise
         spectrum_image = np.clip(spectrum_image, 0, 65535).astype(np.uint16)
-
-        plt.imshow(spectrum_image, cmap='gray')
-        plt.title("Simulated Camera Frame")
-        plt.show()
-
-        breakpoint()
         
         return spectrum_image
     
@@ -191,7 +171,6 @@ class SimulatedCameraInterface:
         image_data = self.grab_frame(timeout)
 
         return image_data
-        
 
     
     def grab_frame(self, timeout=100000):        
@@ -271,6 +250,7 @@ class SimulatedCameraInterface:
 
 if __name__ == "__main__":
     # Example usage
+    import matplotlib.pyplot as plt
     class MockInterface:
         def __init__(self):
             self.logger = SimpleLogger()  # Mock logger
@@ -283,7 +263,8 @@ if __name__ == "__main__":
     camera.set_exposure_time(0.5)
     camera.set_roi((0, 0, 2048, 148))
     frame = camera.grab_frame_safe()
-    plt.imshow(frame, cmap='gray')
+    
+    plt.imshow(frame, cmap='plasma')
     plt.title("Simulated Camera Frame")
     plt.show()
     # camera.start_continuous_acquisition()
