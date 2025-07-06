@@ -534,8 +534,8 @@ class Microscope(Instrument):
         self.interface = interface
         self.logger = interface.logger
         self.micro_log = self.logger.getChild('Microscope')
-        self.laser_detection = LaserDetection()
-
+        self.laser_detection = LaserDetection() # set up laser calibration capability
+        self.laser_wavelength_calibrated = None # this holds the true laser calibration when measured live.
 
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
@@ -696,6 +696,12 @@ class Microscope(Instrument):
         Needs new attributes for instrument state, and porting of old commands. For instance, self.laser_wavelength needs to be the stored wavelength, not a wrapper for calculating the wavelength from the controller.'''
         pass
 
+    def set_calibrated_laser_wavelength(self, calibrated_wavelength):
+        '''Sets the calibrated wavelength attribute, and updates the acqctrl dictionary with the calibrated wavelength'''
+        self.interface.acq_ctrl._current_parameters['laser_wavelength'] = calibrated_wavelength
+        self.interface.acq_ctrl._current_parameters['laser_wavelength_uncalibrated'] = self.laser_wavelengths.get('l1', None) # for legacy support and calibrations
+
+
     def live_calibration_laser(self):
         '''Handles the calibration of the laser wavelength on the fly. This function is called by the @live_calibration wrapper which is applied to the go_to_laser_wavelength function. It is used to automatically calibrate the laser wavelength when moving to a new laser wavelength. After a new go_to_laser_wavelength command, tt will move the spectrometer to the new laser wavelength, acquire a spectrum, and then run the laser detection and peak fitting functions. If the laser is found, it will set the laser wavelength and return the true laser wavelength. Further functions can then use this true laser wavelength to move the monochromator or spectrometer to the correct wavelength.
 
@@ -711,6 +717,7 @@ class Microscope(Instrument):
         '''
         original_slit_width = self.report_spectrometer_slit_width()
         original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
+        calibrated_wavelength = None
         
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
         self.go_to_spectrometer_wavelength(self.laser_wavelengths.get('l1'))  # Move spectrometer to laser wavelength
@@ -720,23 +727,27 @@ class Microscope(Instrument):
 
         attempts = 0
         while attempts < 5:
-            result = self.laser_detection(image_data, wavelength_axis)
+            result = self.laser_detection(image_data, wavelength_axis) # returns "Peak" object with pos and height attributes, or None if no peak is found
             if result is not None:
+                calibrated_wavelength = result.pos
                 break
 
             self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
             self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
             attempts += 1
 
-        if result is not None:
-            self.laser_wavelength
-            
-        self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
+        if result is None:
+            self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
+        else:
+            self.set_calibrated_laser_wavelength(calibrated_wavelength)
+
+
+        # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
+        self.set_acquisition_time(original_acqtime)  # Restore original acquisition time
+        return calibrated_wavelength
 
-        
 
-        
         
     def move_motors(self, motor_dict, backlash=False):
         """

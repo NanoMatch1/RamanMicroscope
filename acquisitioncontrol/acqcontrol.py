@@ -373,7 +373,7 @@ class AcquisitionControl(QObject):
         self._current_parameters = {
             'sample_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
             'laser_wavelength': 0.0,
-            'laser_wavelength_calibrated': 0.0,
+            'laser_wavelength_uncalibrated': 0.0,
             'polarization_in_angle': 0.0,
             'polarization_out_angle': 0.0,
             'monochromator_wavelength': 0.0,
