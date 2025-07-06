@@ -556,8 +556,11 @@ class MainWindow(QMainWindow):
             else:
                 self.light_ready.setStyleSheet("border-radius: 10px; background-color: red;")
 
-            # Placeholder always gray for now
-            self.light_laser.setStyleSheet("border-radius: 10px; background-color: gray;")
+            if getattr(self.interface.microscope, 'apply_live_calibration', False):
+                self.light_livecal.setStyleSheet("border-radius: 10px; background-color: green;")
+            else:
+                # if not applied, set to gray
+                self.light_livecal.setStyleSheet("border-radius: 10px; background-color: gray;")
 
 
             # Update labels for mode, positions, and estimate
@@ -687,7 +690,7 @@ class MainWindow(QMainWindow):
 
         lbl1, self.light_pseudocal = make_light("Pseudocal")
         lbl2, self.light_ready = make_light("Instrument Ready")
-        lbl3, self.light_laser = make_light("...")
+        lbl3, self.light_livecal = make_light("Live Calib.")
 
         status_layout.addWidget(lbl1)
         status_layout.addWidget(self.light_pseudocal)
@@ -696,7 +699,7 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.light_ready)
         status_layout.addSpacing(20)
         status_layout.addWidget(lbl3)
-        status_layout.addWidget(self.light_laser)
+        status_layout.addWidget(self.light_livecal)
         right_layout.addLayout(status_layout)
 
 
@@ -884,7 +887,13 @@ class MainWindow(QMainWindow):
         self.chk_apply_pseudocal.setChecked(self.interface.microscope.apply_pseudocal)
         self.chk_apply_pseudocal.toggled.connect(self.toggle_pseudocal)
 
+        self.chk_apply_livecal = QCheckBox("Apply Live Calibration")
+        self.chk_apply_livecal.setChecked(self.interface.microscope.apply_live_calibration)
+        self.chk_apply_livecal.toggled.connect(self.toggle_live_calibration)
+
+
         layout.addWidget(self.chk_apply_pseudocal)
+        layout.addWidget(self.chk_apply_livecal)
 
         self.dev_window.setLayout(layout)
         self.dev_window.resize(300, 100)
@@ -893,6 +902,10 @@ class MainWindow(QMainWindow):
     def toggle_pseudocal(self, checked):
         self.send_cli_command('pscal')
         self.refresh_ui()  # Update lights
+
+    def toggle_live_calibration(self, checked):
+        self.send_cli_command('livecal')
+        self.refresh_ui()
 
 
     def closeEvent(self, event):

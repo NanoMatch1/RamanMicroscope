@@ -63,13 +63,6 @@ from datafit.laser_detection import LaserDetection
 #         return wrapper
 #     return decorator
 
-def auto_calibrate_laser(func):
-    def wrapper(self, wavelength, *args, **kwargs):
-        """
-        Decorator to automatically calculate the laser wavelength when using go_to_laser_wavelength. Needs the triax to be connected to correctly identify wavelength.
-        """
-        func(self, wavelength, *args, **kwargs)
-    pass
 
 def apply_pseudocal_forwards(func):
     def wrapper(self, wavelength, *args, **kwargs):
@@ -91,6 +84,21 @@ def apply_pseudocal_backwards(func):
                 # result = self.pseudocal_backwards(result['l1'])
                 self.laser_wavelengths = result
         return result
+    return wrapper
+
+def live_laser_calibration(func):
+    """
+    Decorator to automatically calculate the laser wavelength when using go_to_laser_wavelength.
+    Needs the triax to be connected to correctly identify wavelength.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Call the original function first, catch the 
+        true_wavelength = func(self, *args, **kwargs)
+        # Then run the live calibration
+        if self.apply_live_calibration is True:
+            true_wavelength = self.live_calibration_laser()
+        return true_wavelength
     return wrapper
 
 def ui_callable(func):
@@ -514,18 +522,7 @@ class Instrument(ABC):
 
         print(f"{self.__class__} integrity check passed")
 
-def live_laser_calibration(func):
-    """
-    Decorator to automatically calculate the laser wavelength when using go_to_laser_wavelength.
-    Needs the triax to be connected to correctly identify wavelength.
-    """
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        # Call the original function first
-        func(self, *args, **kwargs)
-        # Then run the live calibration
-        self.live_calibration_laser()
-    return wrapper
+
 
 class Microscope(Instrument):
 
@@ -558,6 +555,7 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
         self.apply_pseudocal = True  # Whether to apply pseudocalibration corrections
+        self.apply_live_calibration = True
 
         self.microscope_mode = 'ramanmode'
         camera_roi = self.interface.camera.roi
@@ -590,6 +588,7 @@ class Microscope(Instrument):
             'nyi': self.not_yet_implemented,
             # calibration commands
             'pscal': self.toggle_pseudocal,
+            'livecal': self.toggle_live_calibration,
             # general commands
             'wai': self.where_am_i,
             'rg': self.get_spectrometer_position,
@@ -732,6 +731,7 @@ class Microscope(Instrument):
         
         original_slit_width = self.report_spectrometer_slit_width()
         original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
+        original_motor_positions = self.motion_control.get_motor_positions(self.motion_control.generate_motor_dict(self.action_groups['grating_wavelength'])) # grab the original motor positions for the grating motors to restore later
         calibrated_wavelength = None
         
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
@@ -760,6 +760,7 @@ class Microscope(Instrument):
         # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
         self.set_acquisition_time(original_acqtime)  # Restore original acquisition time
+        self.move_motors(original_motor_positions, backlash=True)  # Restore original motor positions
         return calibrated_wavelength
 
 
@@ -794,6 +795,20 @@ class Microscope(Instrument):
             self.micro_log.error('Invalid argument for toggle_pseudocal. Use True or False to set the state.')
         status = "enabled" if self.apply_pseudocal else "disabled"
         self.micro_log.info(f"Pseudocalibration correction {status}")
+
+        return status
+    
+    @ui_callable
+    def toggle_live_calibration(self, *args):
+        '''Toggle the live calibration of the laser wavelength.'''
+        if not args:
+            self.apply_live_calibration = not self.apply_live_calibration
+        elif len(args) == 1 and isinstance(args[0], bool):
+            self.apply_live_calibration = args[0]
+        else:
+            self.micro_log.error('Invalid argument for toggle_live_calibration. Use True or False to set the state.')
+        status = "enabled" if self.apply_live_calibration else "disabled"
+        self.micro_log.info(f"Live calibration {status}")
 
         return status
     
@@ -2171,6 +2186,7 @@ class Microscope(Instrument):
         print('Calibration inverted')
     
     @ui_callable
+    @live_laser_calibration
     @apply_pseudocal_forwards
     def go_to_laser_wavelength(self, wavelength):
         """
