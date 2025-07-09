@@ -555,7 +555,7 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
         self.apply_pseudocal = True  # Whether to apply pseudocalibration corrections
-        self.apply_live_calibration = True
+        self.apply_live_calibration = False
 
         self.microscope_mode = 'ramanmode'
         camera_roi = self.interface.camera.roi
@@ -725,9 +725,9 @@ class Microscope(Instrument):
             a. if not found, move g4 2 steps and repeat, up to 5 times. If no laser is found, report issue and stay at current wavelength
         5. return true laser wavelength for passing to other functions
         '''
-        if self.interface.spectrometer.is_simulated:
-            self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
-            return None
+        # if self.interface.spectrometer.is_simulated:
+            # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
+            # return None
         
         original_slit_width = self.report_spectrometer_slit_width()
         original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
@@ -1499,7 +1499,7 @@ class Microscope(Instrument):
         
         # initial_pinhole_pos = int(self.pinhole)
         # self.close_pinhole(pinhole_size)
-        self.close_mono_shutter()
+        # self.close_mono_shutter()
         
         for wl in wavelengths:
             self.go_to_laser_wavelength(wl)
@@ -1566,7 +1566,11 @@ class Microscope(Instrument):
             
             # Update laser wavelength
             self.calculate_laser_wavelength(target_positions)
-            print("Moved to laser steps: ", self.laser_steps)
+            print("Moved: ", motor_steps)
+            return True
+        else:
+            return False
+
 
     @ui_callable
     def go_to_monochromator_steps(self, target_positions):
@@ -1598,7 +1602,10 @@ class Microscope(Instrument):
             
             # Update monochromator wavelength
             self.calculate_monochromator_wavelength()
-            print("Moved to monochromator steps: ", self.monochromator_steps)
+            print("Moved: ", motor_steps)
+            return True
+        else:
+            return False
 
 
     def run_ldr0_scan(self, motor, search_length=None, resolution=None):
@@ -1984,7 +1991,6 @@ class Microscope(Instrument):
         print('All Motors successfully shifted')
 
     @ui_callable
-    # @apply_pseudocal_forwards
     def reference_laser_from_wavelength(self, wavelength):
         '''
         Reference the current laser motor configuration to a known laser wavelength (in nm).
@@ -2204,21 +2210,24 @@ class Microscope(Instrument):
             return False
         
         # Safety: close shutter during movement
-        self.close_mono_shutter()
+        # self.close_mono_shutter()
         
         # Get target positions from calibration service
         # Assumes the calibration service has a wl_to_steps method that returns a dictionary
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['laser_wavelength'])
         
         # Move to target positions
-        self.go_to_laser_steps(target_positions)
+        moved = self.go_to_laser_steps(target_positions)
               
         # Safety checks and reopen shutter
         # self.laser_safety_check()
-        self.open_mono_shutter()
+        # self.open_mono_shutter()
         
         # Report primary wavelength
-        print("New laser wavelength: ", next(iter(self.laser_wavelengths.values())))
+        if moved:
+            print("New laser wavelength: ", next(iter(self.laser_wavelengths.values())))
+        else:
+            print("Laser motors already at target position - no motion initiated.")
         
         return True
 
@@ -2240,7 +2249,7 @@ class Microscope(Instrument):
             return False
         
         # Safety: close shutter during movement
-        self.close_mono_shutter()
+        # self.close_mono_shutter()
         
         # Get target positions from calibration service
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
@@ -2248,7 +2257,7 @@ class Microscope(Instrument):
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
         # self.laser_safety_check()
-        self.open_mono_shutter()
+        # self.open_mono_shutter()
         
         # Report primary wavelength
         print("New monochromator wavelength: ", next(iter(self.monochromator_wavelengths.values())))
@@ -2272,19 +2281,22 @@ class Microscope(Instrument):
             return False
         
         # Safety: close shutter during movement
-        self.close_mono_shutter()
+        # self.close_mono_shutter()
         
         # Get target positions from calibration service
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
         
         # Move to target positions
-        self.go_to_grating_steps(target_positions)
+        moved = self.go_to_grating_steps(target_positions)
         # self.laser_safety_check()
-        self.open_mono_shutter()
+        # self.open_mono_shutter()
         
         # Report primary wavelength
-        print("New grating wavelength: ", next(iter(self.grating_wavelengths.values())))
-        
+        if moved is True:
+            print("New grating wavelength: ", next(iter(self.grating_wavelengths.values())))
+        else:
+            print("Grating motors already at target position - no motion initiated.")
+
         return True
 
     def check_grating_wavelength(self, wavelength):
@@ -2327,7 +2339,11 @@ class Microscope(Instrument):
             
             # Update grating wavelength
             self.calculate_grating_wavelength()
-            print("Moved to grating steps: ", self.grating_steps)
+            print("Moved: ", motor_steps)
+            return True
+        
+        else:
+            return False
 
     def check_monochromator_wavelength(self, wavelength):
         wavelength = string_to_float(wavelength)

@@ -1,7 +1,7 @@
 {
   "general_parameters": {
     "acquisition_time": 0.1,
-    "filename": "pseudocal_test_26-06-25",
+    "filename": "test_9-7-25",
     "raman_shift": 0.0,
     "laser_power": 4.5,
     "n_frames": 1
@@ -12,24 +12,24 @@
   },
   "motion_parameters": {
     "start_position": {
-      "x": 50.0,
-      "y": 40.0,
+      "x": 0,
+      "y": 0,
       "z": 0
     },
     "end_position": {
-      "x": 272.0,
-      "y": 40.0,
+      "x": 3.0,
+      "y": 0,
       "z": 0
     },
     "resolution": {
-      "x": 0.5,
+      "x": 1.0,
       "y": 0.4,
       "z": 0.0
     }
   },
   "wavelength_parameters": {
-    "start_wavelength": 785.0,
-    "end_wavelength": 785.0,
+    "start_wavelength": 800.0,
+    "end_wavelength": 800.0,
     "resolution": 2.0
   },
   "polarization_parameters": {
