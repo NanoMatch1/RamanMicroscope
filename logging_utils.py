@@ -20,21 +20,39 @@ class QtLogHandler(logging.Handler, QObject):
 
 
 class LoggerInterface:
+
+    aliases = {
+    'interface.Microscope': 'M.',
+    'interface.Arduino': 'A.',
+    'interface.Laser': 'L.',
+    'interface.Stage': 'S',
+    'interface': 'I.',
+    }
+
+    level_map = {
+        'debug': logging.DEBUG,
+        'info': logging.INFO,
+        'warning': logging.WARNING,
+        'error': logging.ERROR,
+        'critical': logging.CRITICAL,
+        'coms': 5,  # Custom level for command messages
+    }
+
     def __init__(self, name: str = 'instrument'):
         # 1) Define your level number and name
-        COMMAND_LEVEL_NUM = 15
-        logging.addLevelName(COMMAND_LEVEL_NUM, "CMD")
+        logger_name = self.aliases.get(name, name)
+        COMMAND_LEVEL_NUM = 5
+        logging.addLevelName(COMMAND_LEVEL_NUM, "COMS")
 
-        # 2) Attach a .command(...) method to all Logger instances
-        def cmd(self, message, *args, **kwargs):
-            # analogous to logger.info, logger.error, etc.
+        def coms(self, message, *args, **kwargs):
             if self.isEnabledFor(COMMAND_LEVEL_NUM):
                 self._log(COMMAND_LEVEL_NUM, message, args, **kwargs)
 
-        logging.Logger.cmd = cmd
+        logging.Logger.coms = coms
+
         # 1) Grab or create the root logger for your system
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.DEBUG) # lowest setting, all pass through to handlers
 
         # 2) Configure your handlers just once
         logfile = os.path.join(os.path.dirname(__file__), 'logs', 'instrument_errors.log')
@@ -46,7 +64,7 @@ class LoggerInterface:
 
         self.cli_handler = logging.StreamHandler()       # CLI/stdout handler
         self.cli_handler.setLevel(logging.DEBUG)
-        self.cli_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+        self.cli_handler.setFormatter(logging.Formatter('[%(levelname)s]{} %(message)s'.format(logger_name)))
 
         # self.qt_handler = QtLogHandler()
         # self.qt_handler.setLevel(logging.DEBUG)

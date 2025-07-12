@@ -295,8 +295,6 @@ class MotionControl:
     def get_motor_positions(self, motor_dict, report=True):
         '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
         motors = [motor_dict[i] for i in motor_dict.keys()]
-        if report:
-            print("Getting motor positions {}".format(motors))
         response = self.controller.get_motor_positions(motors)
         pos_dict = self._parse_motor_positions(response)
         labelled_dict = self._return_labelled_positions(pos_dict, motor_dict)
@@ -542,6 +540,7 @@ class Microscope(Instrument):
         self.interface = interface
         self.logger = interface.logger
         self.micro_log = self.logger.getChild('Microscope')
+        self.micro_log
         self.laser_detection = LaserDetection() # set up laser calibration capability
         self.laser_wavelength_calibrated = None # this holds the true laser calibration when measured live.
 
@@ -906,6 +905,7 @@ class Microscope(Instrument):
             return
         
         self.controller.report = False
+        self.micro_log.debug("Saving instrument state: Polling controller for motor positions")
         motor_positions = self.get_all_motor_positions(report=False)
         self.controller.report = True
 
@@ -1292,7 +1292,7 @@ class Microscope(Instrument):
     def go_to_polarization_in(self, angle):
         '''Moves the polarizer to the specified angle.'''
         self.motion_control.move_motors({'p_in': angle})
-        self.logger.info('Input polarization set to {} degrees'.format(angle))
+        self.micro_logger.info('Input polarization set to {} degrees'.format(angle))
 
     @ui_callable
     def go_to_polarization_out(self, angle):
@@ -1878,7 +1878,7 @@ class Microscope(Instrument):
         wavelength (float): Target wavelength in nm
         shift (bool): If True, maintains the current Raman shift. If False, sets monochromator to same wavelength.
         """
-        self.logger.info(f"Moving all components to wavelength: {wavelength} nm")
+        self.micro_logger.info(f"Moving all components to wavelength: {wavelength} nm")
         # First move the laser
         self.go_to_laser_wavelength(wavelength)
         self.go_to_grating_wavelength(wavelength) # move all grating motors
@@ -1891,7 +1891,7 @@ class Microscope(Instrument):
         # Finally, move the spectrometer
         self.go_to_spectrometer_wavelength(wavelength)
         
-        self.logger.info(f"All components set to wavelength: {wavelength} nm")
+        self.micro_logger.info(f"All components set to wavelength: {wavelength} nm")
         return True
     
 
