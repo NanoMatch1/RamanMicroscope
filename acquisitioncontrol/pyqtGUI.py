@@ -237,7 +237,7 @@ class LiveDataViewer(QWidget):
 
             self.spectrum_ax.clear()
             self.spectrum_ax.plot(wavelength_axis, binned, linewidth=1)
-            
+
             if hasattr(self, 'pixel_ax') and self.pixel_ax in self.spectrum_fig.axes:
                 self.spectrum_fig.delaxes(self.pixel_ax)
 
@@ -606,6 +606,11 @@ class MainWindow(QMainWindow):
             else:
                 self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: red;")
 
+            # if getattr(self.interface.microscope, 'laser_calibrated', True):
+            #     self.light_lasercal.setStyleSheet("border-radius: 10px; background-color: green;")
+            # else:
+            #     self.light_lasercal.setStyleSheet("border-radius: 10px; background-color: red;")
+
             # Instrument ready (example: set from some flag)
             if getattr(self.interface.microscope, 'instrument_ready', True):
                 self.light_ready.setStyleSheet("border-radius: 10px; background-color: green;")
@@ -626,6 +631,14 @@ class MainWindow(QMainWindow):
             self.lbl_start.setText(self.acq_ctrl.start_position())
             self.lbl_stop.setText(self.acq_ctrl.stop_position())
             self.lbl_est.setText(f"{scan_time['duration']:.2f} {scan_time['units']}")
+
+            # Update laser calibration status
+            if self.interface.microscope.laser_calibrated:
+                self.lbl_laser_cal.setText("Laser Calibrated: {}".format(self.interface.microscope.laser_wavelength_calibrated))
+                self.lbl_laser_cal.setStyleSheet("color: green;")
+            else:
+                self.lbl_laser_cal.setText("Laser NOT Calibrated")
+                self.lbl_laser_cal.setStyleSheet("color: red;")
 
             # Stage position update
             stage_pos = self.acq_ctrl.current_stage_coordinates
@@ -771,7 +784,8 @@ class MainWindow(QMainWindow):
 
         lbl1, self.light_pseudocal = make_light("Pseudocal")
         lbl2, self.light_ready = make_light("Instrument Ready")
-        lbl3, self.light_livecal = make_light("Live Calib.")
+        lbl3, self.light_livecal = make_light("Laser Calibrated.")
+        # lbl4, self.light_scan = make_light("Scan Active")
 
         status_layout.addWidget(lbl1)
         status_layout.addWidget(self.light_pseudocal)
@@ -799,8 +813,20 @@ class MainWindow(QMainWindow):
         # Instrument Control
         instrument_group = QGroupBox("Instrument Control")
         ig_layout = QVBoxLayout()  # Change from QHBoxLayout to vertical layout
-        stage_btns_layout = QHBoxLayout()
 
+        laser_status_layout = QHBoxLayout()
+        if self.interface.microscope.laser_calibrated:
+            self.lbl_laser_cal = QLabel("Laser Calibrated: {} nm".format(self.interface.microscope.laser_wavelength_calibrated))
+            self.lbl_laser_cal.setStyleSheet("color: green;")
+        else:
+            self.lbl_laser_cal = QLabel("Laser NOT Calibrated")
+            self.lbl_laser_cal.setStyleSheet("color: red;")
+
+        laser_status_layout.addWidget(self.lbl_laser_cal)
+        ig_layout.addLayout(laser_status_layout)
+
+
+        stage_btns_layout = QHBoxLayout()
         self.btn_set_home = QPushButton("Set Home")
         self.btn_set_home.clicked.connect(lambda: self.send_cli_command('stagehome'))
         self.btn_set_start = QPushButton("Set Start")

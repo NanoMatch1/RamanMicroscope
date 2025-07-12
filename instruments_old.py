@@ -98,6 +98,7 @@ def live_laser_calibration(func):
         # Then run the live calibration
         if self.apply_live_calibration is True:
             true_wavelength = self.live_calibration_laser()
+
         return true_wavelength
     return wrapper
 
@@ -711,7 +712,8 @@ class Microscope(Instrument):
         self.interface.acq_ctrl._current_parameters['laser_wavelength'] = calibrated_wavelength
         self.interface.acq_ctrl._current_parameters['laser_wavelength_uncalibrated'] = self.laser_wavelengths.get('l1', None) # for legacy support and calibrations
         self.laser_calibrated = True
-
+        print("SETTING: Laser wavelength calibrated to: {}".format(calibrated_wavelength))
+        self.laser_wavelength_calibrated = round(calibrated_wavelength, 3)
 
     def live_calibration_laser(self):
         '''Handles the calibration of the laser wavelength on the fly. This function is called by the @live_calibration wrapper which is applied to the go_to_laser_wavelength function. It is used to automatically calibrate the laser wavelength when moving to a new laser wavelength. After a new go_to_laser_wavelength command, tt will move the spectrometer to the new laser wavelength, acquire a spectrum, and then run the laser detection and peak fitting functions. If the laser is found, it will set the laser wavelength and return the true laser wavelength. Further functions can then use this true laser wavelength to move the monochromator or spectrometer to the correct wavelength.
@@ -733,6 +735,7 @@ class Microscope(Instrument):
         original_slit_width = self.report_enterance_slit_width
         original_acqtime = copy(self.interface.acq_ctrl.general_parameters['acquisition_time'])
         original_motor_positions = self.motion_control.get_motor_positions(self.motion_control.generate_motor_dict(self.action_groups['grating_wavelength'])) # grab the original motor positions for the grating motors to restore later
+        original_spectrometer_position = self.report_spectrometer_wavelength
         calibrated_wavelength = None
         current_laser_wavelength = self.laser_wavelengths.get('l1') #TODO change to self.laser_wavelengh when static reporting is implemented
         
@@ -756,12 +759,14 @@ class Microscope(Instrument):
         if result is None:
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
         else:
+            print("CAL: Laser found at wavelength: {}".format(calibrated_wavelength))
             self.set_calibrated_laser_wavelength(calibrated_wavelength)
 
         # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
         self.set_acquisition_time(original_acqtime)  # Restore original acquisition time
         self.move_motors(original_motor_positions, backlash=True)  # Restore original motor positions
+        self.go_to_spectrometer_wavelength(original_spectrometer_position)  # Restore original spectrometer position
         return calibrated_wavelength
 
 
@@ -1662,6 +1667,7 @@ class Microscope(Instrument):
         
         return scan_data
     
+   
     @property
     def current_laser_wavenumber(self):
         '''Takes the current laser wavelength and calculates the absolute wavenumbers.'''
@@ -1671,6 +1677,10 @@ class Microscope(Instrument):
     @property
     def report_laser_wavelength(self):
         return round(self.laser_wavelengths.get('l1', 'KeyError'), 2)
+
+    @property
+    def report_calibrated_laser_wavelength(self):
+        return self.laser_wavelength_calibrated
 
     @property
     def report_grating_wavelength(self):
