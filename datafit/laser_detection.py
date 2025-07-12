@@ -161,7 +161,7 @@ class LaserDetection:
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
         # 
-        is_laser_present, laser_position = self.detect_laser_signal(image)
+        is_laser_present, laser_position = self.detect_laser_peak(image)
         if not is_laser_present:
             print("No laser signal detected in the image.")
             return None
@@ -286,7 +286,9 @@ class LaserDetection:
         return image
 
 
-    def detect_laser_signal(self, image, threshold_sigma=10, min_width=3, show_plot=False):
+    def detect_laser_peak(self, image, threshold_sigma=10, min_width=3, show_plot=False):
+        '''Searches for a laser peak in the image by integrating along the X-axis and applying a threshold based on robust statistics.Returns a tuple (is_laser_present, (x_max, y_max)) where is_laser_present is True if a peak is found, and (x_max, y_max) are the coordinates of the peak.'''
+        
         # Step 1: Collapse in Y to get intensity along X
         profile_x = np.median(image, axis=0)  # shape = (X,)
         

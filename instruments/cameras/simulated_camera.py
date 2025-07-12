@@ -79,6 +79,16 @@ class SimulatedCameraInterface:
             'set_roi': self.set_roi,
         }
 
+    @property
+    def randomise_laser(self):
+        """Check if the laser position is randomised"""
+        try:
+            randomise = not self.interface.microscope.laser_calibrated
+        except Exception as e:
+            randomise = True
+
+        return randomise
+
     def initialise(self):
         """Initialize the simulated camera"""
         self.logger.info("Simulated camera initialized")
@@ -131,9 +141,9 @@ class SimulatedCameraInterface:
             index = np.argmin(abs(wavelength_axis - laser_wavelength))
             if index == 0 or index == len(wavelength_axis) - 1:
                 self.logger.debug("Laser wavelength does not fall within the wavelength axis range. Signal will be zero.")
-                return np.zeros((height, width), dtype=np.float32)  # Return zero signal if out of bounds
-                laser_position = np.random.randint(0, width)
-            laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
+                return np.zeros((height, width), dtype=np.float32)  # 
+            if self.randomise_laser:
+                laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
         else: 
             laser_position = np.random.randint(0, width)  # Random position in the X dimension
 

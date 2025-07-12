@@ -555,7 +555,8 @@ class Microscope(Instrument):
         self.calibration_service = calibration_service
         self.simulate = simulate
         self.apply_pseudocal = True  # Whether to apply pseudocalibration corrections
-        self.apply_live_calibration = False
+        self.apply_live_calibration = True
+        self.laser_calibrated = False
 
         self.microscope_mode = 'ramanmode'
         camera_roi = self.interface.camera.roi
@@ -710,6 +711,7 @@ class Microscope(Instrument):
         '''Sets the calibrated wavelength attribute, and updates the acqctrl dictionary with the calibrated wavelength'''
         self.interface.acq_ctrl._current_parameters['laser_wavelength'] = calibrated_wavelength
         self.interface.acq_ctrl._current_parameters['laser_wavelength_uncalibrated'] = self.laser_wavelengths.get('l1', None) # for legacy support and calibrations
+        self.laser_calibrated = True
 
 
     def live_calibration_laser(self):
@@ -729,20 +731,21 @@ class Microscope(Instrument):
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
         
-        original_slit_width = self.report_spectrometer_slit_width()
-        original_acqtime = copy(self.interface.acq_ctrl.acquisition_time)
+        original_slit_width = self.report_enterance_slit_width
+        original_acqtime = copy(self.interface.acq_ctrl.general_parameters['acquisition_time'])
         original_motor_positions = self.motion_control.get_motor_positions(self.motion_control.generate_motor_dict(self.action_groups['grating_wavelength'])) # grab the original motor positions for the grating motors to restore later
         calibrated_wavelength = None
+        current_laser_wavelength = self.laser_wavelengths.get('l1') #TODO change to self.laser_wavelengh when static reporting is implemented
         
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
         self.go_to_spectrometer_wavelength(self.laser_wavelengths.get('l1'))  # Move spectrometer to laser wavelength
         self.set_spectrometer_enter_slit(0)
-        self.go_to_monochromator_wavelength(self.laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
+        self.go_to_monochromator_wavelength(current_laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
         image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
 
         attempts = 0
         while attempts < 5:
-            result = self.laser_detection(image_data, wavelength_axis) # returns "Peak" object with pos and height attributes, or None if no peak is found
+            result = self.laser_detection.detect_laser(image_data, wavelength_axis) # returns "Peak" object with pos and height attributes, or None if no peak is found
             if result is not None:
                 calibrated_wavelength = result.pos
                 break
@@ -755,7 +758,6 @@ class Microscope(Instrument):
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
         else:
             self.set_calibrated_laser_wavelength(calibrated_wavelength)
-
 
         # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
@@ -1688,7 +1690,7 @@ class Microscope(Instrument):
         return(round(getattr(self.interface.laser, 'current_power', 'AttErr'), 2))
     
     @property
-    def report_spectrometer_slit_width(self):
+    def report_enterance_slit_width(self):
         return self.interface.spectrometer.read_enterance_slit()
     
     @property
@@ -1900,6 +1902,26 @@ class Microscope(Instrument):
         '''Moves the spectrometer to the specified wavelength.'''
         self.interface.spectrometer.go_to_wavelength(wavelength)
         self.generate_wavelength_axis()
+
+    def set_spectrometer_enter_slit(self, slit_width: int):
+        '''Sets the entrance slit width of the spectrometer.'''
+        try:
+            slit_width = int(slit_width)
+        except ValueError:
+            print("Invalid slit width. Must be an integer.")
+            return
+        if slit_width < 0:
+            self.micro_log.info("Slit width must be positive.")
+            return
+        current_width = self.report_enterance_slit_width
+        move_slit = slit_width - current_width
+        if move_slit == 0:
+            self.micro_log.debug("Slit width is already set to {} microns".format(slit_width))
+            return
+        self.interface.spectrometer.move_enterance_slit(move_slit)
+
+
+
 
     @ui_callable
     def reference_calibration_from_triax(self, steps=None, shift=True):
@@ -2225,10 +2247,10 @@ class Microscope(Instrument):
         
         # Report primary wavelength
         if moved:
-            print("New laser wavelength: ", next(iter(self.laser_wavelengths.values())))
+            self.laser_calibrated = False # for tracking live calibration status
+            self.micro_log.debug("Laser no longer calibrated...")
         else:
-            print("Laser motors already at target position - no motion initiated.")
-        
+            self.micro_log.info("Laser motors already at target position - no motion initiated.")
         return True
 
 
