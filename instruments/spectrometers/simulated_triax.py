@@ -1,4 +1,5 @@
 from copy import copy
+import time
 
 class SimulatedTriaxSerial:
 
@@ -42,6 +43,7 @@ class SimulatedTriaxSerial:
         try:
             position = int(position)
             self.enterance_slit_width += position
+            time.sleep(0.001*abs(position))  # Simulate some delay for the movement
             return f"o{self.enterance_slit_width}"
         except ValueError:
             print(f'Invalid input for entrance slit position: {position}')

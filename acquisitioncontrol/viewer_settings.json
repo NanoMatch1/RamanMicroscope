@@ -2,6 +2,6 @@
     "autoscale": true,
     "xmin": 10,
     "xmax": 2000,
-    "ymin": 80,
-    "ymax": 90
+    "ymin": 50,
+    "ymax": 82
 }
