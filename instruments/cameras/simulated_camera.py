@@ -85,6 +85,7 @@ class SimulatedCameraInterface:
         try:
             randomise = not self.interface.microscope.laser_calibrated
         except Exception as e:
+            self.logger.debug(f"Error checking laser calibration: {e}")
             randomise = True
 
         return randomise
@@ -131,6 +132,8 @@ class SimulatedCameraInterface:
         wavelength_axis = self.interface.microscope.wavelength_axis
         if laser_position:
             laser_wavelength = laser_position
+        elif self.interface.microscope.laser_calibrated:
+            laser_wavelength = self.interface.microscope.laser_wavelength_calibrated
         else:
             laser_wavelength = self.interface.microscope.laser_wavelengths.get('l1', 785)  # Default to 785nm if not set
 
