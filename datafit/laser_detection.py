@@ -141,7 +141,10 @@ class AutoPeakFitter:
             initial_index = np.argmax(self.dataY)
         self.add_initial_peak(int(initial_index))
         self.optimise()
-        return self.package_peaks(self.peakfit_list)
+        peak = self.package_peaks(self.peakfit_list)
+        self.peaks = []  # Clear peaks for next fit
+
+        return peak
     
 
 class LaserDetection:
@@ -149,8 +152,10 @@ class LaserDetection:
     '''Class for detecting laser signals in spectrograph images. Used during live calibration to find the laser line position.
     Also handles simulation of laser signals for simulated cameras.'''
 
-    def __init__(self, logger_level='INFO'):
-        self.logger = SimpleLogger(level=logger_level)
+    def __init__(self, interface=None, logger_level='INFO'):
+        # self.logger = SimpleLogger(level=logger_level)
+        self.interface = interface
+        self.logger = interface.logger if interface else SimpleLogger(level=logger_level)
         self.calibrated_wavelength = None
         pass
 
@@ -172,7 +177,7 @@ class LaserDetection:
         fitter = AutoPeakFitter(dataX, dataY, show_plot=show_plot)
         peak = fitter.run(initial_index=laser_position[0])
 
-        if self.logger.level == "DEBUG" or show_plot == True:
+        if self.logger.level <= 9 or show_plot == True:
             plt.figure(figsize=(10, 5))
             plt.plot(dataX, dataY, label='Spectrum')
 
@@ -185,7 +190,7 @@ class LaserDetection:
             plt.show()
         
         self.calibrated_wavelength = round(peak.pos, 3)
-        self.logger.info(f"Detected laser peak at position: {peak.pos:.2f} with amplitude: {peak.amp:.2f} and width: {peak.width:.2f}")
+        self.logger.info(f"Detected laser peak at position: {peak.pos:.2f}")
         return peak
     
     def baseline_data(self, dataY, lam=10000, p=1e-6, show_plot=False, subtract_median=True):
@@ -297,7 +302,7 @@ class LaserDetection:
         mad = median_abs_deviation(profile_x)
 
 
-        self.logger.info(f"Median: {med}, MAD: {mad}")
+        self.logger.debug(f"Median: {med}, MAD: {mad}")
 
         threshold = med + threshold_sigma * mad
 
@@ -316,24 +321,23 @@ class LaserDetection:
         x_max = np.argmax(profile_x)
         y_max = np.argmax(image[:, x_max])  # Find the Y position of the maximum signal in the X profile
 
-        
-        if self.logger.level == 'DEBUG' or show_plot:
-            plt.figure(figsize=(8, 4))
-            plt.plot(profile_x, label='X-profile')
-            plt.axhline(med, color='gray', linestyle='--', label='Median')
-            plt.axhline(threshold, color='red', linestyle='--', label=f'Threshold ({threshold_sigma} MAD)')
-            plt.axvline(np.argmax(signal_mask), color='green', linestyle='--', label='Laser Signal Start')
-            plt.title("Laser Detection Profile")
-            plt.legend()
-            plt.xlabel("X (pixel)")
-            plt.ylabel("Integrated Intensity")
-            plt.grid(True)
-            plt.show()
+        # if self.logger.level <= 10 or show_plot:
+        #     plt.figure(figsize=(8, 4))
+        #     plt.plot(profile_x, label='X-profile')
+        #     plt.axhline(med, color='gray', linestyle='--', label='Median')
+        #     plt.axhline(threshold, color='red', linestyle='--', label=f'Threshold ({threshold_sigma} MAD)')
+        #     plt.axvline(np.argmax(signal_mask), color='green', linestyle='--', label='Laser Signal Start')
+        #     plt.title("Laser Detection Profile")
+        #     plt.legend()
+        #     plt.xlabel("X (pixel)")
+        #     plt.ylabel("Integrated Intensity")
+        #     plt.grid(True)
+        #     plt.show()
 
-            plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
-            # add a dot at the laser position
-            plt.plot(x_max, y_max, 'ro', markersize=5, label='Laser Position')
-            plt.show()
+        #     plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
+        #     # add a dot at the laser position
+        #     plt.plot(x_max, y_max, 'ro', markersize=5, label='Laser Position')
+        #     plt.show()
 
         
         
