@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
     QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy, 
-    QProgressBar
+    QProgressBar, QSlider
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer, pyqtSlot
 import json
@@ -617,11 +617,10 @@ class MainWindow(QMainWindow):
             else:
                 self.light_ready.setStyleSheet("border-radius: 10px; background-color: red;")
 
-            if getattr(self.interface.microscope, 'apply_live_calibration', False):
+            if getattr(self.interface.microscope, 'apply_live_calibration', True):
                 self.light_livecal.setStyleSheet("border-radius: 10px; background-color: green;")
             else:
-                # if not applied, set to gray
-                self.light_livecal.setStyleSheet("border-radius: 10px; background-color: gray;")
+                self.light_livecal.setStyleSheet("border-radius: 10px; background-color: red;")
 
 
             # Update labels for mode, positions, and estimate
@@ -784,7 +783,7 @@ class MainWindow(QMainWindow):
 
         lbl1, self.light_pseudocal = make_light("Pseudocal")
         lbl2, self.light_ready = make_light("Instrument Ready")
-        lbl3, self.light_livecal = make_light("Laser Calibrated.")
+        lbl3, self.light_livecal = make_light("Live Calibration")
         # lbl4, self.light_scan = make_light("Scan Active")
 
         status_layout.addWidget(lbl1)
@@ -1009,6 +1008,10 @@ class MainWindow(QMainWindow):
         self.chk_apply_livecal.setChecked(self.interface.microscope.apply_live_calibration)
         self.chk_apply_livecal.toggled.connect(self.toggle_live_calibration)
 
+        # add a textbox for log level control
+        # self.log_level_input = QLineEdit()
+        # self.log_level_input.setPlaceholderText(str(self.interface.logger.level))
+        # self.log_level_input.editingFinished.connect(self.send_cli_command('logger {}'.format(self.log_level_input.text())))
 
         layout.addWidget(self.chk_apply_pseudocal)
         layout.addWidget(self.chk_apply_livecal)

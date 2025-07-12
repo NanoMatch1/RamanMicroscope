@@ -615,6 +615,9 @@ class Microscope(Instrument):
             'autocal': self.run_calibration,
             'loadconfig': self.load_config,
 
+            # Spectrometer Commands:
+            'readenterslit': self.read_entrance_slit,
+
             # Stage motion
             'x': self.move_x,
             'y': self.move_y,
@@ -712,7 +715,6 @@ class Microscope(Instrument):
         self.interface.acq_ctrl._current_parameters['laser_wavelength'] = calibrated_wavelength
         self.interface.acq_ctrl._current_parameters['laser_wavelength_uncalibrated'] = self.laser_wavelengths.get('l1', None) # for legacy support and calibrations
         self.laser_calibrated = True
-        print("SETTING: Laser wavelength calibrated to: {}".format(calibrated_wavelength))
         self.laser_wavelength_calibrated = round(calibrated_wavelength, 3)
 
     def live_calibration_laser(self):
@@ -759,7 +761,6 @@ class Microscope(Instrument):
         if result is None:
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
         else:
-            print("CAL: Laser found at wavelength: {}".format(calibrated_wavelength))
             self.set_calibrated_laser_wavelength(calibrated_wavelength)
 
         # restore to original state
@@ -1297,7 +1298,7 @@ class Microscope(Instrument):
     def go_to_polarization_in(self, angle):
         '''Moves the polarizer to the specified angle.'''
         self.motion_control.move_motors({'p_in': angle})
-        self.micro_logger.info('Input polarization set to {} degrees'.format(angle))
+        self.micro_log.info('Input polarization set to {} degrees'.format(angle))
 
     @ui_callable
     def go_to_polarization_out(self, angle):
@@ -1608,9 +1609,11 @@ class Microscope(Instrument):
             
             # Update monochromator wavelength
             self.calculate_monochromator_wavelength()
-            print("Moved: ", motor_steps)
+            self.micro_log.info("Moved: ", motor_steps)
+            self.micro_log.info("Monochromator now at {} nm".format(self.report_monochromator_wavelength))
             return True
         else:
+            self.micro_log.info("Monochromator already at target steps - no movement initiated.")
             return False
 
 
@@ -1888,9 +1891,9 @@ class Microscope(Instrument):
         wavelength (float): Target wavelength in nm
         shift (bool): If True, maintains the current Raman shift. If False, sets monochromator to same wavelength.
         """
-        self.micro_logger.info(f"Moving all components to wavelength: {wavelength} nm")
+        self.micro_log.info(f"Moving all components to wavelength: {wavelength} nm")
         # First move the laser
-        self.go_to_laser_wavelength(wavelength)
+        wavelength = self.go_to_laser_wavelength(wavelength)
         self.go_to_grating_wavelength(wavelength) # move all grating motors
         
         # Then handle the monochromator
@@ -1901,7 +1904,7 @@ class Microscope(Instrument):
         # Finally, move the spectrometer
         self.go_to_spectrometer_wavelength(wavelength)
         
-        self.micro_logger.info(f"All components set to wavelength: {wavelength} nm")
+        self.micro_log.info(f"All components set to wavelength: {wavelength} nm")
         return True
     
 
@@ -1912,12 +1915,25 @@ class Microscope(Instrument):
         self.interface.spectrometer.go_to_wavelength(wavelength)
         self.generate_wavelength_axis()
 
+    @ui_callable
+    def read_entrance_slit(self):
+        '''Reads the current entrance slit width of the spectrometer.'''
+        try:
+            slit_width = self.interface.spectrometer.read_enterance_slit()
+            breakpoint()
+            return slit_width
+        except Exception as e:
+            self.micro_log.error(f"Error reading entrance slit: {e}")
+            return None
+        
+
+
     def set_spectrometer_enter_slit(self, slit_width: int):
         '''Sets the entrance slit width of the spectrometer.'''
         try:
             slit_width = int(slit_width)
         except ValueError:
-            print("Invalid slit width. Must be an integer.")
+            self.micro_log.info("Invalid slit width. Must be an integer.")
             return
         if slit_width < 0:
             self.micro_log.info("Slit width must be positive.")
@@ -1928,6 +1944,18 @@ class Microscope(Instrument):
             self.micro_log.debug("Slit width is already set to {} microns".format(slit_width))
             return
         self.interface.spectrometer.move_enterance_slit(move_slit)
+
+        # poll to see if current width is achieved, wait until it is
+        count = 0
+        while slit_width != self.report_enterance_slit_width:
+            time.sleep(0.2)
+            count += 1
+            if count > 50:
+                self.micro_log.error("Failed to set slit width to {} microns".format(slit_width))
+                return
+        
+        self.micro_log.info("Slit width set to {} microns".format(slit_width))
+            
 
 
 
@@ -2287,12 +2315,7 @@ class Microscope(Instrument):
         
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
-        # self.laser_safety_check()
-        # self.open_mono_shutter()
-        
-        # Report primary wavelength
-        print("New monochromator wavelength: ", next(iter(self.monochromator_wavelengths.values())))
-        
+
         return True
     
     @ui_callable
@@ -2324,9 +2347,9 @@ class Microscope(Instrument):
         
         # Report primary wavelength
         if moved is True:
-            print("New grating wavelength: ", next(iter(self.grating_wavelengths.values())))
+            self.micro_log.info("New grating wavelength: {}".format(self.report_grating_wavelength))
         else:
-            print("Grating motors already at target position - no motion initiated.")
+            self.micro_log.info("Grating motors already at target position - no motion initiated.")
 
         return True
 
@@ -2335,7 +2358,7 @@ class Microscope(Instrument):
         wavelength = string_to_float(wavelength)
 
         if not self.check_hard_limits(wavelength, self.hard_limits['grating_wavelength']):
-            print('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(*self.hard_limits['grating_wavelength']))
+            self.micro_log.info('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(*self.hard_limits['grating_wavelength']))
             return False
         
         return wavelength
@@ -2370,7 +2393,7 @@ class Microscope(Instrument):
             
             # Update grating wavelength
             self.calculate_grating_wavelength()
-            print("Moved: ", motor_steps)
+            self.micro_log.debug("Moved: ", motor_steps)
             return True
         
         else:
@@ -2584,7 +2607,7 @@ class Microscope(Instrument):
 
         return 
     
-    @apply_pseudocal_backwards
+    # @apply_pseudocal_backwards
     def calculate_laser_wavelength(self, current_pos=None):
         """
         Calculate laser wavelength from motor positions.
@@ -2643,7 +2666,7 @@ class Microscope(Instrument):
         # Move monochromator to the calculated wavelength
         self.go_to_monochromator_wavelength(target_wavelength)
         self.current_shift = wavenumber
-        print(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
+        self.micro_log.info(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
 
     # def acquire_spectrum(self, overwrite=False, save=True):
