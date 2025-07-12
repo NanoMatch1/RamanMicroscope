@@ -96,6 +96,21 @@ class LiveDataViewer(QWidget):
         self.spectrum_ax     = self.spectrum_fig.add_subplot(111)
         self.spectrum_canvas = FigureCanvas(self.spectrum_fig)
         layout.addWidget(self.spectrum_canvas, stretch=3)
+        # Controls: autoscale toggle + X-region inputs
+        ctrl = QHBoxLayout()
+        self.chk_autoscale    = QCheckBox("Autoscale")
+        self.chk_autoscale.setChecked(True)
+        self.edit_xmin        = QLineEdit("0")
+        self.edit_xmax        = QLineEdit("0")
+        # self.btn_apply_region = QPushButton("Placeholder")
+
+        ctrl.addWidget(self.chk_autoscale)
+        ctrl.addWidget(QLabel("Xmin:"))
+        ctrl.addWidget(self.edit_xmin)
+        ctrl.addWidget(QLabel("Xmax:"))
+        ctrl.addWidget(self.edit_xmax)
+        # ctrl.addWidget(self.btn_apply_region)
+        layout.addLayout(ctrl)
 
         # Image axes (1/4 of height)
         self.image_fig    = Figure()
@@ -112,25 +127,17 @@ class LiveDataViewer(QWidget):
             props=dict(alpha=0.3, facecolor='yellow')
         )
 
-        # Controls: autoscale toggle + X-region inputs
         ctrl = QHBoxLayout()
-        self.chk_autoscale    = QCheckBox("Autoscale Y to X-region")
-        self.chk_autoscale.setChecked(True)
-        self.edit_xmin        = QLineEdit("0")
-        self.edit_xmax        = QLineEdit("0")
-        self.btn_apply_region = QPushButton("Apply X-Region")
-
-        ctrl.addWidget(self.chk_autoscale)
-        ctrl.addWidget(QPushButton("Xmin:"))
-        ctrl.addWidget(self.edit_xmin)
-        ctrl.addWidget(QPushButton("Xmax:"))
-        ctrl.addWidget(self.edit_xmax)
-        ctrl.addWidget(self.btn_apply_region)
+        self.edit_ymin        = QLineEdit("0")
+        self.edit_ymax        = QLineEdit("0")
+        ctrl.addWidget(QLabel("Ymax:"))
+        ctrl.addWidget(self.edit_ymin)
+        ctrl.addWidget(QLabel("Ymin:"))
+        ctrl.addWidget(self.edit_ymax)
         layout.addLayout(ctrl)
 
         # Redraw spectrum when controls change
         self.chk_autoscale.toggled.connect(self._redraw_spectrum)
-        self.btn_apply_region.clicked.connect(self._redraw_spectrum)
 
     def update_data(self, image_data: np.ndarray, wavelength_axis=None):
         """
@@ -211,7 +218,11 @@ class LiveDataViewer(QWidget):
 
         if self.chk_autoscale.isChecked() and region.size > 0:
             ymin, ymax = region.min(), region.max()
-            self.spectrum_ax.set_ylim(ymin, ymax)
+            # self.spectrum_ax.set_ylim(ymin, ymax)
+            self.ymin = ymin
+            self.ymax = ymax
+
+        self.spectrum_ax.set_ylim(self.ymin, self.ymax)  # Reset to initial limits
 
         self.spectrum_canvas.draw()
 
@@ -276,9 +287,11 @@ class MainWindow(QMainWindow):
         self.cancel_event = threading.Event()
         self.scan_complete_signal.connect(self.scan_finished)
         self.progress_update_signal.connect(self.update_progress_bar)
+        # self.peak_spectrum_ready.connect(self.update_peak_plot)
 
         self.init_ui()
         self.acq_ctrl.spectrum_ready.connect(self.live_viewer.update_data)
+        self.interface.microscope.laser_detection.peak_spectrum_ready.connect(self.update_peak_plot)
         self.refresh_ui()
 
                 # Create a new QtLogHandler specific to this GUI
@@ -604,6 +617,31 @@ class MainWindow(QMainWindow):
             error_details = traceback.format_exc()
             result = f"Error refreshing ui: \n{e}\n{error_details}"
             print(result)
+
+    @pyqtSlot(np.ndarray, np.ndarray, object)
+    def update_peak_plot(self, wavelength_axis, dataY, peak_object):
+
+        fitted_spectrum = peak_object.amp * np.exp(-((wavelength_axis - peak_object.pos) ** 2) / (2 * peak_object.width ** 2))
+        peak_index = np.argmin(np.abs(wavelength_axis - peak_object.pos))
+        spectral_range = (peak_index - 75, peak_index + 75)
+
+        # Ensure spectral_range is within bounds
+        if spectral_range[0] < 0:
+            spectral_range = (0, spectral_range[1])
+        if spectral_range[1] > len(wavelength_axis):
+            spectral_range = (spectral_range[0], len(wavelength_axis))
+            
+        wavelength_axis = wavelength_axis[spectral_range[0]:spectral_range[1]]
+        dataY = dataY[spectral_range[0]:spectral_range[1]]
+        fitted_spectrum = fitted_spectrum[spectral_range[0]:spectral_range[1]]
+
+        self.peak_ax.clear()
+        self.peak_ax.scatter(wavelength_axis, dataY, label="Raw Spectrum", color="black", s=1)
+
+        self.peak_ax.plot(wavelength_axis, fitted_spectrum, label="Fitted Peak", color='tab:purple')
+        self.peak_ax.axvline(peak_object.pos, color='tab:blue', linestyle='--')
+        self.peak_ax.axis('off')
+        self.peak_canvas.draw()
 
     def init_ui(self):
         central = QWidget()
