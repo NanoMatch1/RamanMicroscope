@@ -3,38 +3,11 @@ import time
 
 from instruments_old import Instrument, ui_callable
 
-# class SerialComs:
-#     def __init__(self, com_port='COM10', baud=9600, report=True, dtr=False):
-#         self.com_port = com_port
-#         self.baud = baud
-#         self.report = report
-
-#         self.serial = serial.Serial()
-#         self.serial.port = self.com_port
-#         self.serial.baudrate = self.baud
-#         self.serial.dtr = dtr
-#         self.serial.open()
-
-#     def connect(self):
-#         if self.serial.is_open:
-#             print("Serial port is already open.")
-#             return
-
-#         try:
-#             self.serial.open()
-#             print(f"Connected to {self.com_port} at {self.baud} baud.")
-#         except serial.SerialException as e:
-#             print(f"Error opening serial port: {e}")
-
-#     def close(self):
-#         if not self.simulate:
-#             self.serial.close()
-
-
 class ArduinoMEGA:
 
     def __init__(self, interface, com_port='COM10', baud=9600, simulate=False, report=True, dtr=False):
         self.interface = interface
+        self.logger = interface.logger.getChild('ArduinoMEGA')
         self.simulate = simulate
         self.com_port = com_port
         self.baud = baud
@@ -143,8 +116,7 @@ class ArduinoMEGA:
     def send_command(self, command):
         '''Simple command to send to the controller. Assumes command length is correct for buffer size'''
 
-        if self.report is True:
-            print('>MEGA:{}'.format(command))
+        self.logger.debug('>MEGA:{}'.format(command))
 
         self._send_command_to_UNO(command)
         response = self._read_from_serial_until()
@@ -188,8 +160,7 @@ class ArduinoMEGA:
         response = self.send_command('get_monochromator_positions')
         if response == []:
             response = self.send_command('get_monochromator_positions') # bug with controller returning empty list, try again # TODO: seems to be related to an extra end flag #CF in the firmware. Will be fixed in the next firmware update.
-        if self.report:
-            print(response)
+        self.logger.debug(response)
         
         positions = response[0].split(':')[1]
         positions = positions.strip('<P>P')
@@ -203,8 +174,7 @@ class ArduinoMEGA:
         response = self.send_command('get_laser_positions')
         if response == []:
             response = self.send_command('get_laser_positions') # TODO: firmware bug, will be fixed in the next update
-        if self.report:
-            print(response)
+        self.logger.debug(response)
         positions = response[0].split(':')[1]
         positions = positions.strip('<P>P')
         positions = positions.split(',')
@@ -214,7 +184,7 @@ class ArduinoMEGA:
         return laser_steps
 
     def _connect_to_UNO(self):
-        print("Connecting to Arduino controller...")
+        self.logger.info("Connecting to Arduino controller...")
 
         UNO_serial = serial.Serial()
         UNO_serial.port = self.com_port
@@ -226,13 +196,13 @@ class ArduinoMEGA:
         timeout = 2  # Timeout in seconds
         while UNO_serial.in_waiting == 0:
             if time.time() - start_time > timeout:
-                print("Timeout waiting for Arduino to respond. Assuming connection is established in resume mode")
+                self.logger.info("Timeout waiting for Arduino to respond. Assuming connection is established in resume mode")
                 return UNO_serial
             time.sleep(0.1)
         
         while UNO_serial.in_waiting > 0:
             response = UNO_serial.readline().decode().strip()
-            print(response)
+            self.logger.info(f"Controller response: {response}")
         return UNO_serial
 
     
@@ -256,8 +226,7 @@ class ArduinoMEGA:
                 time.sleep(0.01)
                 continue
 
-            if self.report is True:
-                print(response)
+            self.logger.debug(response)
 
             split_responses = response.split('\r\n')
             for item in split_responses:

@@ -1562,13 +1562,12 @@ class Microscope(Instrument):
         # Move motors if needed
         if motor_steps:
             self.motion_control.move_motors(motor_steps)
-            print("backlash correction")
             self.motion_control.backlash_correction(motor_steps)
             self.motion_control.confirm_motor_positions(target_positions)
             
             # Update laser wavelength
             self.calculate_laser_wavelength(target_positions)
-            print("Moved: ", motor_steps)
+            self.micro_log.debug("Moved: ", motor_steps)
             return True
         else:
             return False
