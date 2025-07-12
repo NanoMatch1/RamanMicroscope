@@ -175,7 +175,7 @@ class Interface:
                     continue
                     
                 result = self._command_handler(command)
-                self.logger.info(result)
+                self.logger.info(f"[RES] {result}")
 
                 self.save_state()
             except Exception as e:

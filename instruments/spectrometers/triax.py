@@ -9,6 +9,7 @@ class Triax(Instrument):
     def __init__(self, interface, simulate=False):
         super().__init__()
         self.interface = interface
+        self.logger = interface.logger.getChild('Triax')
         self.simulate = simulate or interface.simulate
         self.calibration_service = interface.calibration_service
         self.enterance_slit_width = 0
@@ -90,7 +91,6 @@ class Triax(Instrument):
     def default_grating(self):
         '''Set the default gratin;'g for the spectrometer.'''
         response = self.send_command('specgrat1')
-        # print(response)
         return response
 
     @ui_callable
@@ -98,7 +98,6 @@ class Triax(Instrument):
         '''Set the other grating for the spectrometer.'''
 
         response = self.send_command('specgrat2')
-        # print(response)
         return response
         
     
@@ -110,7 +109,7 @@ class Triax(Instrument):
         try:
             self.enterance_slit_width = int(response.strip()[1:])
         except ValueError:
-            print('Error reading entrance slit width: {}'.format(response))
+            self.logger.info('Error reading entrance slit width: {}'.format(response))
             self.enterance_slit_width = 0
         return self.enterance_slit_width
     
@@ -126,7 +125,7 @@ class Triax(Instrument):
         try:
             int(position)
         except ValueError:
-            print('Invalid input for entrance slit position: {}'.format(position))
+            self.logger.info('Invalid input for entrance slit position: {}'.format(position))
             return
         response = self.send_command('men {}'.format(position))
         self.enterance_slit_width += int(position)
@@ -149,7 +148,7 @@ class Triax(Instrument):
         try:
             wavelength = float(wavelength)
         except ValueError:
-            print('Invalid input')
+            self.logger.info('Invalid input')
             return
         
         triax_steps = self.get_triax_steps() 
@@ -161,22 +160,26 @@ class Triax(Instrument):
         if new_steps == 0:
             return
         
-        print('UNO>g {}>triax'.format(new_steps))
+        self.logger.coms('UNO>g {}>triax'.format(new_steps))
 
         response = self.send_command('mg {}'.format(new_steps))
         if response == 'o':
             triax_res = self.wait_for_triax(target_steps)
             if triax_res == 'S0':
-                print('Triax moved to {} nm'.format(wavelength))
+                self.logger.info('Triax moved to {} nm'.format(wavelength))
                 self.triax_steps = target_steps
                 return 'S0'
             else:
-                print('Triax move failed: {}'.format(triax_res))
+                self.logger.info('Triax move failed: {}'.format(triax_res))
                 return 'F0'
+        # Note: workaround for something not handled well by the above code #TODO fix this
+        elif response.startswith('o'):
+            self.logger.info('Triax coms anomaly #TODO debug. Response:{}'.format(response))
+            return 'S0'
 
         else:
-            print('Triax communication failed:')
-            print(response)
+            self.logger.info('Triax communication failed:')
+            self.logger.info(response)
 
     def wait_for_triax(self, target_steps, timeout=10):
         '''Polls the spectrometer until the target steps are reached. Note the MOTOR BUSY CHECK (E) on the spectrometer does not send a response with this configuration, so we use this command instead.'''
@@ -187,7 +190,7 @@ class Triax(Instrument):
                 return 'S0'
             time.sleep(0.1)
             if time.time() - start > timeout:
-                print('Timeout reached')
+                self.logger.info('Timeout reached')
                 return 'F0'
 
     
@@ -200,7 +203,7 @@ class Triax(Instrument):
     
     @ui_callable
     def go_to_position(self, position):
-        print("Going to the position: {}".format(position))
+        self.logger.info("Going to the position: {}".format(position))
         command = self.message_map['move_grating'] + str(position)
         response = self._send_command_to_spectrometer(command)
         return response
@@ -212,7 +215,7 @@ class Triax(Instrument):
             self.state = True
             return self.spectrometer, self.state
         
-        print("Connecting to TRIAX spectrometer...")
+        self.logger.info("Connecting to TRIAX spectrometer...")
         rm = pyvisa.ResourceManager()
         rm.list_resources()
         self.spectrometer = rm.open_resource('GPIB0::1::INSTR')  # Replace with the actual VISA address of your instrument
@@ -220,9 +223,9 @@ class Triax(Instrument):
         self.spectrometer.write('WHERE AM I')
         time.sleep(0.0001)
         self.state = self.spectrometer.read()
-        print(self.state)
+        self.logger.info(self.state)
 
-        print('Connected to TRIAX spectrometer.')
+        self.logger.info('Connected to TRIAX spectrometer.')
 
         return self.spectrometer, self.state
 
@@ -237,7 +240,7 @@ class Triax(Instrument):
         com_set = command.split(' ')
         new_command = self.message_map.get(com_set[0], None)
         if new_command is None:
-            print('Unknown command: {}'.format(command))
+            self.logger.info('Unknown command: {}'.format(command))
             return None
 
         if len(com_set) > 1:
@@ -258,7 +261,7 @@ class Triax(Instrument):
         if command == 'A':
             count = 100
             while count > 0:
-                print('Initialising: Sleeping for {} seconds'.format(count))
+                self.logger.info('Initialising: Sleeping for {} seconds'.format(count))
                 time.sleep(1)
                 count -= 1
         

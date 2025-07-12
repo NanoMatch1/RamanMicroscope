@@ -25,8 +25,9 @@ class LoggerInterface:
     'interface.Microscope': 'M.',
     'interface.Arduino': 'A.',
     'interface.Laser': 'L.',
-    'interface.Stage': 'S',
+    'interface.Triax': 'T.',
     'interface': 'I.',
+
     }
 
     level_map = {

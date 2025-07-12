@@ -144,15 +144,22 @@ class SimulatedCameraInterface:
                 return np.zeros((height, width), dtype=np.float32)  # 
             if self.randomise_laser:
                 laser_position = np.random.randint(index - 25, index + 25) # randomize a bit around the given position
+            else:
+                laser_position = index
         else: 
             laser_position = np.random.randint(0, width)  # Random position in the X dimension
 
         # 2D Gaussian signal: exp(-(X-x0)^2 / 2σx^2) * exp(-(Y-y0)^2 / 2σy^2)
+        # breakpoint()
         laser_signal = np.exp(-0.5 * ((X - laser_position) / laser_width) ** 2) * \
                     np.exp(-0.5 * ((Y - height / 2) / y_spread) ** 2)
         
         scale = np.abs(np.random.normal(peak_height, peak_height * peak_sigma))  # Peak centered at 30000, ~10% variation
         laser_signal *= scale
+
+        simulated_laser_wavelength = wavelength_axis[laser_position] if wavelength_axis is not None else laser_position
+
+        self.logger.debug(f"Simulated laser wavelength: {simulated_laser_wavelength} nm")
 
         return laser_signal
 
@@ -191,7 +198,7 @@ class SimulatedCameraInterface:
     def grab_frame(self, timeout=100000):        
         image_data = self._generate_simulated_image()
         # Simulate acquisition time
-        self.logger.info("Simulated camera acquiring frame...")
+        self.logger.debug("Simulated camera acquiring frame...")
         time.sleep(self.acqtime)
         return image_data
 
@@ -224,11 +231,11 @@ class SimulatedCameraInterface:
             while not self.stop_flag.is_set():
                 try:
                     for index in range(n_frames):
-                        self.logger.info(f"Acquiring frame {index+1}/{n_frames}...")
+                        self.logger.debug(f"Acquiring frame {index+1}/{n_frames}...")
 
                         new_frame = self.grab_frame(timeout=100000)
                         if new_frame is None:
-                            self.logger.error("Failed to acquire frame.")
+                            self.logger.info("Failed to acquire frame.")
                             break
 
                         if index == 0:

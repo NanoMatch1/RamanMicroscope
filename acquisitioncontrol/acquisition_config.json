@@ -1,6 +1,6 @@
 {
   "general_parameters": {
-    "acquisition_time": 0.1,
+    "acquisition_time": 0.2,
     "filename": "test_9-7-25",
     "raman_shift": 0.0,
     "laser_power": 4.5,

@@ -77,9 +77,10 @@ class LiveDataViewer(QWidget):
     # emitted when the user selects a new vertical band (y0, y1)
     region_changed = pyqtSignal(int, int)
 
-    def __init__(self, parent=None):
+    def __init__(self, interface, parent=None):
         super().__init__(parent)
         self.current_image = None
+        self.interface = interface
         self.sel_y0 = 0
         self.sel_y1 = None
 
@@ -185,6 +186,12 @@ class LiveDataViewer(QWidget):
 
         y0, y1 = self.sel_y0, self.sel_y1 or self.current_image.shape[0]
         binned = self.current_image[y0:y1, :].mean(axis=0)
+        
+        if self.interface.microscope.wavelength_axis is not None:
+            wavelength_axis = self.interface.microscope.wavelength_axis
+        else:
+            self.logger.warning("No wavelength axis available, using index instead.")
+            wavelength_axis = np.arange(len(binned))
 
         # X-region slicing
         try:
@@ -198,7 +205,8 @@ class LiveDataViewer(QWidget):
 
         # Plot
         self.spectrum_ax.clear()
-        self.spectrum_ax.plot(binned, linewidth=1)
+        self.spectrum_ax.plot(wavelength_axis, binned, linewidth=1)
+        self.spectrum_ax.set_xlabel("Wavelength (nm)")
         self.spectrum_ax.set_title("Binned Spectrum")
 
         if self.chk_autoscale.isChecked() and region.size > 0:
@@ -294,7 +302,7 @@ class MainWindow(QMainWindow):
     # Helper to send commands to CLI interface
     @run_in_thread_and_refresh
     def send_cli_command(self, cmd):
-        self.logger.cmd(f"{cmd}")
+        self.logger.coms(f"{cmd}")
         result = self.interface.process_gui_command(cmd)
         if result is not None:
             self.logger.info(result)
@@ -583,7 +591,7 @@ class MainWindow(QMainWindow):
             self.lbl_monochromator.setText(f"{self.interface.microscope.report_monochromator_wavelength:.2f} nm")
             self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
             self.lbl_laser_power.setText(f"{self.interface.laser.current_power:.2f} W")
-            self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_spectrometer_slit_width:.2f} um")
+            self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_enterance_slit_width:.2f} um")
 
             self.btn_toggle_mode.setText(f"Mode: {self.interface.microscope.microscope_mode}")
 
@@ -803,12 +811,23 @@ class MainWindow(QMainWindow):
         console_group.setLayout(cl)
 
         # Plot placeholder
-        plot_group = QGroupBox("Plot Area")
+        # plot_group = QGroupBox("Plot Area")
+        # pfl = QVBoxLayout()
+        # plot_frame = QFrame()
+        # plot_frame.setFrameStyle(QFrame.Box | QFrame.Plain)
+        # plot_frame.setLineWidth(1)
+        # pfl.addWidget(plot_frame)
+        # plot_group.setLayout(pfl)
+
+        # peak detection plot
+        self.peak_fig = Figure()
+        self.peak_ax = self.peak_fig.add_subplot(111)
+        self.peak_ax.axis('off')  # Hide axes for peak detection plot
+        self.peak_canvas = FigureCanvas(self.peak_fig)
+
+        plot_group = QGroupBox("Live Calibration Peak Detection")
         pfl = QVBoxLayout()
-        plot_frame = QFrame()
-        plot_frame.setFrameStyle(QFrame.Box | QFrame.Plain)
-        plot_frame.setLineWidth(1)
-        pfl.addWidget(plot_frame)
+        pfl.addWidget(self.peak_canvas)
         plot_group.setLayout(pfl)
 
         # Splitter to separate console and plot
@@ -822,7 +841,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, 1)
 
         plot_layout = QVBoxLayout()
-        self.live_viewer = LiveDataViewer()
+        self.live_viewer = LiveDataViewer(self.interface)
 
         plot_layout.insertWidget(1, self.live_viewer)
 
