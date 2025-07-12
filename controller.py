@@ -7,7 +7,7 @@ class ArduinoMEGA:
 
     def __init__(self, interface, com_port='COM10', baud=9600, simulate=False, report=True, dtr=False):
         self.interface = interface
-        self.logger = interface.logger.getChild('ArduinoMEGA')
+        self.logger = interface.logger.getChild('Arduino')
         self.simulate = simulate
         self.com_port = com_port
         self.baud = baud
@@ -116,7 +116,7 @@ class ArduinoMEGA:
     def send_command(self, command):
         '''Simple command to send to the controller. Assumes command length is correct for buffer size'''
 
-        self.logger.debug('>MEGA:{}'.format(command))
+        self.interface.logger.coms('>MEGA:{}'.format(command))
 
         self._send_command_to_UNO(command)
         response = self._read_from_serial_until()
@@ -225,8 +225,6 @@ class ArduinoMEGA:
             if response == '':
                 time.sleep(0.01)
                 continue
-
-            self.logger.debug(response)
 
             split_responses = response.split('\r\n')
             for item in split_responses:

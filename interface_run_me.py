@@ -40,6 +40,7 @@ class Interface:
             'triax': self.connect_to_triax,
             'camera': self.connect_to_camera,
             'laser': self.connect_to_laser,
+            'logger' : self.logger_level,
         }
 
         self.simulate = simulate
@@ -130,6 +131,7 @@ class Interface:
             self.logger.info(f"Running command: {command}")
             result = self._command_handler(command)
             self.logger.info(result)
+
             self.save_state()
 
     def modify_handler(self, handler: str, level: int):
@@ -271,6 +273,27 @@ class Interface:
             # Already using real hardware
             self.logger.info("Already connected to real camera")
 
+    def logger_level(self, level):
+        """
+        Set the logging level for the CLI and GUI interfaces.
+        """
+
+        try:
+            level = int(level)
+        except ValueError:
+            # If level is not an integer, try to convert it to a logging level
+            if isinstance(level, str):
+                level = level.lower()
+            if level in self.logger.level_map:
+                level = self.logger.level_map[level]
+            else:
+                self.logger.error(f"Invalid logging level: {level}")
+                return
+
+        self.logger.modify_handler('cli_handler', level)
+        self.logger.setLevel(level)
+        self.logger.info(f"Logging level set to {level}")
+
     def generate_help(self):
         help_dict = {}
         for command, (inst, method) in self.command_map.items():
@@ -343,7 +366,7 @@ class Interface:
         # Check for interface level commands first
         if funct in self.interface_commands:
             try:
-                result = self.interface_commands[funct]()
+                result = self.interface_commands[funct](*(arguments or []))
             except Exception as e:
                 error_details = traceback.format_exc()
                 result = f" > Error: {e}\n{error_details}"
