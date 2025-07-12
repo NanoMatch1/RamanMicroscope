@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import median_abs_deviation
+from PyQt5.QtCore import QObject, pyqtSignal
 
 import numpy as np
 
@@ -147,13 +148,15 @@ class AutoPeakFitter:
         return peak
     
 
-class LaserDetection:
+class LaserDetection(QObject):
+    peak_spectrum_ready = pyqtSignal(np.ndarray, np.ndarray, object)  
 
     '''Class for detecting laser signals in spectrograph images. Used during live calibration to find the laser line position.
     Also handles simulation of laser signals for simulated cameras.'''
 
     def __init__(self, interface=None, logger_level='INFO'):
         # self.logger = SimpleLogger(level=logger_level)
+        super().__init__()
         self.interface = interface
         self.logger = interface.logger if interface else SimpleLogger(level=logger_level)
         self.calibrated_wavelength = None
@@ -191,6 +194,10 @@ class LaserDetection:
         
         self.calibrated_wavelength = round(peak.pos, 3)
         self.logger.info(f"Detected laser peak at position: {peak.pos:.2f}")
+        
+        # emit the peak data for GUI viewing
+        self.peak_spectrum_ready.emit(dataX, dataY, peak)
+        
         return peak
     
     def baseline_data(self, dataY, lam=10000, p=1e-6, show_plot=False, subtract_median=True):
