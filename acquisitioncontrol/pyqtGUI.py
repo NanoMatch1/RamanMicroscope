@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QProgressBar
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer, pyqtSlot
+import json
 # from PyQt5.QtWidgets import QProgressBar
 
 
@@ -27,6 +28,7 @@ from matplotlib.patches import Rectangle
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 import numpy as np
+import os
 
 
 def run_in_thread_and_refresh(func):
@@ -50,75 +52,95 @@ def run_in_thread_and_refresh(func):
     return wrapper
 
 
-# Global exception hook to catch unhandled exceptions in the GUI
-# def exception_hook(exc_type, exc_value, exc_tb):
-#     """
-#     Catch unhandled exceptions and write the full traceback to stderr.
-#     """
-#     tb_text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
-#     # Write to stderr, which is redirected to the GUI console
-#     try:
-#         sys.stderr.write(tb_text)
-#     except Exception:
-#         # Fallback to default handler if console not available
-#         sys.__excepthook__(exc_type, exc_value, exc_tb)
 
-# # Install the exception hook
-# sys.excepthook = exception_hook
+class PersistentSettings:
+    def __init__(self, filename: str = "viewer_settings.json"):
+        self.filename = filename
+        self.filedir = os.path.dirname(os.path.abspath(__file__))
+        self.filepath = os.path.join(self.filedir, self.filename)
+        self.settings = {}
+        self.load()
 
+    def load(self):
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, "r") as f:
+                    self.settings = json.load(f)
+            except Exception:
+                self.settings = {}
+
+    def save(self):
+        try:
+            with open(self.filepath, "w") as f:
+                json.dump(self.settings, f, indent=4)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+
+    def get(self, key, default=None):
+        return self.settings.get(key, default)
+
+    def set(self, key, value):
+        self.settings[key] = value
+        self.save()
 
 
 class LiveDataViewer(QWidget):
-    """
-    Displays a live 1D spectrum (top, 3/4 height) and a 2D image (bottom, 1/4 height).
-    You can drag a vertical band on the image to select rows to bin.  That band is
-    redrawn with each update, and the spectrum redraws automatically.
-    """
-    # emitted when the user selects a new vertical band (y0, y1)
     region_changed = pyqtSignal(int, int)
 
     def __init__(self, interface, parent=None):
         super().__init__(parent)
-        self.current_image = None
         self.interface = interface
+        self.logger = interface.logger.getChild("LiveDataViewer")
+        self.current_image = None
         self.sel_y0 = 0
         self.sel_y1 = None
-
+        self.ymin = 0
+        self.ymax = 1
+        self.settings = PersistentSettings("viewer_settings.json")
         self._make_ui()
-        # Connect selector → slot
         self.region_changed.connect(self._on_region_changed)
 
     def _make_ui(self):
         layout = QVBoxLayout(self)
 
-        # Spectrum axes (3/4 of height)
-        self.spectrum_fig    = Figure()
-        self.spectrum_ax     = self.spectrum_fig.add_subplot(111)
+        self.spectrum_fig = Figure()
+        self.spectrum_ax = self.spectrum_fig.add_subplot(111)
         self.spectrum_canvas = FigureCanvas(self.spectrum_fig)
         layout.addWidget(self.spectrum_canvas, stretch=3)
-        # Controls: autoscale toggle + X-region inputs
+
         ctrl = QHBoxLayout()
-        self.chk_autoscale    = QCheckBox("Autoscale")
-        self.chk_autoscale.setChecked(True)
-        self.edit_xmin        = QLineEdit("0")
-        self.edit_xmax        = QLineEdit("0")
-        # self.btn_apply_region = QPushButton("Placeholder")
+        self.chk_autoscale = QCheckBox("Autoscale")
+        self.chk_autoscale.setChecked(self.settings.get("autoscale", True))
+        self.edit_xmin = QLineEdit(str(self.settings.get("xmin", 0)))
+        self.edit_xmax = QLineEdit(str(self.settings.get("xmax", 0)))
+        self.edit_ymin = QLineEdit(str(self.settings.get("ymin", 0)))
+        self.edit_ymax = QLineEdit(str(self.settings.get("ymax", 0)))
+        self.btn_reset_span = QPushButton("Reset Span")
+
+        self.edit_xmin.editingFinished.connect(self._on_xbox_edited)
+        self.edit_xmax.editingFinished.connect(self._on_xbox_edited)
+        self.edit_ymin.editingFinished.connect(self._on_ybox_edited)
+        self.edit_ymax.editingFinished.connect(self._on_ybox_edited)
+        self.chk_autoscale.toggled.connect(self._on_autoscale_changed)
+        self.btn_reset_span.clicked.connect(self._on_reset_span)
 
         ctrl.addWidget(self.chk_autoscale)
         ctrl.addWidget(QLabel("Xmin:"))
         ctrl.addWidget(self.edit_xmin)
         ctrl.addWidget(QLabel("Xmax:"))
         ctrl.addWidget(self.edit_xmax)
-        # ctrl.addWidget(self.btn_apply_region)
+        ctrl.addWidget(QLabel("Ymin:"))
+        ctrl.addWidget(self.edit_ymin)
+        ctrl.addWidget(QLabel("Ymax:"))
+        ctrl.addWidget(self.edit_ymax)
+        ctrl.addWidget(self.btn_reset_span)
         layout.addLayout(ctrl)
 
-        # Image axes (1/4 of height)
-        self.image_fig    = Figure()
-        self.image_ax     = self.image_fig.add_subplot(111)
+        self.image_fig = Figure()
+        self.image_ax = self.image_fig.add_subplot(111)
         self.image_canvas = FigureCanvas(self.image_fig)
         layout.addWidget(self.image_canvas, stretch=1)
 
-        # SpanSelector on image for Y-axis selection
         self.span_selector = SpanSelector(
             self.image_ax,
             lambda v0, v1: self.region_changed.emit(int(round(v0)), int(round(v1))),
@@ -127,104 +149,116 @@ class LiveDataViewer(QWidget):
             props=dict(alpha=0.3, facecolor='yellow')
         )
 
-        ctrl = QHBoxLayout()
-        self.edit_ymin        = QLineEdit("0")
-        self.edit_ymax        = QLineEdit("0")
-        ctrl.addWidget(QLabel("Ymax:"))
-        ctrl.addWidget(self.edit_ymin)
-        ctrl.addWidget(QLabel("Ymin:"))
-        ctrl.addWidget(self.edit_ymax)
-        layout.addLayout(ctrl)
+    def _on_autoscale_changed(self, checked):
+        self.settings.set("autoscale", checked)
+        self._redraw_spectrum()
 
-        # Redraw spectrum when controls change
-        self.chk_autoscale.toggled.connect(self._redraw_spectrum)
-
-    def update_data(self, image_data: np.ndarray, wavelength_axis=None):
-        """
-        Call this slot when new frame arrives.
-        Clears and redraws the image and selection rectangle, then
-        updates the binned spectrum.
-        """
-        try:
-            self.current_image = image_data
-
-            # Initialize full-height selection on first call
-            if self.sel_y1 is None:
-                self.sel_y1 = image_data.shape[0]
-
-            # Redraw image
-            self.image_ax.clear()
-            self.image_ax.imshow(image_data, aspect='auto')
-
-            # Draw a fresh rectangle for the selected band
-            x0, x1 = self.image_ax.get_xlim()
-            y0, y1 = self.sel_y0, self.sel_y1
-            width, height = x1 - x0, y1 - y0
-            patch = Rectangle((x0, y0), width, height,
-                            fill=False, edgecolor='yellow', linewidth=1)
-            self.image_ax.add_patch(patch)
-
-            self.image_canvas.draw()
-
-            # Then redraw the spectrum below
-            self._redraw_spectrum()
-        except Exception as e:
-            error_details = traceback.format_exc()
-            result = f"Error updating live data: \n{e}\n{error_details}"
-            print(result)
-
-    def _on_region_changed(self, y0: int, y1: int):
-        """
-        Slot: user dragged a new Y-range on the image.
-        Update selection and force a redraw of image + spectrum.
-        """
-        self.sel_y0, self.sel_y1 = y0, y1
-        if self.current_image is not None:
-            # reuse update_data to clear & redraw everything
-            self.update_data(self.current_image)
-
-    def _redraw_spectrum(self):
-        """
-        Sum rows between sel_y0 and sel_y1, plot raw intensities,
-        and autoscale Y to the specified X-region if enabled.
-        """
-        if self.current_image is None:
-            return
-
-        y0, y1 = self.sel_y0, self.sel_y1 or self.current_image.shape[0]
-        binned = self.current_image[y0:y1, :].mean(axis=0)
-        
-        if self.interface.microscope.wavelength_axis is not None:
-            wavelength_axis = self.interface.microscope.wavelength_axis
-        else:
-            self.logger.warning("No wavelength axis available, using index instead.")
-            wavelength_axis = np.arange(len(binned))
-
-        # X-region slicing
+    def _on_xbox_edited(self):
         try:
             xmin = int(self.edit_xmin.text())
             xmax = int(self.edit_xmax.text())
+            if xmin >= xmax:
+                raise ValueError
+            self.settings.set("xmin", xmin)
+            self.settings.set("xmax", xmax)
+            self.edit_xmin.setStyleSheet("")
+            self.edit_xmax.setStyleSheet("")
+        except Exception as e:
+            self.edit_xmin.setStyleSheet("background-color: #ffcccc;")
+            self.edit_xmax.setStyleSheet("background-color: #ffcccc;")
+        self._redraw_spectrum()
+
+    def _on_ybox_edited(self):
+        try:
+            y0 = int(self.edit_ymin.text())
+            y1 = int(self.edit_ymax.text())
+            if y0 >= y1:
+                raise ValueError
+            self.settings.set("ymin", y0)
+            self.settings.set("ymax", y1)
+            self.edit_ymin.setStyleSheet("")
+            self.edit_ymax.setStyleSheet("")
+            self.region_changed.emit(y0, y1)
         except ValueError:
-            xmin, xmax = 0, len(binned)
-        xmin = max(0, xmin)
-        xmax = min(len(binned), xmax if xmax > xmin else len(binned))
-        region = binned[xmin:xmax] if xmax > xmin else binned
+            self.edit_ymin.setStyleSheet("background-color: #ffcccc;")
+            self.edit_ymax.setStyleSheet("background-color: #ffcccc;")
 
-        # Plot
-        self.spectrum_ax.clear()
-        self.spectrum_ax.plot(wavelength_axis, binned, linewidth=1)
-        self.spectrum_ax.set_xlabel("Wavelength (nm)")
-        self.spectrum_ax.set_title("Binned Spectrum")
+    def _on_reset_span(self):
+        if self.current_image is not None:
+            self.region_changed.emit(0, self.current_image.shape[0])
 
-        if self.chk_autoscale.isChecked() and region.size > 0:
-            ymin, ymax = region.min(), region.max()
-            # self.spectrum_ax.set_ylim(ymin, ymax)
-            self.ymin = ymin
-            self.ymax = ymax
+    def _on_region_changed(self, y0, y1):
+        self.sel_y0, self.sel_y1 = y0, y1
+        self.edit_ymin.setText(str(y0))
+        self.edit_ymax.setText(str(y1))
+        self.settings.set("ymin", y0)
+        self.settings.set("ymax", y1)
+        if self.current_image is not None:
+            self.update_data(self.current_image)
 
-        self.spectrum_ax.set_ylim(self.ymin, self.ymax)  # Reset to initial limits
+    def update_data(self, image_data: np.ndarray, wavelength_axis=None):
+        try:
+            self.current_image = image_data
+            if self.sel_y1 is None:
+                self.sel_y1 = image_data.shape[0]
 
-        self.spectrum_canvas.draw()
+            self.image_ax.clear()
+            self.image_ax.imshow(image_data, aspect='auto')
+            x0, x1 = self.image_ax.get_xlim()
+            y0, y1 = self.sel_y0, self.sel_y1
+            patch = Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, edgecolor='yellow', linewidth=1)
+            self.image_ax.add_patch(patch)
+            self.image_canvas.draw()
+            self._redraw_spectrum()
+
+        except Exception:
+            print("Error updating live data:", traceback.format_exc())
+
+    def _redraw_spectrum(self):
+        if self.current_image is None:
+            return
+
+        try:
+            y0 = int(self.sel_y0)
+            y1 = int(self.sel_y1 or self.current_image.shape[0])
+            binned = self.current_image[y0:y1, :].mean(axis=0)
+
+            if self.interface.microscope.wavelength_axis is not None:
+                wavelength_axis = self.interface.microscope.wavelength_axis
+            else:
+                wavelength_axis = np.arange(len(binned))
+
+            xmin = max(0, int(self.edit_xmin.text()))
+            xmax = min(len(binned), int(self.edit_xmax.text()))
+            if xmax <= xmin:
+                xmin, xmax = 0, len(binned)
+
+            region = binned[xmin:xmax]
+
+            self.spectrum_ax.clear()
+            self.spectrum_ax.plot(wavelength_axis, binned, linewidth=1)
+            
+            if hasattr(self, 'pixel_ax') and self.pixel_ax in self.spectrum_fig.axes:
+                self.spectrum_fig.delaxes(self.pixel_ax)
+
+            self.pixel_ax = self.spectrum_ax.twiny()
+            self.pixel_ax.set_xlim(0, len(binned))
+            self.pixel_ax.set_xlabel("Pixel Index")
+            self.pixel_ax.tick_params(axis='x', labelrotation=0)
+
+            self.spectrum_ax.set_xlabel("Wavelength (nm)")
+            self.spectrum_ax.set_title("Binned Spectrum")
+
+            if self.chk_autoscale.isChecked() and region.size > 0:
+                self.ymin = region.min()
+                self.ymax = region.max()
+
+            self.spectrum_ax.set_ylim(self.ymin, self.ymax)
+            self.spectrum_canvas.draw()
+
+        except Exception:
+            print("Error redrawing spectrum:", traceback.format_exc())
+
 
 
 
@@ -552,6 +586,7 @@ class MainWindow(QMainWindow):
         # self.logger.info(self.acq_ctrl.motion_parameters)
         self.acq_ctrl.save_config()
         self.refresh_ui()
+
 
     @pyqtSlot()
     def refresh_ui(self):
