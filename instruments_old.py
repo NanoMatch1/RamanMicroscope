@@ -736,6 +736,11 @@ class Microscope(Instrument):
         # if self.interface.spectrometer.is_simulated:
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
+        if self.camera.is_running:
+            run_camera = True
+            self.stop_continuous_acquisition()  # Stop camera if it is running to avoid interference with laser detection
+        else:
+            run_camera = False
 
         estimated_wavelength = self.laser_wavelengths.get('l1')
         
@@ -767,6 +772,7 @@ class Microscope(Instrument):
 
         if result is None:
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
+            calibrated_wavelength = current_laser_wavelength
         else:
             self.set_calibrated_laser_wavelength(calibrated_wavelength)
 
@@ -775,6 +781,10 @@ class Microscope(Instrument):
         self.set_acquisition_time(original_acqtime)
         # self.restore_motor_state(original_motor_positions) 
         # self.go_to_spectrometer_wavelength(original_spec_wl)
+
+        if run_camera:
+            self.start_continuous_acquisition()  # Restart camera if it was running
+        self.micro_log.info(f"Live laser calibration complete. Calibrated wavelength: {calibrated_wavelength}")
 
         return calibrated_wavelength
 
@@ -2734,17 +2744,6 @@ class Microscope(Instrument):
     #             print('File in use. Waiting 0.1 s...')
     #             time.sleep(0.1)
     #             continue
-
-    def continuous_acquire(self):
-        '''Runs the continuous acquisition of the camera and saves the data to the transient directory.'''
-        self.camera.start_continuous_acquisition() # threaded for non-blocking use
-        # self.camera.continuous_acquisition() # for debugging
-
-    def stop_continuous_acquire(self):
-        '''Stops the continuous acquisition of the camera.'''
-        self.camera.stop_continuous_acquisition()
-
-
 
 
 class Camera(Instrument):
