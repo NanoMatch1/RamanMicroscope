@@ -294,7 +294,8 @@ class MotionControl:
             return False
         
     def get_motor_positions(self, motor_dict, report=True):
-        '''Get the current positions of the motors. Takes a dictionary of motor names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
+        '''Get the current positions of the motors. Takes a dictionary of motor_labels:hardware_names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
+
         motors = [motor_dict[i] for i in motor_dict.keys()]
         response = self.controller.get_motor_positions(motors)
         pos_dict = self._parse_motor_positions(response)
@@ -554,7 +555,7 @@ class Microscope(Instrument):
         self.spectrometer = spectrometer or interface.spectrometer
         self.calibration_service = calibration_service
         self.simulate = simulate
-        self.apply_pseudocal = True  # Whether to apply pseudocalibration corrections
+        self.apply_pseudocal = False  # Whether to apply pseudocalibration corrections
         self.apply_live_calibration = True
         self.laser_calibrated = False
 
@@ -737,7 +738,7 @@ class Microscope(Instrument):
         original_slit_width = self.report_enterance_slit_width
         original_acqtime = copy(self.interface.acq_ctrl.general_parameters['acquisition_time'])
         original_motor_positions = self.motion_control.get_motor_positions(self.motion_control.generate_motor_dict(self.action_groups['grating_wavelength'])) # grab the original motor positions for the grating motors to restore later
-        original_spectrometer_position = self.report_spectrometer_wavelength
+        original_spec_wl = self.report_spectrometer_wavelength
         calibrated_wavelength = None
         current_laser_wavelength = self.laser_wavelengths.get('l1') #TODO change to self.laser_wavelengh when static reporting is implemented
         
@@ -765,11 +766,41 @@ class Microscope(Instrument):
 
         # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
-        self.set_acquisition_time(original_acqtime)  # Restore original acquisition time
-        self.move_motors(original_motor_positions, backlash=True)  # Restore original motor positions
-        self.go_to_spectrometer_wavelength(original_spectrometer_position)  # Restore original spectrometer position
+        self.set_acquisition_time(original_acqtime)
+        self.restore_motor_state(original_motor_positions) 
+        self.go_to_spectrometer_wavelength(original_spec_wl)
+
         return calibrated_wavelength
 
+    
+    def _get_motor_positions(self, motor_dict):
+        '''Get the current positions of the motors, based on the keys of the motor_dict. Values are ignored, converts to hardware IDs by calling MotionControl methods'''
+
+        motor_IDs = self.motion_control.generate_motor_dict(motor_dict.keys())
+        current_motor_pos = self.motion_control.get_motor_positions(motor_IDs)
+
+        return current_motor_pos
+
+
+
+    def restore_motor_state(self, motor_dict):
+        '''Takes an original dictionary of motor positions and restores the motors to those positions. This is used to restore the state of the motors after a live calibration or other operation that changes the motor positions.'''
+
+        current_motor_dict = self._get_motor_positions(motor_dict)
+        relative_motion_dict = {}
+        # Check if the current positions match the original positions
+        for key, value in motor_dict.items():
+            current_pos = current_motor_dict[key]
+            if current_pos != value:
+                relative_motion_dict[key] = value - current_pos
+            
+        self.motion_control.move_motors(relative_motion_dict, backlash=True)  # Move motors to original positions
+        current_positions = self.get_grating_motor_positions()
+
+        if any(current_positions[key] != value for key, value in motor_dict.items()):
+            self.micro_log.error("Failed to restore motor positions to original values.")
+        else:
+            self.micro_log.debug("PASSED: restore motors returned to initial values.")
 
         
     def move_motors(self, motor_dict, backlash=False):
@@ -1609,8 +1640,8 @@ class Microscope(Instrument):
             
             # Update monochromator wavelength
             self.calculate_monochromator_wavelength()
-            self.micro_log.info("Moved: ", motor_steps)
-            self.micro_log.info("Monochromator now at {} nm".format(self.report_monochromator_wavelength))
+            self.micro_log.info("Moved: {}".format(motor_steps))
+            # self.micro_log.info("Monochromator now at {} nm".format(self.report_monochromator_wavelength))
             return True
         else:
             self.micro_log.info("Monochromator already at target steps - no movement initiated.")
@@ -2199,11 +2230,11 @@ class Microscope(Instrument):
         
     def check_laser_wavelength(self, wavelength):
         '''Checks the validity of the entered value for laser wavelength.'''
-
+        
         wavelength = string_to_float(wavelength)
 
         if not self.check_hard_limits(wavelength, self.hard_limits['laser_wavelength']):
-            print('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(*self.hard_limits['laser_wavelength']))
+            print('Laser wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['laser_wavelength']))
             return False
         
         return wavelength
@@ -2288,7 +2319,7 @@ class Microscope(Instrument):
             self.micro_log.debug("Laser no longer calibrated...")
         else:
             self.micro_log.info("Laser motors already at target position - no motion initiated.")
-        return True
+        return wavelength
 
 
     @ui_callable
@@ -2315,6 +2346,8 @@ class Microscope(Instrument):
         
         # Move to target positions
         self.go_to_monochromator_steps(target_positions)
+        self.micro_log.debug("Monochromator sent to {} nm".format(wavelength))
+        self.micro_log.debug("Monochromator reading at {} nm".format(self.report_monochromator_wavelength))
 
         return True
     
@@ -2358,7 +2391,7 @@ class Microscope(Instrument):
         wavelength = string_to_float(wavelength)
 
         if not self.check_hard_limits(wavelength, self.hard_limits['grating_wavelength']):
-            self.micro_log.info('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(*self.hard_limits['grating_wavelength']))
+            self.micro_log.info('Grating wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['grating_wavelength']))
             return False
         
         return wavelength

@@ -294,7 +294,8 @@ class TucsenCamera(Camera):
                 if temp.value > target_temp:
                     self.logger.info(f"Frame acquired at {temp.value}°C. Discarding and retrying")
                     continue
-
+                
+                breakpoint()
                 return image_data
             else:
                 self.logger.info(f"Camera too hot ({temp.value}°C). Waiting...")
