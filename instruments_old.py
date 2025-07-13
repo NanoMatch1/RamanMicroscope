@@ -554,8 +554,8 @@ class Microscope(Instrument):
         self.spectrometer = spectrometer or interface.spectrometer
         self.calibration_service = calibration_service
         self.simulate = simulate
-        self.apply_pseudocal = True  # Whether to apply pseudocalibration corrections
-        self.apply_live_calibration = True
+        self.apply_pseudocal = False  # Whether to apply pseudocalibration corrections
+        self.apply_live_calibration = False
         self.laser_calibrated = False
 
         self.microscope_mode = 'ramanmode'
@@ -733,6 +733,8 @@ class Microscope(Instrument):
         # if self.interface.spectrometer.is_simulated:
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
+
+        estimated_wavelength = self.laser_wavelengths.get('l1')
         
         original_slit_width = self.report_enterance_slit_width
         original_acqtime = copy(self.interface.acq_ctrl.general_parameters['acquisition_time'])
@@ -742,7 +744,8 @@ class Microscope(Instrument):
         current_laser_wavelength = self.laser_wavelengths.get('l1') #TODO change to self.laser_wavelengh when static reporting is implemented
         
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
-        self.go_to_spectrometer_wavelength(self.laser_wavelengths.get('l1'))  # Move spectrometer to laser wavelength
+        self.go_to_grating_wavelength(estimated_wavelength)
+        self.go_to_spectrometer_wavelength(estimated_wavelength)  # Move spectrometer to laser wavelength
         self.set_spectrometer_enter_slit(0)
         self.go_to_monochromator_wavelength(current_laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
         image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
@@ -756,6 +759,7 @@ class Microscope(Instrument):
 
             self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
             self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
+            time.sleep(0.2)
             attempts += 1
 
         if result is None:
@@ -911,7 +915,7 @@ class Microscope(Instrument):
             return
         
         self.controller.report = False
-        self.micro_log.debug("Saving instrument state: Polling controller for motor positions")
+        self.micro_log.coms("Saving instrument state: Polling controller for motor positions")
         motor_positions = self.get_all_motor_positions(report=False)
         self.controller.report = True
 
@@ -1008,6 +1012,7 @@ class Microscope(Instrument):
                 self.micro_log.info("aborting mode change, staying in raman mode")
                 return
             
+        self.micro_log.info("Moving to Raman mode...")
         self.motion_control.move_motors({'mode':-self.mode_steps})
         self.microscope_mode = 'ramanmode'
         self.micro_log.info("Microscope set to Raman mode")
@@ -1021,6 +1026,7 @@ class Microscope(Instrument):
                 self.micro_log.info("aborting mode change, staying in image mode")
                 return
 
+        self.micro_log.info("Moving to Image mode...")
         self.motion_control.move_motors({'mode':self.mode_steps})
         self.microscope_mode = 'imagemode'
         self.micro_log.info("Microscope set to Image mode")
