@@ -254,6 +254,10 @@ class LiveDataViewer(QWidget):
                 self.ymax = region.max()
 
             self.spectrum_ax.set_ylim(self.ymin, self.ymax)
+
+            # if self.interface.microscope.laser_calibrated:
+            #     laser_wavelength = self.interface.microscope.laser_wavelength_calibrated
+            #     self.spectrum_ax.axvline(laser_wavelength, color='tab:purple', linestyle='--', label='Laser Wavelength')
             self.spectrum_canvas.draw()
 
         except Exception:
