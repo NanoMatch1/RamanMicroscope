@@ -168,7 +168,10 @@ class LaserDetection(QObject):
         - image: 2D numpy array representing the spectrograph image.
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
-        # 
+        #
+        if image.ndim == 3:
+            # If the image is 3D, take the first channel #TODO Fix this at the camera level later
+            image = image[:, :, 0]
         is_laser_present, laser_position = self.detect_laser_peak(image)
         if not is_laser_present:
             print("No laser signal detected in the image.")
