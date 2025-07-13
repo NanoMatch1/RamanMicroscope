@@ -773,8 +773,11 @@ class Microscope(Instrument):
         if result is None:
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
             calibrated_wavelength = current_laser_wavelength
+            self.laser_wavelength_calibrated = None
+            self.laser_calibrated = False
         else:
-            self.set_calibrated_laser_wavelength(calibrated_wavelength)
+            self.laser_wavelength_calibrated = calibrated_wavelength
+            self.laser_calibrated = True
 
         # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
@@ -2334,6 +2337,7 @@ class Microscope(Instrument):
         # Report primary wavelength
         if moved:
             self.laser_calibrated = False # for tracking live calibration status
+            self.laser_wavelength_calibrated = None
             self.micro_log.debug("Laser no longer calibrated...")
         else:
             self.micro_log.info("Laser motors already at target position - no motion initiated.")

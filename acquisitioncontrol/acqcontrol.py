@@ -380,7 +380,8 @@ class AcquisitionControl(QObject):
             'spectrometer_steps': 0.0,
             'scan_index': 0,
             'scan_mode': 'linescan',
-            'detector_temperature': 0.0
+            'detector_temperature': 0.0,
+            'spec_slit_width': 0.0,
         }
 
         self.x_position = self._current_parameters['sample_position']['x']
@@ -452,10 +453,12 @@ class AcquisitionControl(QObject):
         self.set_current_parameters({'detector_temperature': detector_temp})
 
         self._current_parameters.update(self.general_parameters)
-        self._current_parameters['laser_wavelength'] = self.interface.microscope.laser_wavelengths.get('l1', 0.0)
+        self._current_parameters['laser_wavelength'] = self.interface.microscope.laser_wavelength_calibrated
+        self._current_parameters['laser_wavelength_uncalibrated'] = self.interface.microscope.laser_wavelengths.get('l1', 0.0)
         self._current_parameters['monochromator_wavelength'] = self.interface.microscope.monochromator_wavelengths.get('g3', 0.0)
+        self._current_parameters['spec_slit_width'] = self.interface.microscope.report_enterance_slit_width
+        # TODO: Add polarization angles when implemented
         # self._current_parameters['polarization_in_angle'] = self.interface.microscope.polarization_angles.get('in', 0.0)
-
 
         return self.all_parameters
     
