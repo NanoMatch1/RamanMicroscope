@@ -719,7 +719,9 @@ class Microscope(Instrument):
         self.laser_wavelength_calibrated = round(calibrated_wavelength, 3)
 
     def live_calibration_laser(self):
-        '''Handles the calibration of the laser wavelength on the fly. This function is called by the @live_calibration wrapper which is applied to the go_to_laser_wavelength function. It is used to automatically calibrate the laser wavelength when moving to a new laser wavelength. After a new go_to_laser_wavelength command, tt will move the spectrometer to the new laser wavelength, acquire a spectrum, and then run the laser detection and peak fitting functions. If the laser is found, it will set the laser wavelength and return the true laser wavelength. Further functions can then use this true laser wavelength to move the monochromator or spectrometer to the correct wavelength.
+        '''Handles the calibration of the laser wavelength on the fly. This function is called by the @live_calibration wrapper which is applied to the go_to_laser_wavelength function. It is used to automatically calibrate the laser wavelength when moving to a new laser wavelength. After a new go_to_laser_wavelength command, st will move the spectrometer to the new laser wavelength, acquire a spectrum, and then run the laser detection and peak fitting functions. If the laser is found, it will set the laser wavelength and return the true laser wavelength. Further functions can then use this true laser wavelength to move the monochromator or spectrometer to the correct wavelength.
+
+        NOTE: Currently does not restore original motor positions. Assumes user is not doing grating-related operations. If grating position needs to be maintained, live calibration should be disabled in the developer options or with "livecal" command.
 
         Logic:
         1. Move spectrograph to laser wavelength
@@ -771,8 +773,8 @@ class Microscope(Instrument):
         # restore to original state
         self.set_spectrometer_enter_slit(original_slit_width)
         self.set_acquisition_time(original_acqtime)
-        self.restore_motor_state(original_motor_positions) 
-        self.go_to_spectrometer_wavelength(original_spec_wl)
+        # self.restore_motor_state(original_motor_positions) 
+        # self.go_to_spectrometer_wavelength(original_spec_wl)
 
         return calibrated_wavelength
 
