@@ -72,7 +72,7 @@ class SimulatedCameraInterface:
         self.roi = (0, 1220, 2048, 148)
         self.is_running = False
         self.stop_flag = threading.Event()
-        self.camera_lock = threading.Lock()
+        self.camera_lock = threading.RLock()
 
         self.command_functions = {
             'set_acqtime': self.set_exposure_time,

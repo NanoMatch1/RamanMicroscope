@@ -89,7 +89,7 @@ class TucsenCamera(Camera):
         self.camera_capabilities = {}
 
         # Thread-safety and acquisition flags
-        self.camera_lock = threading.Lock()
+        self.camera_lock = threading.RLock()
         self.stop_flag = threading.Event()
         self.is_running = False
 

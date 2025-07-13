@@ -330,26 +330,6 @@ class LaserDetection(QObject):
 
         x_max = np.argmax(profile_x)
         y_max = np.argmax(image[:, x_max])  # Find the Y position of the maximum signal in the X profile
-
-        # if self.logger.level <= 10 or show_plot:
-        #     plt.figure(figsize=(8, 4))
-        #     plt.plot(profile_x, label='X-profile')
-        #     plt.axhline(med, color='gray', linestyle='--', label='Median')
-        #     plt.axhline(threshold, color='red', linestyle='--', label=f'Threshold ({threshold_sigma} MAD)')
-        #     plt.axvline(np.argmax(signal_mask), color='green', linestyle='--', label='Laser Signal Start')
-        #     plt.title("Laser Detection Profile")
-        #     plt.legend()
-        #     plt.xlabel("X (pixel)")
-        #     plt.ylabel("Integrated Intensity")
-        #     plt.grid(True)
-        #     plt.show()
-
-        #     plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
-        #     # add a dot at the laser position
-        #     plt.plot(x_max, y_max, 'ro', markersize=5, label='Laser Position')
-        #     plt.show()
-
-        
         
         return is_laser_present, (x_max, y_max)  
 
