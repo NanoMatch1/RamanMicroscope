@@ -298,6 +298,7 @@ class TucsenCamera(Camera):
                 return image_data
             else:
                 self.logger.info(f"Camera too hot ({temp.value}°C). Waiting...")
+
                 time.sleep(5)  # Wait before checking temperature again
 
 
@@ -492,6 +493,28 @@ class TucsenCamera(Camera):
             )
 
         self.roi = roi_tuple
+
+    def get_fan_speed(self, report=True):
+        """
+        Retrieve the current fan speed setting.
+        Returns:
+            fan_speed (int): 0 = Off, 1 = Low, 2 = Medium, 3 = High
+        """
+        fan_speed = ctypes.c_int()
+        status = TUCAM_Capa_GetValue(
+            self.TUCAMOPEN.hIdxTUCam,
+            TUCAM_IDCAPA.TUIDC_FAN_GEAR.value,
+            byref(fan_speed)
+        )
+
+        if status == TUCAMRET.TUCAMRET_SUCCESS:
+            if report:
+                speed_name = {0: "Off", 1: "Low", 2: "Medium", 3: "High"}.get(fan_speed.value, "Unknown")
+                self.logger.info(f"Current fan speed: {fan_speed.value} ({speed_name})")
+            return fan_speed.value
+        else:
+            self.logger.error(f"Failed to retrieve fan speed (code {status}).")
+            return None
 
     
     def enable_auto_temperature_control(self, enable: bool, report: bool = True):

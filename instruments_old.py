@@ -681,6 +681,7 @@ class Microscope(Instrument):
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
             'closecamera': self.close_camera_connection,
+            'checkfan': self.check_camera_fan_speed,
 
             # laser commands
             'low': self.low_power,
@@ -1782,6 +1783,12 @@ class Microscope(Instrument):
     def close_camera_connection(self):
         '''Closes the camera connection.'''
         self.camera.close_camera_connection()
+
+    @ui_callable
+    def check_camera_fan_speed(self):
+        speed = self.camera.get_fan_speed()
+        self.logger.info("Fan Speed: {}".format(speed))
+        return speed
 
     @ui_callable
     def set_acquisition_time(self, value):
