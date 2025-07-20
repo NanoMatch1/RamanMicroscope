@@ -58,7 +58,7 @@ class TucsenCamera(Camera):
             'set_acqtime': self.set_exposure_time,
             'set_roi': self.set_roi,
         }
-        self.tucam_data = TucamData(self)
+
         if self.simulate:
             self.hardware = SimulatedHardware(self)
             self.logger.info('Using simulated camera hardware.')
