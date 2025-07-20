@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from ctypes import byref
 
 from ctypes import pointer, cast, POINTER
-from TUCam import (
+from instruments.cameras.TUCam import (
     TUCAM_ROI_ATTR,
     TUCAM_Buf_Alloc,
     TUCAM_Buf_Release,
