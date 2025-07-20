@@ -34,8 +34,7 @@ from TUCam import (
 
 
 class TucamData:
-    def __init__(self, camera):
-        self.camera = camera
+    def __init__(self):
         self.data = None
         self.m_fs = TUCAM_FILE_SAVE()
         self.m_frame = TUCAM_FRAME()
@@ -46,7 +45,6 @@ class TucamData:
         self.m_frame.ucFormatGet = TUFRM_FORMATS.TUFRM_FMT_USUAl.value
         self.m_frame.uiRsdSize = 1
         self.m_fs.nSaveFmt = self.m_format.TUFMT_TIF.value
-
 
 class CameraHardwareBase:
     def open_stream(self): raise NotImplementedError
@@ -74,6 +72,7 @@ class RealHardware(CameraHardwareBase):
         self.camera = camera
         self.data = camera.tucam_data
         self._tucam_open = TUCAM_OPEN()
+        self.data = TucamData()
 
     def open_stream(self):
         TUCAM_Buf_Alloc(self._tucam_open.hIdxTUCam, pointer(self.data.m_frame))
@@ -190,11 +189,9 @@ class SimulatedHardware(CameraHardwareBase):
 
     def open_stream(self):
         self.logger.debug("[SIM] open_stream() called.")
-        self.camera.is_running = True
 
     def close_stream(self):
         self.logger.debug("[SIM] close_stream() called.")
-        self.camera.is_running = False
 
     def grab_frame(self, timeout=100000):
         self.logger.debug("[SIM] grab_frame() called.")
