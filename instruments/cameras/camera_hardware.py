@@ -71,7 +71,6 @@ class CameraHardwareBase:
 class RealHardware(CameraHardwareBase):
     def __init__(self, camera):
         self.camera = camera
-        self.data = camera.tucam_data
         self._tucam_open = TUCAM_OPEN()
         self.data = TucamData()
 
