@@ -59,7 +59,12 @@ class TucsenCamera(Camera):
             'set_roi': self.set_roi,
         }
         self.tucam_data = TucamData(self)
-        self.hardware: CameraHardwareBase = RealHardware(self)
+        if self.simulate:
+            self.hardware = SimulatedHardware(self)
+            self.logger.info('Using simulated camera hardware.')
+        else:
+            self.hardware = RealHardware(self)
+            self.logger.info('Using real camera hardware.')
         self.logger.info('Finished TucsenCamera init')
 
     @contextmanager
@@ -134,27 +139,15 @@ class TucsenCamera(Camera):
 
     def initialise(self):
         self.save_transient_spectrum_cb = self.interface.acq_ctrl.save_spectrum_transient
-        self.logger.info("Initialising TUCam API...")
-        self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
-        self.TUCAMOPEN = TUCAM_OPEN(0, 0)
-        TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
         self.hardware.initialise()
 
     def refresh(self):
         self.hardware.close_camera()
         self.hardware.uninit_api()
-        self.initialise()
+        self.hardware.initialise()
 
-    def _open_camera(self, Idx=0):
-        if Idx >= self.TUCAMINIT.uiCamCount:
-            return
-        self.logger.info('Opening camera...')
-        self.TUCAMOPEN = TUCAM_OPEN(Idx, 0)
+    def _open_camera(self):
         self.hardware.open_camera()
-        if self.TUCAMOPEN.hIdxTUCam == 0:
-            self.logger.info('Open the camera failure!')
-        else:
-            self.logger.info('Open the camera success!')
 
     def _close_camera(self):
         self.hardware.close_camera()

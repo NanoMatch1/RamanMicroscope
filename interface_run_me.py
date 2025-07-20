@@ -34,6 +34,13 @@ class Interface:
 
     def __init__(self, simulate=False, com_port='COM10', baud=9600, debug_skip=[]):
 
+        self.flag_dict = { 
+            'S0': 'ok',
+            'R1': 'motors running',
+            'F0': 'invalid command',
+            '#CF': 'end of response',
+        }
+
         self.logger = LoggerInterface(name='interface')
 
         self.interface_commands = {
@@ -63,14 +70,9 @@ class Interface:
 
         # Create hardware instances
         self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
-        if simulate:
-            from instruments.cameras.simulated_camera import SimulatedCameraInterface
-            self.camera = SimulatedCameraInterface(self)
-        else:
-            self.camera = TucsenCamera(self, simulate=simulate)
+        self.camera = TucsenCamera(self, simulate=simulate)
         self.spectrometer = Triax(self, simulate=simulate)
         self.laser = MillenniaLaser(self, simulate=simulate)
-
         self.microscope = Microscope(
             interface=self, 
             calibration_service=self.calibration_service,
@@ -97,16 +99,11 @@ class Interface:
                 
             if 'camera' in debug_skip:
                 from instruments.cameras.simulated_camera import SimulatedCameraInterface
-                self.camera = SimulatedCameraInterface(self)
+                self.camera.simulate = True
                     
         self.command_map = self._generate_command_map()
 
-        self.flag_dict = { 
-            'S0': 'ok',
-            'R1': 'motors running',
-            'F0': 'invalid command',
-            '#CF': 'end of response',
-        }
+
 
         # Initialize hardware components in the correct order
         self.spectrometer.initialise()
@@ -119,8 +116,6 @@ class Interface:
 
         self.heartbeat = self.laser.watchdog.heartbeat
 
-        # self.microscope.set_acquisition_time(1) # workaround for the camera not responsing correctly on startup
-        
         self._integrity_checker()
 
     def run_batch(self, commands):
