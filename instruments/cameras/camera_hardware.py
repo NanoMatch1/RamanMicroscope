@@ -30,6 +30,7 @@ from TUCam import (
     TUFRM_FORMATS,
     TUCAM_CAPTURE_MODES,
     TUCAM_OPEN,
+    TUCAMRET,
 )
 
 
@@ -74,6 +75,17 @@ class RealHardware(CameraHardwareBase):
         self._tucam_open = TUCAM_OPEN()
         self.data = TucamData()
 
+    def initialise(self):
+        self.open_camera()
+        self.set_hardware_binning()
+        self.set_exposure_time(self.camera.acqtime)
+        self.set_image_processing(0)
+        self.set_resolution(1)
+        self.set_image_and_gain(1, 0)
+        self.set_roi(self.camera.roi)
+        self.set_target_temperature(-20)
+        self.set_fan_speed(3)
+
     def open_stream(self):
         TUCAM_Buf_Alloc(self._tucam_open.hIdxTUCam, pointer(self.data.m_frame))
         TUCAM_Cap_Start(self._tucam_open.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
@@ -83,9 +95,23 @@ class RealHardware(CameraHardwareBase):
         TUCAM_Cap_Stop(self._tucam_open.hIdxTUCam)
         TUCAM_Buf_Release(self._tucam_open.hIdxTUCam)
 
-    def grab_frame(self, timeout):
-        result = TUCAM_Buf_WaitForFrame(self._tucam_open.hIdxTUCam, pointer(self.data.m_frame), timeout)
-        return self._frame_to_numpy()
+
+    def grab_frame(self, timeout=100000):
+        ret = TUCAM_Buf_WaitForFrame(self._tucam_open.hIdxTUCam, pointer(self._frame), timeout)
+        if ret != TUCAMRET.TUCAMRET_SUCCESS.value:
+            self.camera.logger.warning(f"Frame acquisition timeout or error. Return code: {ret}")
+            return None
+
+        if not self._frame.pBuffer:
+            self.camera.logger.error("Frame buffer pointer is null.")
+            return None
+
+        if self._frame.usWidth == 0 or self._frame.usHeight == 0:
+            self.camera.logger.error("Invalid frame dimensions received.")
+            return None
+
+        image = self._frame_to_numpy()
+        return image
 
     def _frame_to_numpy(self):
         total_size = self.data.m_frame.usHeader + self.data.m_frame.uiImgSize
@@ -103,17 +129,6 @@ class RealHardware(CameraHardwareBase):
         except Exception as e:
             self.camera.logger.error(f"Reshape failed: {e}")
             return None
-
-    def initialise(self):
-        self.open_camera()
-        self.set_hardware_binning()
-        self.set_exposure_time(self.camera.acqtime)
-        self.set_image_processing(0)
-        self.set_resolution(1)
-        self.set_image_and_gain(1, 0)
-        self.set_roi(self.camera.roi)
-        self.set_target_temperature(-20)
-        self.set_fan_speed(3)
 
     def set_exposure_time(self, value):
         value = float(value) * 1000
