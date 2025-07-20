@@ -29,7 +29,7 @@ from TUCam import (
     TUIMG_FORMATS,
     TUFRM_FORMATS,
     TUCAM_CAPTURE_MODES,
-    TUCAMOPEN
+    TUCAM_OPEN,
 )
 
 
@@ -73,18 +73,19 @@ class RealHardware(CameraHardwareBase):
     def __init__(self, camera):
         self.camera = camera
         self.data = camera.tucam_data
+        self._tucam_open = TUCAM_OPEN()
 
     def open_stream(self):
-        TUCAM_Buf_Alloc(self.camera.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
-        TUCAM_Cap_Start(self.camera.TUCAMOPEN.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
+        TUCAM_Buf_Alloc(self._tucam_open.hIdxTUCam, pointer(self.data.m_frame))
+        TUCAM_Cap_Start(self._tucam_open.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
 
     def close_stream(self):
-        TUCAM_Buf_AbortWait(self.camera.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Cap_Stop(self.camera.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Buf_Release(self.camera.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Buf_AbortWait(self._tucam_open.hIdxTUCam)
+        TUCAM_Cap_Stop(self._tucam_open.hIdxTUCam)
+        TUCAM_Buf_Release(self._tucam_open.hIdxTUCam)
 
     def grab_frame(self, timeout):
-        result = TUCAM_Buf_WaitForFrame(self.camera.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame), timeout)
+        result = TUCAM_Buf_WaitForFrame(self._tucam_open.hIdxTUCam, pointer(self.data.m_frame), timeout)
         return self._frame_to_numpy()
 
     def _frame_to_numpy(self):
@@ -117,57 +118,57 @@ class RealHardware(CameraHardwareBase):
 
     def set_exposure_time(self, value):
         value = float(value) * 1000
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
-        TUCAM_Prop_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
+        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
 
     def set_image_and_gain(self, img_mode, gain_level):
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
-        TUCAM_Prop_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_GLOBALGAIN.value, gain_level, 0)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
+        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_GLOBALGAIN.value, gain_level, 0)
 
     def set_image_processing(self, value):
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEIMGPRO.value, value)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEIMGPRO.value, value)
 
     def set_denoise(self, value):
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEDENOISE.value, value)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEDENOISE.value, value)
 
     def set_resolution(self, resolution):
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, resolution)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, resolution)
 
     def set_fan_speed(self, speed):
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, speed)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, speed)
 
     def get_fan_speed(self):
         val = ctypes.c_int()
-        TUCAM_Capa_GetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, byref(val))
+        TUCAM_Capa_GetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, byref(val))
         return val.value
 
     def enable_auto_temperature_control(self, enable):
         val = 1 if enable else 0
-        TUCAM_Prop_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_AUTO_CTRLTEMP.value, val, 0)
+        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_AUTO_CTRLTEMP.value, val, 0)
 
     def set_target_temperature(self, target_celsius):
         prop_val = int(max(-50, min(50, float(target_celsius))) + 50)
-        TUCAM_Prop_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, prop_val, 0)
+        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, prop_val, 0)
 
     def get_temperature(self):
         temp = ctypes.c_double()
-        TUCAM_Prop_GetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
+        TUCAM_Prop_GetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
         return temp.value
 
     def set_roi(self, roi_tuple):
         roi = TUCAM_ROI_ATTR()
         roi.bEnable = 1
         roi.nHOffset, roi.nVOffset, roi.nWidth, roi.nHeight = roi_tuple
-        TUCAM_Cap_SetROI(self.camera.TUCAMOPEN.hIdxTUCam, roi)
+        TUCAM_Cap_SetROI(self._tucam_open.hIdxTUCam, roi)
 
     def set_hardware_binning(self, binning_level=1):
-        TUCAM_Capa_SetValue(self.camera.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, binning_level)
+        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, binning_level)
 
     def open_camera(self):
-        TUCAM_Dev_Open(pointer(self.camera.TUCAMOPEN))
+        TUCAM_Dev_Open(pointer(self._tucam_open))
 
     def close_camera(self):
-        TUCAM_Dev_Close(self.camera.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Dev_Close(self._tucam_open.hIdxTUCam)
 
     def uninit_api(self):
         TUCAM_Api_Uninit()
