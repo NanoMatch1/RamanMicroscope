@@ -54,10 +54,7 @@ class TucsenCamera(Camera):
         self.stop_flag = threading.Event()
         self.is_running = False
         self.acquisition_thread = None
-        self.command_functions = {
-            'set_acqtime': self.set_exposure_time,
-            'set_roi': self.set_roi,
-        }
+        self.command_functions = {}
 
         if self.simulate:
             self.hardware = SimulatedHardware(self)
@@ -182,6 +179,10 @@ class TucsenCamera(Camera):
         return temp
 
     def set_roi(self, roi_tuple=(0, 0, 2048, 2048)):
+        # x1, y1, x2, y2 = roi_tuple
+        # if x1 < 0 or y1 < 0 or x2 > 2048 or y2 > 2048 or x2 <= x1 or y2 <= y1:
+        #     raise ValueError(f"Invalid ROI: {roi_tuple}")
+        
         if roi_tuple == 'full':
             roi_tuple = self.full_roi
         elif isinstance(roi_tuple, list):
