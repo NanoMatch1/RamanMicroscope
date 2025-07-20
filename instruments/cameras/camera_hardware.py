@@ -18,6 +18,7 @@ from instruments.cameras.TUCam import (
     TUCAM_Prop_SetValue,
     TUCAM_Dev_Open,
     TUCAM_Dev_Close,
+    TUCAM_Api_Init,
     TUCAM_Api_Uninit,
     TUCAM_IDCAPA,
     TUCAM_IDPROP,
@@ -31,6 +32,7 @@ from instruments.cameras.TUCam import (
     TUCAM_CAPTURE_MODES,
     TUCAM_OPEN,
     TUCAMRET,
+    TUCAM_INIT,
 )
 
 
@@ -71,10 +73,15 @@ class CameraHardwareBase:
 class RealHardware(CameraHardwareBase):
     def __init__(self, camera):
         self.camera = camera
-        self._tucam_open = TUCAM_OPEN()
+        self.interface = camera.interface
+        self.logger = camera.logger.getChild('RealHardware')
+
         self.data = TucamData()
 
     def initialise(self):
+        self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
+        TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
+
         self.open_camera()
         self.set_hardware_binning()
         self.set_exposure_time(self.camera.acqtime)
@@ -86,17 +93,17 @@ class RealHardware(CameraHardwareBase):
         self.set_fan_speed(3)
 
     def open_stream(self):
-        TUCAM_Buf_Alloc(self._tucam_open.hIdxTUCam, pointer(self.data.m_frame))
-        TUCAM_Cap_Start(self._tucam_open.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
+        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
+        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
 
     def close_stream(self):
-        TUCAM_Buf_AbortWait(self._tucam_open.hIdxTUCam)
-        TUCAM_Cap_Stop(self._tucam_open.hIdxTUCam)
-        TUCAM_Buf_Release(self._tucam_open.hIdxTUCam)
+        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
+        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
 
 
     def grab_frame(self, timeout=100000):
-        ret = TUCAM_Buf_WaitForFrame(self._tucam_open.hIdxTUCam, pointer(self._frame), timeout)
+        ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self._frame), timeout)
         if ret != TUCAMRET.TUCAMRET_SUCCESS.value:
             self.camera.logger.warning(f"Frame acquisition timeout or error. Return code: {ret}")
             return None
@@ -131,58 +138,79 @@ class RealHardware(CameraHardwareBase):
 
     def set_exposure_time(self, value):
         value = float(value) * 1000
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
-        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
+        TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
 
     def set_image_and_gain(self, img_mode, gain_level):
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
-        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_GLOBALGAIN.value, gain_level, 0)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
+        TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_GLOBALGAIN.value, gain_level, 0)
 
     def set_image_processing(self, value):
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEIMGPRO.value, value)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEIMGPRO.value, value)
 
     def set_denoise(self, value):
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEDENOISE.value, value)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ENABLEDENOISE.value, value)
 
     def set_resolution(self, resolution):
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, resolution)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, resolution)
 
     def set_fan_speed(self, speed):
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, speed)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, speed)
 
     def get_fan_speed(self):
         val = ctypes.c_int()
-        TUCAM_Capa_GetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, byref(val))
+        TUCAM_Capa_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_FAN_GEAR.value, byref(val))
         return val.value
 
     def enable_auto_temperature_control(self, enable):
         val = 1 if enable else 0
-        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_AUTO_CTRLTEMP.value, val, 0)
+        TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_AUTO_CTRLTEMP.value, val, 0)
 
     def set_target_temperature(self, target_celsius):
         prop_val = int(max(-50, min(50, float(target_celsius))) + 50)
-        TUCAM_Prop_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, prop_val, 0)
+        TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, prop_val, 0)
 
     def get_temperature(self):
         temp = ctypes.c_double()
-        TUCAM_Prop_GetValue(self._tucam_open.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
+        TUCAM_Prop_GetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_TEMPERATURE.value, byref(temp), 0)
         return temp.value
 
     def set_roi(self, roi_tuple):
         roi = TUCAM_ROI_ATTR()
         roi.bEnable = 1
         roi.nHOffset, roi.nVOffset, roi.nWidth, roi.nHeight = roi_tuple
-        TUCAM_Cap_SetROI(self._tucam_open.hIdxTUCam, roi)
+        TUCAM_Cap_SetROI(self.TUCAMOPEN.hIdxTUCam, roi)
 
     def set_hardware_binning(self, binning_level=1):
-        TUCAM_Capa_SetValue(self._tucam_open.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, binning_level)
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, binning_level)
 
-    def open_camera(self):
-        TUCAM_Dev_Open(pointer(self._tucam_open))
+    def open_camera(self, Idx=0):
+        if  Idx >= self.TUCAMINIT.uiCamCount:
+            return
+
+        print('Opening camera...')
+        self.TUCAMOPEN = TUCAM_OPEN(Idx, 0)
+
+        TUCAM_Dev_Open(pointer(self.TUCAMOPEN))
+
+        if 0 == self.TUCAMOPEN.hIdxTUCam:
+            self.logger.info('Open the camera failure!')
+            return
+        else:
+            self.logger.info('Open the camera success!')
 
     def close_camera(self):
-        TUCAM_Dev_Close(self._tucam_open.hIdxTUCam)
+        """
+        Close the currently open camera if any.
+        """
+        if self.TUCAMOPEN.hIdxTUCam != 0 and self.TUCAMOPEN.hIdxTUCam is not None:
+            TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
+            # self.TUCAMOPEN.hIdxTUCam = 0  # Reset the handle
+            self.logger.info("Close the camera success")
+        
+        self.uninit_api()
 
+    
     def uninit_api(self):
         TUCAM_Api_Uninit()
 
