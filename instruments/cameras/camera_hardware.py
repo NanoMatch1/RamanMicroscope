@@ -105,7 +105,7 @@ class RealHardware(CameraHardwareBase):
             return None
 
     def initialise(self):
-        self.camera._open_camera()
+        self.open_camera()
         self.set_hardware_binning()
         self.set_exposure_time(self.camera.acqtime)
         self.set_image_processing(0)
