@@ -13,8 +13,6 @@ from acquisitioncontrol import AcquisitionControl
 from acquisitioncontrol import MainWindow
 from PyQt5.QtWidgets import QApplication
 
-
-import logging
 from instruments.cameras.tucsencam import TucsenCamera
 
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
@@ -64,7 +62,7 @@ class Interface:
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         
         self._build_directories()
-        self.calibration_service = Calibration()
+        self.calibration_service = Calibration(self)
 
 
         # Create hardware instances

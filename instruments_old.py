@@ -611,7 +611,6 @@ class Microscope(Instrument):
             'laserpower': self.set_laser_power,
             'runscan': self.run_scan_thread,
             'cancel': self.cancel_scan,
-            'gui': self.open_acquisition_gui,
 
             'mshut': self.close_mono_shutter,
             'mopen': self.open_mono_shutter,

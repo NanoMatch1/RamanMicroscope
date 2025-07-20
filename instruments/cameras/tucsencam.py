@@ -1,18 +1,17 @@
 from contextlib import contextmanager
-import ctypes
-from ctypes import byref
+# import ctypes
+# from ctypes import byref
 import os
 import threading
 import time
 import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image
-from ctypes import pointer, cast, POINTER
+# import matplotlib.pyplot as plt
+# from PIL import Image
+# from ctypes import pointer, cast, POINTER
 from functools import wraps
-import traceback
 
 from instruments.cameras.base_camera import Camera
-from camera_hardware import RealHardware, SimulatedHardware, TucamData
+from instruments.cameras.camera_hardware import RealHardware, SimulatedHardware
 
 def synchronized(func):
     @wraps(func)
