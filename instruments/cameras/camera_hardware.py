@@ -75,11 +75,12 @@ class RealHardware(CameraHardwareBase):
         self.camera = camera
         self.interface = camera.interface
         self.logger = camera.logger.getChild('RealHardware')
+        self.scriptDir = self.interface.scriptDir
 
         self.data = TucamData()
 
     def initialise(self):
-        self.TUCAMINIT = TUCAM_INIT(0, self.script_dir.encode('utf-8'))
+        self.TUCAMINIT = TUCAM_INIT(0, self.scriptDir.encode('utf-8'))
         TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
 
         self.open_camera()
