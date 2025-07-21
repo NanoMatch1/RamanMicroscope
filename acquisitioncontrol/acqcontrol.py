@@ -152,7 +152,6 @@ class CameraScanner:
 
     def _acquire_once(self):
         """acquires a single frame and saves it."""
-        self.camera.camera_lock.acquire()
         try:
             self.camera.open_stream()
             image_data = None
@@ -174,8 +173,6 @@ class CameraScanner:
         
         finally:
             self.camera.close_stream()
-            self.camera.camera_lock.release()
-
 
     def _acquire_scan(self, cancel_event, status_cb, progress_cb, timeout=100000):
         """
@@ -187,8 +184,6 @@ class CameraScanner:
         start_time = time.time()
         failed_steps = []
 
-        # Lock camera and open stream
-        self.camera.camera_lock.acquire()
         try:
             self.camera.open_stream()
 
@@ -225,7 +220,6 @@ class CameraScanner:
 
         finally:
             self.camera.close_stream()
-            self.camera.camera_lock.release()
 
         return failed_steps
 
@@ -281,7 +275,6 @@ class CameraScanner:
         acqtimelist = [1, 2, 4, 8, 16, 32, 64, 128] # seconds acqtime
         # acqtimelist = [1, 2, 4, 8, 12, 16, 20, 22, 23, 24, 25, 26, 27, 28]
         
-        self.camera.camera_lock.acquire()
         self.camera.open_stream()
 
         try:
@@ -318,7 +311,6 @@ class CameraScanner:
         
         finally:
             self.camera.close_stream()
-            self.camera.camera_lock.release()
 
 
 class AcquisitionControl(QObject):
@@ -827,13 +819,12 @@ class AcquisitionControl(QObject):
 
         # TODO:add wavelength axis to the image data along a new axis
         save_path = os.path.join(self.interface.microscope.dataDir, 'transient_data', 'transient_data.npy')
-        # if kwargs.get('report', False):
-        #     print(f"Saving transient data to {save_path}")
-        # print(f"Saving transient data to {save_path}")
+
         try:
             np.save(save_path, image_data) # TODO: remove once integrated data viewer is complete
-        except OSError:
-            print(f"Transient save failed - skipping")
+        except OSError as e:
+            self.logger.error(str(traceback.print_exc()))
+            self.logger.error(f"Transient save failed - skipping")
             
         self.spectrum_ready.emit(image_data, wavelength_axis)
 

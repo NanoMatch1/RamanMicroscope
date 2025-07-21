@@ -56,7 +56,7 @@ class Interface:
 
         self.scriptDir = os.path.dirname(os.path.realpath(__file__))
         self.dataDir = os.path.join(self.scriptDir, 'data')
-        self.transientDir = os.path.join(self.scriptDir, 'transient')
+        self.transientDir = os.path.join(self.scriptDir, 'data', 'transient_data')
         self.saveDir = os.path.join(self.dataDir, 'data')
         self.autocalibrationDir = os.path.join(self.scriptDir, 'autocalibration')
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
