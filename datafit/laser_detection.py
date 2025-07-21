@@ -169,6 +169,7 @@ class LaserDetection(QObject):
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
         #
+
         if image.ndim == 3:
             # If the image is 3D, take the first channel #TODO Fix this at the camera level later
             image = image[:, :, 0]
@@ -181,7 +182,6 @@ class LaserDetection(QObject):
         dataY = self.baseline_data(dataY, show_plot=show_plot, subtract_median=True)
         dataX = wavelength_axis
         fitter = AutoPeakFitter(dataX, dataY, show_plot=show_plot)
-        breakpoint()
         peak = fitter.run(initial_index=laser_position[0])
 
         if self.logger.level <= 9 or show_plot == True:
@@ -219,7 +219,7 @@ class LaserDetection(QObject):
         
         return baselinedY
 
-    def image_to_spectrum(self, image, laser_position, binning_width=20):
+    def image_to_spectrum(self, image, laser_position, binning_width=10):
         """Generate a 1D spectrum by averaging over a specified width in the Y dimension."""
 
         xpos, ypos = laser_position

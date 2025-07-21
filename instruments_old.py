@@ -711,15 +711,19 @@ class Microscope(Instrument):
         self.go_to_spectrometer_wavelength(estimated_wavelength)  # Move spectrometer to laser wavelength
         self.set_spectrometer_enter_slit(0)
         self.go_to_monochromator_wavelength(current_laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
-        image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
 
         attempts = 0
         while attempts < 5:
+
+            image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
             result = self.laser_detection.detect_laser(image_data, wavelength_axis) # returns "Peak" object with pos and height attributes, or None if no peak is found
             if result is not None:
                 calibrated_wavelength = result.pos
                 break
 
+            if attempts == 0:
+                self.micro_log.info("Adjusting camera to 1s acquisition time for laser detection.")
+                self.set_acquisition_time(1)  # Set acquisition time to 1s for laser detection
             self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
             self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
             time.sleep(0.5)
