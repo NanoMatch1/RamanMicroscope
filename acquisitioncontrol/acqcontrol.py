@@ -153,7 +153,7 @@ class CameraScanner:
     def _acquire_once(self):
         """acquires a single frame and saves it."""
         try:
-            self.camera.open_stream()
+            # self.camera.open_stream()
             image_data = None
             n_frames = self.acq_ctrl.general_parameters['n_frames']
 
@@ -171,8 +171,10 @@ class CameraScanner:
 
             return image_data
         
-        finally:
-            self.camera.close_stream()
+        # finally:
+        except Exception as e:
+            self.logger.info(f"Error during acq_ctrl._acquire_once frame acquisition: {e}")
+            # self.camera.close_stream()
 
     def _acquire_scan(self, cancel_event, status_cb, progress_cb, timeout=100000):
         """
@@ -185,7 +187,7 @@ class CameraScanner:
         failed_steps = []
 
         try:
-            self.camera.open_stream()
+            # self.camera.open_stream()
 
             for idx, step in enumerate(self.acq_ctrl.scan_sequence):
                 self.acq_ctrl.hidden_parameters['scan_index'] = idx
@@ -218,8 +220,8 @@ class CameraScanner:
             self.logger.error(f"Unexpected error during scan: {tb}")
             status_cb(f"Scan aborted due to unexpected error: {e}")
 
-        finally:
-            self.camera.close_stream()
+        # finally:
+        #     self.camera.close_stream()
 
         return failed_steps
 
@@ -275,7 +277,7 @@ class CameraScanner:
         acqtimelist = [1, 2, 4, 8, 16, 32, 64, 128] # seconds acqtime
         # acqtimelist = [1, 2, 4, 8, 12, 16, 20, 22, 23, 24, 25, 26, 27, 28]
         
-        self.camera.open_stream()
+        # self.camera.open_stream()
 
         try:
             for acqtime in acqtimelist:
@@ -309,8 +311,11 @@ class CameraScanner:
                 index = len([file for file in os.listdir(dataDir) if filename in file]) 
                 self.acq_ctrl.save_spectrum(image_data, scan_index=index)
         
-        finally:
-            self.camera.close_stream()
+        except Exception as e:
+            self.logger.error(f"Error during custom scan acquisition: {e}")
+            # print(f"Error during custom scan acquisition: {e}")
+        # finally:
+        #     self.camera.close_stream()
 
 
 class AcquisitionControl(QObject):
