@@ -724,10 +724,11 @@ class Microscope(Instrument):
             if attempts == 0:
                 self.micro_log.info("Adjusting camera to 1s acquisition time for laser detection.")
                 self.set_acquisition_time(1)  # Set acquisition time to 1s for laser detection
-            self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
-            self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
-            time.sleep(0.5)
-            attempts += 1
+            else:
+                self.micro_log.debug(f"Laser not found, moving g4 + 1s. Attempt {attempts}/5")
+                self.move_motors({'g4': 1}, backlash=False)  # Move grating 4 two steps
+                time.sleep(0.5)
+                attempts += 1
 
         if result is None:
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
