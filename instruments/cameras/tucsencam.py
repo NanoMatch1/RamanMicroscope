@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import numpy as np
+from PyQt5.QtCore import QObject, pyqtSignal
 # import matplotlib.pyplot as plt
 # from PIL import Image
 # from ctypes import pointer, cast, POINTER
@@ -29,11 +30,14 @@ class CameraHardwareBase:
 
 
 
-class TucsenCamera(Camera):
+class TucsenCamera(QObject):
     _instance_lock = threading.Lock()
     _instance_active = False
 
+    temp_signal = pyqtSignal(float)
+
     def __init__(self, interface, **kwargs):
+        super().__init__()
         with TucsenCamera._instance_lock:
             if TucsenCamera._instance_active:
                 raise RuntimeError("Only one instance of TucsenCamera can be active.")
@@ -54,6 +58,7 @@ class TucsenCamera(Camera):
         self.is_running = False
         self.acquisition_thread = None
         self.command_functions = {}
+        self.cam_temp = None
 
         if self.simulate:
             self.hardware = SimulatedHardware(self)
@@ -62,6 +67,13 @@ class TucsenCamera(Camera):
             self.hardware = RealHardware(self)
             self.logger.info('Using real camera hardware.')
         self.logger.info('Finished TucsenCamera init')
+
+    @synchronized
+    def get_temperature(self):
+        """Returns the current camera temperature and emits a signal for the GUI."""
+        self.cam_temp = float(round(self.hardware.get_temperature(), 2))
+        self.temp_signal.emit(self.cam_temp)
+        return self.cam_temp
 
     @contextmanager
     def camera_session(self):
@@ -105,6 +117,8 @@ class TucsenCamera(Camera):
             while not self.stop_flag.is_set():
                 for index in range(n_frames):
                     new_frame = self.grab_frame(timeout=100000)
+                    self.get_temperature()
+                    
                     if new_frame is None:
                         self.logger.info("New frame is None. Stopping acquisition.")
                         break
@@ -166,7 +180,7 @@ class TucsenCamera(Camera):
             temp = self.hardware.get_temperature()
             if temp < target_temp:
                 image_data = self.grab_frame(timeout=timeout)
-                temp = self.hardware.get_temperature()
+                temp = self.get_temperature()
                 if temp > target_temp:
                     self.logger.info(f"Frame acquired at {temp}°C. Discarding and retrying")
                     continue
@@ -176,11 +190,10 @@ class TucsenCamera(Camera):
                 time.sleep(5)
 
     @synchronized
-    def check_camera_temperature(self, report=True):
-        temp = self.hardware.get_temperature()
-        if report:
-            self.logger.info(f"Camera Temperature: {round(temp, 2)}°C")
-        return temp
+    def check_camera_temperature(self):
+        self.get_temperature()
+        self.logger.info(f"Current camera temperature: {self.cam_temp}°C")
+        return self.cam_temp
 
     @synchronized
     def set_roi(self, roi_tuple=(0, 0, 2048, 2048)):

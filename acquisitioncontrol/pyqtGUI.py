@@ -325,6 +325,7 @@ class MainWindow(QMainWindow):
         self.cancel_event = threading.Event()
         self.scan_complete_signal.connect(self.scan_finished)
         self.progress_update_signal.connect(self.update_progress_bar)
+        self.interface.microscope.camera.temp_signal.connect(self.update_camera_temp)
         # self.peak_spectrum_ready.connect(self.update_peak_plot)
 
         self.init_ui()
@@ -656,6 +657,7 @@ class MainWindow(QMainWindow):
             self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
             self.lbl_laser_power.setText(f"{self.interface.laser.current_power:.2f} W")
             self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_enterance_slit_width:.2f} um")
+            self.lbl_cam_temp.setText(f"{self.interface.microscope.report_camera_temp:.2f} C")
 
             self.btn_toggle_mode.setText(f"Mode: {self.interface.microscope.microscope_mode}")
 
@@ -859,6 +861,7 @@ class MainWindow(QMainWindow):
         self.lbl_spectrometer = QLabel("N/A")
         self.lbl_entrance_slit = QLabel("N/A")
         self.lbl_laser_power = QLabel("N/A")
+        self.lbl_cam_temp = QLabel("N/A")
         sg_form.addRow("Laser wavelength:", self.lbl_laser)
         sg_form.addRow("Grating wavelength:", self.lbl_grating)
         sg_form.addRow("Monochromator wavelength:", self.lbl_monochromator)
@@ -866,6 +869,7 @@ class MainWindow(QMainWindow):
         sg_form.addRow("Entrance slit:", self.lbl_entrance_slit)
         sg_form.addRow("Laser Power", self.lbl_laser_power)
         state_group.setLayout(sg_form)
+        sg_form.addRow("Camera Temp:", self.lbl_cam_temp)
 
         ctrl_state_layout.addWidget(state_group)
 
@@ -973,6 +977,17 @@ class MainWindow(QMainWindow):
 
     def update_progress_bar(self, value: int):
         self.progress_bar.setValue(value)
+
+    def update_camera_temp(self, temp: float):
+        """
+        Update the camera temperature label.
+        This is connected to the camera's temp_signal.
+        """
+        self.lbl_cam_temp.setText(f"{temp:.2f} C")
+        if temp < -15:
+            self.lbl_cam_temp.setStyleSheet("color: green;")
+        else:
+            self.lbl_cam_temp.setStyleSheet("color: red;")
 
     def get_estimated_time(self):
         scan_duration = self.acq_ctrl.update_scan_estimate()

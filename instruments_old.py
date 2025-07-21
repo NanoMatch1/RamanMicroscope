@@ -5,7 +5,6 @@ import time
 import numpy as np
 import os
 import json
-from PyQt5.QtCore import QObject, pyqtSignal
 from copy import copy
 
 import time
@@ -479,7 +478,7 @@ class Instrument(ABC):
 
 
 
-class Microscope(QObject, Instrument):
+class Microscope(Instrument):
 
     implementation_info = [
         'Microscope implementation: v 0.1', 
@@ -488,14 +487,10 @@ class Microscope(QObject, Instrument):
         'Stage positions in microns are held by the microscope in the stage_positions_microns dictionary. Every move XYZ axis command will update the dictionary and call an AcquisitionControl.update_stage_positions to ensure the stage positions are in sync with the acquisition control, which needs them to calculate scan positions.',
         'All @ui_callable methods are callable from the GUI and the CLI. Some commands serve as a bridge for the '
         
-    
     ]
-
-    temp_call = pyqtSignal(str)
 
     def __init__(self, interface, calibration_service=None, controller=None, camera=None, 
                  spectrometer=None, simulate=False):
-        QObject.__init__(self)
         super().__init__()
         self.interface = interface
         self.logger = interface.logger
@@ -503,6 +498,7 @@ class Microscope(QObject, Instrument):
         self.micro_log
         self.laser_detection = LaserDetection(interface=interface) # set up laser calibration capability
         self.laser_wavelength_calibrated = None # this holds the true laser calibration when measured live.
+        self.cam_temp = None
 
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
@@ -1675,6 +1671,11 @@ class Microscope(QObject, Instrument):
         return self.interface.spectrometer.read_enterance_slit()
     
     @property
+    def report_camera_temp(self):
+        '''Returns the current camera temperature.'''
+        return self.camera.get_temperature()
+    
+    @property
     def current_monochromator_wavenumber(self):
         '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
         wavelength_sample = next(iter(self.monochromator_wavelengths.values()))
@@ -1817,7 +1818,9 @@ class Microscope(QObject, Instrument):
     @ui_callable
     def get_detector_temperature(self):
         '''Returns the camera temperature.'''
-        return round(self.camera.check_camera_temperature(), 2)
+        # self.logger.debug
+        cam_temp = self.camera.check_camera_temperature()
+        return cam_temp
     
     @ui_callable
     def set_detector_temperature(self, temperature):
