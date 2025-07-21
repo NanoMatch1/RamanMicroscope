@@ -244,7 +244,7 @@ class SimulatedHardware(CameraHardwareBase):
         return image_data
 
     def get_temperature(self):
-        return np.random.uniform(-8, -6)
+        return np.random.uniform(-20, -13)
 
     def set_exposure_time(self, value):
         try:
