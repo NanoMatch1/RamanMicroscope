@@ -93,6 +93,7 @@ class RealHardware(CameraHardwareBase):
         self.set_target_temperature(-20)
         self.set_fan_speed(3)
 
+
     def open_stream(self):
         TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
         TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
@@ -104,16 +105,16 @@ class RealHardware(CameraHardwareBase):
 
 
     def grab_frame(self, timeout=100000):
-        ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self._frame), timeout)
-        if ret != TUCAMRET.TUCAMRET_SUCCESS.value:
+        ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame), timeout)
+        if ret != TUCAMRET.TUCAMRET_SUCCESS:
             self.camera.logger.warning(f"Frame acquisition timeout or error. Return code: {ret}")
             return None
 
-        if not self._frame.pBuffer:
+        if not self.data.m_frame.pBuffer:
             self.camera.logger.error("Frame buffer pointer is null.")
             return None
 
-        if self._frame.usWidth == 0 or self._frame.usHeight == 0:
+        if self.data.m_frame.usWidth == 0 or self.data.m_frame.usHeight == 0:
             self.camera.logger.error("Invalid frame dimensions received.")
             return None
 

@@ -109,6 +109,7 @@ class MillenniaLaser(Laser):
     def __init__(self, interface, port='COM13', baudrate=9600, simulate=False):
         super().__init__()
         self.interface = interface
+        self.logger = interface.logger.getChild("MillenniaLaser")
         self.port = port
         self.baudrate = baudrate
         self.simulate = simulate or interface.simulate
@@ -125,7 +126,7 @@ class MillenniaLaser(Laser):
             'reconnectlaser': self.reconnect,
             'laseron': self.turn_on,
             'laseroff': self.turn_off,
-            'setpower': self.set_power,
+            'lasersetpower': self.set_power,
             'getpower': self.get_power,
             'warmup': self.get_warmup_status,
             'identify': self.identify,
@@ -279,13 +280,15 @@ class MillenniaLaser(Laser):
         try:
             power_watts = round(float(power_watts), 2)
         except ValueError:
-            raise ValueError("Power must be a numeric value.")
+            self.logger.info("Power must be a numeric value.")
+            return
 
         if power_watts < 0 or power_watts > 6:
-            raise ValueError("Power must be between 0 and 6 Watts.")
+            self.logger.info("Power must be between 0 and 6 Watts.")
+            return
         
         response = self.send_command('P:{}'.format(power_watts))
-        print("Power set to {} Watts.".format(power_watts))
+        self.logger.info("Power set to {} Watts.".format(power_watts))
         self.laser_setpoint = power_watts
         self.current_power = power_watts
         return response

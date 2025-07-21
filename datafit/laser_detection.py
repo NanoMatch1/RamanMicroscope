@@ -181,6 +181,7 @@ class LaserDetection(QObject):
         dataY = self.baseline_data(dataY, show_plot=show_plot, subtract_median=True)
         dataX = wavelength_axis
         fitter = AutoPeakFitter(dataX, dataY, show_plot=show_plot)
+        breakpoint()
         peak = fitter.run(initial_index=laser_position[0])
 
         if self.logger.level <= 9 or show_plot == True:

@@ -5,6 +5,7 @@ import time
 import numpy as np
 import os
 import json
+from PyQt5.QtCore import QObject, pyqtSignal
 from copy import copy
 
 import time
@@ -478,7 +479,7 @@ class Instrument(ABC):
 
 
 
-class Microscope(Instrument):
+class Microscope(QObject, Instrument):
 
     implementation_info = [
         'Microscope implementation: v 0.1', 
@@ -490,8 +491,11 @@ class Microscope(Instrument):
     
     ]
 
+    temp_call = pyqtSignal(str)
+
     def __init__(self, interface, calibration_service=None, controller=None, camera=None, 
                  spectrometer=None, simulate=False):
+        QObject.__init__(self)
         super().__init__()
         self.interface = interface
         self.logger = interface.logger
@@ -639,6 +643,7 @@ class Microscope(Instrument):
             # laser commands
             'low': self.low_power,
             'high': self.high_power,
+            'setpower': self.set_laser_power,
         }
 
         self.current_shift = 0
@@ -721,7 +726,7 @@ class Microscope(Instrument):
 
             self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
             self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
-            time.sleep(0.2)
+            time.sleep(0.5)
             attempts += 1
 
         if result is None:
@@ -1722,6 +1727,13 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_laser_power(self, value):
+        '''Sets the laser power to the specified value.'''
+        try:
+            value = float(value)
+        except ValueError:
+            self.logger.info("Invalid laser power {}. Must be a number.".format(value))
+            return
+        
         self.interface.laser.set_power(value)
         self.interface.acq_ctrl.general_parameters['laser_power'] = value
 
@@ -1869,7 +1881,6 @@ class Microscope(Instrument):
         '''Reads the current entrance slit width of the spectrometer.'''
         try:
             slit_width = self.interface.spectrometer.read_enterance_slit()
-            breakpoint()
             return slit_width
         except Exception as e:
             self.micro_log.error(f"Error reading entrance slit: {e}")

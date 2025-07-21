@@ -83,6 +83,10 @@ class TucsenCamera(Camera):
 
     @synchronized
     def open_stream(self):
+        if self.is_running:
+            self.logger.info("Camera is already running. Please stop acquisition before starting a new one!")
+            return
+        
         self.is_running = True
         self.hardware.open_stream()
 
@@ -91,12 +95,8 @@ class TucsenCamera(Camera):
         self.hardware.close_stream()
         self.is_running = False
 
-    @synchronized
     def start_continuous_acquisition(self, report=False):
-        if self.is_running:
-            self.logger.info("Camera is already running. Please stop acquisition before starting a continuous acquisition!")
-            return
-
+        """Starts continuous acquisition on the camera."""
         self.open_stream()
         n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
 
@@ -133,6 +133,7 @@ class TucsenCamera(Camera):
         self.close_stream()
         self.logger.info("Continuous acquisition stopped.")
 
+    @synchronized
     def initialise(self):
         self.save_transient_spectrum_cb = self.interface.acq_ctrl.save_spectrum_transient
         self.hardware.initialise()
@@ -142,13 +143,16 @@ class TucsenCamera(Camera):
         self.hardware.uninit_api()
         self.hardware.initialise()
 
+    @synchronized
     def _open_camera(self):
         self.hardware.open_camera()
 
+    @synchronized
     def _close_camera(self):
         self.hardware.close_camera()
         self.logger.info("Close the camera success")
 
+    @synchronized
     def _uninit_api(self):
         self.hardware.uninit_api()
 
@@ -171,12 +175,14 @@ class TucsenCamera(Camera):
                 self.logger.info(f"Camera too hot ({temp}°C). Waiting...")
                 time.sleep(5)
 
+    @synchronized
     def check_camera_temperature(self, report=True):
         temp = self.hardware.get_temperature()
         if report:
             self.logger.info(f"Camera Temperature: {round(temp, 2)}°C")
         return temp
 
+    @synchronized
     def set_roi(self, roi_tuple=(0, 0, 2048, 2048)):
         # x1, y1, x2, y2 = roi_tuple
         # if x1 < 0 or y1 < 0 or x2 > 2048 or y2 > 2048 or x2 <= x1 or y2 <= y1:
@@ -196,6 +202,7 @@ class TucsenCamera(Camera):
         self.hardware.set_roi(roi_tuple)
         self.roi = roi_tuple
 
+    @synchronized
     def get_fan_speed(self, report=True):
         speed = self.hardware.get_fan_speed()
         if report:
@@ -203,37 +210,46 @@ class TucsenCamera(Camera):
             self.logger.info(f"Current fan speed: {speed} ({speed_name})")
         return speed
 
-    def enable_auto_temperature_control(self, enable: bool, report: bool = True):
-        self.hardware.enable_auto_temperature_control(enable)
-        if report:
-            state = "enabled" if enable else "disabled"
-            self.logger.info(f"Automatic temperature control {state}.")
+    # @synchronized
+    # def enable_auto_temperature_control(self, enable: bool, report: bool = True):
+    #     self.hardware.enable_auto_temperature_control(enable)
+    #     if report:
+    #         state = "enabled" if enable else "disabled"
+    #         self.logger.info(f"Automatic temperature control {state}.")
 
+    @synchronized
     def set_target_temperature(self, target_celsius: float, report: bool = True):
         self.hardware.set_target_temperature(target_celsius)
         if report:
             self.logger.info(f"Target temperature set to {target_celsius}°C.")
 
+    @synchronized
     def set_exposure_time(self, value):
         self.hardware.set_exposure_time(value)
         self.logger.info(f"Set exposure to {value} seconds.")
 
+    @synchronized
     def _set_image_and_gain(self, img_mode=1, gain_level=0):
         self.hardware.set_image_and_gain(img_mode, gain_level)
 
+    @synchronized
     def _set_image_processing(self, value=0):
         self.hardware.set_image_processing(value)
 
+    @synchronized
     def _set_denoise(self, value=0):
         self.hardware.set_denoise(value)
 
+    @synchronized
     def _set_resolution(self, resolution=1):
         self.hardware.set_resolution(resolution)
 
+    @synchronized
     def set_fan_speed(self, speed=3, report=True):
         self.hardware.set_fan_speed(speed)
         if report:
             self.logger.info(f"Fan speed set to {speed}.")
 
+    @synchronized
     def _set_hardware_binning(self, binning_level=1):
         self.hardware.set_hardware_binning(binning_level)
