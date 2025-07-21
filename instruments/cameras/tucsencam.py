@@ -109,7 +109,7 @@ class TucsenCamera(QObject):
 
     def start_continuous_acquisition(self, report=False):
         """Starts continuous acquisition on the camera."""
-        self.open_stream()
+        # self.open_stream()
         n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
 
         def continuous_task():
@@ -144,7 +144,7 @@ class TucsenCamera(QObject):
         if self.acquisition_thread and self.acquisition_thread.is_alive():
             self.acquisition_thread.join(timeout=2)
             self.acquisition_thread = None
-        self.close_stream()
+        # self.close_stream()
         self.logger.info("Continuous acquisition stopped.")
 
     @synchronized
