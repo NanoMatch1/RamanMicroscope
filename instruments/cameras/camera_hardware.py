@@ -76,6 +76,7 @@ class RealHardware(CameraHardwareBase):
         self.interface = camera.interface
         self.logger = camera.logger.getChild('RealHardware')
         self.scriptDir = self.interface.scriptDir
+        self._stream_open = False
 
         self.data = TucamData()
 
@@ -93,15 +94,21 @@ class RealHardware(CameraHardwareBase):
         self.set_target_temperature(-20)
         self.set_fan_speed(3)
 
+        self.open_stream()
 
     def open_stream(self):
+        if self._stream_open:
+            self.camera.logger.debug(f"tucam.open_stream: Stream is already open.")
+            return
         TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
         TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
+        self._stream_open = True
 
     def close_stream(self):
         TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
         TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
         TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
+        self._stream_open = False
 
 
     def grab_frame(self, timeout=100000):
@@ -244,7 +251,7 @@ class SimulatedHardware(CameraHardwareBase):
         return image_data
 
     def get_temperature(self):
-        return np.random.uniform(-20, -14.5)
+        return np.random.uniform(-20, -16)
 
     def set_exposure_time(self, value):
         try:
