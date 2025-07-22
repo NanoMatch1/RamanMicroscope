@@ -991,9 +991,19 @@ class MainWindow(QMainWindow):
             self.lbl_cam_temp.setStyleSheet("color: red;")
 
     def get_estimated_time(self):
-        scan_duration = self.acq_ctrl.update_scan_estimate()
+        try:
+            scan_duration = self.acq_ctrl.update_scan_estimate()
+            if scan_duration is None:
+                return "N/A"
 
-        return f"{scan_duration['duration']} {scan_duration['units']}"
+            scanstring = f"{scan_duration['duration']} {scan_duration['units']}"
+        except Exception as e:
+            self.logger.error(f"Error estimating scan time: {e}")
+            scanstring = "Error estimating time"
+            traceback.print_exc()
+            return scanstring
+        
+        return scanstring
 
     def handle_command(self, text):
         self.send_cli_command(text)
