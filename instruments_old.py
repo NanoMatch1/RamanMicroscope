@@ -542,6 +542,7 @@ class Microscope(Instrument):
 
         self.command_functions = {
             'nyi': self.not_yet_implemented,
+            'threads': self.list_threads,
             # calibration commands
             'pscal': self.toggle_pseudocal,
             'livecal': self.toggle_live_calibration,
@@ -659,6 +660,17 @@ class Microscope(Instrument):
         if command not in self.command_functions:
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
+    
+    @ui_callable
+    def list_threads(self):
+        """
+        Lists all active threads in the current process.
+        Returns a list of thread names.
+        """
+        threads = threading.enumerate()
+        thread_names = [thread.name for thread in threads]
+        self.logger.info(f"Active threads:"{thread_names})
+        return thread_names
     
     def capture_instrument_state(self):
         '''Not yet implemented. #TODO
@@ -934,7 +946,7 @@ class Microscope(Instrument):
             motor_positions = instrument_state.get('motor_dict', {})
             stage_positions = instrument_state.get('stage_positions', {})
             self.micro_log.info('Instrument state loaded from file')
-            self.write_motor_positions(motor_dict=motor_positions)
+            # self.write_motor_positions(motor_dict=motor_positions) #TODO: reenable
             self.stage_positions_microns = stage_positions
             
             self.get_all_current_wavelengths()

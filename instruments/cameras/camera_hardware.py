@@ -254,7 +254,7 @@ class RealHardware(CameraHardwareBase):
         if  Idx >= self.TUCAMINIT.uiCamCount:
             return
 
-        print('Opening camera...')
+        self.logger.info('Opening camera...')
         self.TUCAMOPEN = TUCAM_OPEN(Idx, 0)
 
         ret = TUCAM_Dev_Open(pointer(self.TUCAMOPEN))
