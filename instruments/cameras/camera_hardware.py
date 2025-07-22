@@ -77,6 +77,7 @@ class RealHardware(CameraHardwareBase):
         self.logger = camera.logger.getChild('RealHardware')
         self.scriptDir = self.interface.scriptDir
         self._stream_open = False
+        self.success_flag = TUCAMRET.TUCAMRET_SUCCESS
 
         self.data = TucamData()
 
@@ -152,7 +153,12 @@ class RealHardware(CameraHardwareBase):
 
     def set_exposure_time(self, value):
         value = float(value) * 1000
-        TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
+        ret = TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
+        if ret != TUCAMRET.TUCAMRET_SUCCESS:
+            self.logger.error(f"Failed to set exposure time: {ret}")
+        else:
+            self.logger.info(f"Exposure time set to {value} ms")
+        breakpoint()
 
     def set_image_and_gain(self, img_mode, gain_level):
         TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
