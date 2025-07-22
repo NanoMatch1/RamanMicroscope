@@ -877,6 +877,7 @@ class MainWindow(QMainWindow):
 
         # Scan positions / stage positions
         pos_group_layout = QHBoxLayout()
+        # estimated_time = self.get_estimated_time()
 
         # Scan pos
         scan_pos_group = QGroupBox("Positions / Estimate")
@@ -884,7 +885,7 @@ class MainWindow(QMainWindow):
         self.lbl_mode = QLabel(self.scan_mode.capitalize())
         self.lbl_start = QLabel(str(self.start_pos))
         self.lbl_stop = QLabel(str(self.stop_pos))
-        self.lbl_est = QLabel(self.get_estimated_time())
+        self.lbl_est = QLabel('') # TODO: set this to the estimated time once the bug is fixed
         pl.addRow("Mode:", self.lbl_mode)
         pl.addRow("Start Pos:", self.lbl_start)
         pl.addRow("Stop Pos", self.lbl_stop)
