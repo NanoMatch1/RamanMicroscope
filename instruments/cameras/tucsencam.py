@@ -80,7 +80,7 @@ class TucsenCamera(QObject):
         '''Intended to be used with future debugging. Not to be used in production code.
         Wraps the camera operations in a context manager to ensure that the stream is opened and closed properly.
         Note: will break if the camera is already running because open_stream() is managed strictly by the camera class.'''
-        
+
         with self.camera_lock:
             try:
                 self.hardware.open_stream()
@@ -117,25 +117,30 @@ class TucsenCamera(QObject):
         n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
 
         def continuous_task():
-            self.stop_flag.clear()
-            while not self.stop_flag.is_set():
-                for index in range(n_frames):
-                    if self.stop_flag.is_set():
-                        self.logger.info("Stop flag set. Stopping acquisition.")
-                        break
-                    new_frame = self.grab_frame(timeout=100000)
-                    self.get_temperature()
-                    
-                    if new_frame is None:
-                        self.logger.info("New frame is None. Stopping acquisition.")
-                        break
-                    if index == 0:
-                        data = new_frame.astype(np.float32)
-                    else:
-                        data = (data + new_frame.astype(np.float32)) / 2
-                    wavelengths = self.interface.microscope.wavelength_axis
-                    self.save_transient_spectrum_cb(data, wavelengths)
-                    time.sleep(0.01)
+            try:
+                self.stop_flag.clear()
+                while not self.stop_flag.is_set():
+                    for index in range(n_frames):
+                        if self.stop_flag.is_set():
+                            self.logger.info("Stop flag set. Stopping acquisition.")
+                            return
+                        new_frame = self.grab_frame(timeout=100000)
+                        self.get_temperature()
+                        
+                        if new_frame is None:
+                            self.logger.info("New frame is None. Stopping acquisition.")
+                            break
+                        if index == 0:
+                            data = new_frame.astype(np.float32)
+                        else:
+                            data = (data + new_frame.astype(np.float32)) / 2
+                        wavelengths = self.interface.microscope.wavelength_axis
+                        self.save_transient_spectrum_cb(data, wavelengths)
+                        time.sleep(0.01)
+
+            except Exception as e:
+                self.logger.error(f"Acquisition thread crashed: {e}")
+                self.stop_flag.set()
 
         if self.acquisition_thread and self.acquisition_thread.is_alive():
             self.logger.warning("Acquisition thread already running.")
