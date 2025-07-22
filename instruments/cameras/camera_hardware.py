@@ -77,13 +77,16 @@ class RealHardware(CameraHardwareBase):
         self.logger = camera.logger.getChild('RealHardware')
         self.scriptDir = self.interface.scriptDir
         self._stream_open = False
-        self.success_flag = TUCAMRET.TUCAMRET_SUCCESS
+        self.conflag = TUCAMRET.TUCAMRET_SUCCESS
 
         self.data = TucamData()
 
     def initialise(self):
         self.TUCAMINIT = TUCAM_INIT(0, self.scriptDir.encode('utf-8'))
-        TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
+        ret = TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
+        if ret != self.conflag:
+            self.logger.error(f"Failed to initialize TUCam API: {ret}")
+            return
 
         self.open_camera()
         self.set_hardware_binning()
@@ -98,32 +101,50 @@ class RealHardware(CameraHardwareBase):
 
         self.open_stream()
 
+
     def open_stream(self):
         if self._stream_open:
             self.camera.logger.debug(f"tucam.open_stream: Stream is already open.")
             return
-        TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
-        TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
+        ret_buff = TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
+        if ret_buff != self.conflag:
+            self.camera.logger.error(f"TUCAM: Failed to allocate buffer: {ret_buff}")
+            return
+    
+        ret_start = TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, self.data.m_capmode.TUCCM_SEQUENCE.value)
+        if ret_start != self.conflag:
+            self.camera.logger.error(f"TUCAM: Failed to start capture: {ret_start}")
+            return
+
         self._stream_open = True
 
     def close_stream(self):
-        TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
-        TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
+        ret_buff = TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
+        if ret_buff != self.conflag:
+            self.camera.logger.error(f"TUCAM: Failed to abort wait for buffer: {ret_buff}")
+
+        ret_stop = TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
+        if ret_stop != self.conflag:
+            self.camera.logger.error(f"TUCAM: Failed to stop capture: {ret_stop}")
+
+        ret_release = TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
+        if ret_release != self.conflag:
+            self.camera.logger.error(f"TUCAM: Failed to release buffer: {ret_release}")
+
         self._stream_open = False
 
     def grab_frame(self, timeout=100000):
         ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame), timeout)
         if ret != TUCAMRET.TUCAMRET_SUCCESS:
-            self.camera.logger.warning(f"Frame acquisition timeout or error. Return code: {ret}")
+            self.camera.logger.warning(f"TUCAM: Frame acquisition timeout or error. Return code: {ret}")
             return None
 
         if not self.data.m_frame.pBuffer:
-            self.camera.logger.error("Frame buffer pointer is null.")
+            self.camera.logger.error("TUCAM: Frame buffer pointer is null.")
             return None
 
         if self.data.m_frame.usWidth == 0 or self.data.m_frame.usHeight == 0:
-            self.camera.logger.error("Invalid frame dimensions received.")
+            self.camera.logger.error("TUCAM: Invalid frame dimensions received.")
             return None
 
         image = self._frame_to_numpy()
