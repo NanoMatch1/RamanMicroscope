@@ -669,8 +669,9 @@ class Microscope(Instrument):
         """
         threads = threading.enumerate()
         thread_names = [thread.name for thread in threads]
-        self.logger.info(f"Active threads:"{thread_names})
-        return thread_names
+        thread_string = '\n'.join(thread_names)
+        self.logger.info(f"Active threads:\n{thread_string}")
+        return 
     
     def capture_instrument_state(self):
         '''Not yet implemented. #TODO
