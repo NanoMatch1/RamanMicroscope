@@ -77,6 +77,10 @@ class TucsenCamera(QObject):
 
     @contextmanager
     def camera_session(self):
+        '''Intended to be used with future debugging. Not to be used in production code.
+        Wraps the camera operations in a context manager to ensure that the stream is opened and closed properly.
+        Note: will break if the camera is already running because open_stream() is managed strictly by the camera class.'''
+        
         with self.camera_lock:
             try:
                 self.hardware.open_stream()
@@ -116,6 +120,9 @@ class TucsenCamera(QObject):
             self.stop_flag.clear()
             while not self.stop_flag.is_set():
                 for index in range(n_frames):
+                    if self.stop_flag.is_set():
+                        self.logger.info("Stop flag set. Stopping acquisition.")
+                        break
                     new_frame = self.grab_frame(timeout=100000)
                     self.get_temperature()
                     

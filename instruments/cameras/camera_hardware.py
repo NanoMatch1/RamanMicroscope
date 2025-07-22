@@ -86,6 +86,7 @@ class RealHardware(CameraHardwareBase):
 
         self.open_camera()
         self.set_hardware_binning()
+        self.set_auto_exposure(0)
         self.set_exposure_time(self.camera.acqtime)
         self.set_image_processing(0)
         self.set_resolution(1)
@@ -109,7 +110,6 @@ class RealHardware(CameraHardwareBase):
         TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
         TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
         self._stream_open = False
-
 
     def grab_frame(self, timeout=100000):
         ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame), timeout)
@@ -144,10 +144,14 @@ class RealHardware(CameraHardwareBase):
         except Exception as e:
             self.camera.logger.error(f"Reshape failed: {e}")
             return None
+        
+    def set_auto_exposure(self, state=0):
+        """ Set the auto exposure state of the camera.
+        Disabled by default. """
+        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, state)
 
     def set_exposure_time(self, value):
         value = float(value) * 1000
-        TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
         TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
 
     def set_image_and_gain(self, img_mode, gain_level):
