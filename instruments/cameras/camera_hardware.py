@@ -301,13 +301,13 @@ class SimulatedHardware(CameraHardwareBase):
         self.camera.save_transient_spectrum_cb = self.interface.acq_ctrl.save_spectrum_transient
 
     def open_stream(self):
-        self.logger.debug("[SIM] open_stream() called.")
+        self.logger.info("[SIM] open_stream() called.")
 
     def close_stream(self):
-        self.logger.debug("[SIM] close_stream() called.")
+        self.logger.info("[SIM] close_stream() called.")
 
     def grab_frame(self, timeout=100000):
-        self.logger.debug("[SIM] grab_frame() called.")
+        self.logger.coms("[SIM] grab_frame() called.")
         image_data = self._generate_simulated_image()
         time.sleep(self.acqtime)
         return image_data
@@ -395,7 +395,7 @@ class SimulatedHardware(CameraHardwareBase):
 
         scale = np.abs(np.random.normal(peak_height, peak_height * peak_sigma))
         laser_signal *= scale
-        self.logger.debug(f"[SIM] Simulated laser wavelength: {wavelength_axis[laser_position] if wavelength_axis is not None else laser_position} nm")
+        self.logger.coms(f"[SIM] Simulated laser wavelength: {wavelength_axis[laser_position] if wavelength_axis is not None else laser_position} nm")
         return laser_signal
 
     def _generate_simulated_image(self, width=2048, height=148):

@@ -29,6 +29,45 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 import numpy as np
 import os
+import functools
+
+# def try_except(func):
+#     """
+#     Decorator to catch exceptions in a function and log them.
+#     """
+#     @functools.wraps(func)
+#     def wrapper(self, *args, **kwargs):
+#         try:
+#             if not args and not kwargs:
+#                 return func(self)
+#             return func(self, *args, **kwargs)
+#         except Exception as e:
+#             self.logger.error(f"Exception in {func.__qualname__}: {e}")
+#             self.logger.debug(traceback.format_exc())
+#             return None
+#     return wrapper
+
+def catch_and_log_exceptions(logger=None, return_on_error='Failed'):
+    """
+    Decorator that wraps a function with a try/except block and logs the exception.
+    
+    Parameters:
+        logger: optional logger instance (uses default if None)
+        return_on_error: value to return if an exception is raised (default: None)
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            # used_logger = logger or logging.getLogger(func.__module__)
+            self.logger.info(f"Calling {func.__qualname__} with args: {args}, kwargs: {kwargs}")
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                self.logger.error(f"Exception in {func.__qualname__}: {e}")
+                self.logger.debug(traceback.format_exc())
+                return return_on_error
+        return wrapper
+    return decorator
 
 
 def run_in_thread_and_refresh(func):
@@ -36,6 +75,7 @@ def run_in_thread_and_refresh(func):
     Decorator that runs `func(self, *args, **kwargs)` in a daemon
     thread and, when it finishes, schedules self.refresh_ui() on
     the Qt main loop.
+    is thread locked, so it can only be called once at a time.
     """
     def wrapper(self, *args, **kwargs):
         if self.__class__ != MainWindow:
@@ -103,6 +143,7 @@ class LiveDataViewer(QWidget):
         super().__init__(parent)
         self.interface = interface
         self.logger = interface.logger.getChild("LiveDataViewer")
+        self.logger.info("Initializing LiveDataViewer")
         self.current_image = None
         self.sel_y0 = 0
         self.sel_y1 = None
@@ -324,6 +365,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.acq_ctrl = acq_ctrl
         self.interface = interface
+        self.logger = interface.logger.getChild("MainWindow")
         self.setWindowTitle("Acquisition GUI")
         self.resize(1200, 800)
         self.param_entries = {}
@@ -429,6 +471,9 @@ class MainWindow(QMainWindow):
         Called when the user clicks 'Run Scan'. Builds the scan, asks for confirmation,
         then launches the scan in a background thread.
         """
+        if self.interface.camera.is_running:
+            self.send_cli_command("stop")
+
         scan_sequence = self.acq_ctrl.build_scan_sequence()
         if not self.confirm_scan(scan_sequence):
             return
@@ -447,12 +492,25 @@ class MainWindow(QMainWindow):
             self.progress_update_signal.emit(value)
         # wrapper to handel scan and emit signal to end
         def run_and_emit():
-            self.acq_ctrl.acquire_scan(
-                self.cancel_event,
-                self.update_status,
-                thread_safe_progress_callback
-            )
-            self.scan_complete_signal.emit()  # emits safely from any thread
+            if not self.gui_lock.acquire(blocking=False):
+                self.logger.warning(f"Microscope busy, unable to start scan.")
+                return
+            try:
+                self.acq_ctrl.acquire_scan(
+                    self.cancel_event,
+                    self.update_status,
+                    thread_safe_progress_callback
+                )
+                self.scan_complete_signal.emit()  # emits safely from any thread
+                # release the lock after scan is done
+            except Exception as e:
+                error_details = traceback.format_exc()
+                result = f"Error during scan: \n{e}\n{error_details}"
+                self.logger.error(result)
+                self.update_status(result)
+            finally:
+                self.gui_lock.release()
+
 
         self.scan_thread = threading.Thread(target=run_and_emit)
         self.scan_thread.start()
@@ -1038,8 +1096,10 @@ class MainWindow(QMainWindow):
             self.logger.info(f"Microscope mode changed to {new_mode}.")
             self.refresh_ui()
 
-
+    # @catch_and_log_exceptions
+    # @try_except
     def open_developer_window(self):
+        # try:
         self.dev_window = QWidget()
         self.dev_window.setWindowTitle("Developer Options")
         layout = QVBoxLayout(self.dev_window)
@@ -1052,6 +1112,10 @@ class MainWindow(QMainWindow):
         self.chk_apply_livecal.setChecked(self.interface.microscope.apply_live_calibration)
         self.chk_apply_livecal.toggled.connect(self.toggle_live_calibration)
 
+        self.chk_apply_debug = QCheckBox("Debug Mode")
+        self.chk_apply_debug.setChecked(self.interface.microscope.apply_debug_mode)
+        self.chk_apply_debug.toggled.connect(self.toggle_debug_mode)
+        
         # add a textbox for log level control
         # self.log_level_input = QLineEdit()
         # self.log_level_input.setPlaceholderText(str(self.interface.logger.level))
@@ -1059,19 +1123,26 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.chk_apply_pseudocal)
         layout.addWidget(self.chk_apply_livecal)
+        layout.addWidget(self.chk_apply_debug)
 
         self.dev_window.setLayout(layout)
         self.dev_window.resize(300, 100)
         self.dev_window.show()
+        # except Exception as e:
+            # self.logger.error(f"Error opening developer window: {e}")
+            # traceback.print_exc()
     
     def toggle_pseudocal(self, checked):
         self.send_cli_command('pscal')
-        self.refresh_ui()  # Update lights
+        # self.refresh_ui()  # Update lights
 
     def toggle_live_calibration(self, checked):
         self.send_cli_command('livecal')
-        self.refresh_ui()
+        # self.refresh_ui()
 
+    def toggle_debug_mode(self, checked):
+        self.send_cli_command('debugmode')
+        # self.refresh_ui()
 
     def closeEvent(self, event):
         try:

@@ -23,8 +23,16 @@ def thread_locked(method):
     Decorator to ensure that a method is thread-safe by acquiring a lock. Any method decorated with this will be safe to call from multiple threads.
     """
     def wrapper(self, *args, **kwargs):
-        with self.lock:
+        # with self.lock:
+        if not self.lock.acquire(blocking=False):
+            return " > Error: Method is currently locked by another thread. Please try again later."
+        try:
             return method(self, *args, **kwargs)
+        except Exception as e:
+            error_details = traceback.format_exc()
+            return f" > Error: {e}\n{error_details}"
+        finally:
+            self.lock.release()
     return wrapper
 
 class Interface:
@@ -52,7 +60,7 @@ class Interface:
         self.baud = baud
         self.debug_skip = debug_skip
         self.connected_to_camera = False
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         self.scriptDir = os.path.dirname(os.path.realpath(__file__))
         self.dataDir = os.path.join(self.scriptDir, 'data')
@@ -136,7 +144,7 @@ class Interface:
         else:
             self.logger.modify_handler(handler, level)
         
-
+    @thread_locked
     def cli(self):
         '''Command line interface for the microscope control.'''
         while True:
@@ -202,6 +210,12 @@ class Interface:
         """
         cmd = command.strip()
         result = self._command_handler(cmd)
+        # if result is None:
+        #     result = " > No result returned from command"
+        # else:
+        if result not in [None, '', True, False]:
+            result = str(result).strip()
+            self.logger.info(f"[GUI RES] {result}")
         self.save_state()
 
         return result
@@ -349,7 +363,7 @@ class Interface:
 
     #     return motion_commands
 
-    @thread_locked
+    # @thread_locked
     @heartbeat
     def _command_handler(self, command:str):
         '''Handles the command and arguments passed to the Interface'''
@@ -387,16 +401,12 @@ class Interface:
 
         else:
             try:
-
                 result = self.controller.send_command(command)
             except Exception as e:
                 error_details = traceback.format_exc()
                 result = f" > Error: {e}\n{error_details}"
             return result
             # return f" > Unknown command: {funct}"
-
-         # Detail: * operator unpacks the list - since an empty list has nothing to unpack, nothi
-         # ng is passed to the function. This avoids a TypeError -41861
     
     def _command_parser(self, command:str):
         if command == '':
