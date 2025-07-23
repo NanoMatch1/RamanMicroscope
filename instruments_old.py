@@ -18,6 +18,23 @@ from functools import wraps
 
 from datafit.laser_detection import LaserDetection
 
+
+def debug_return(success_criteria=lambda x: x is True and x is not None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            result = func(self, *args, **kwargs)
+            if self.apply_debug_mode:
+                func_name = f"{self.__class__.__name__}.{func.__name__}"
+                if not success_criteria(result):
+                    self.micro_log.warning(f"[WARNING] {func_name} returned suspicious result: {result}")
+                else:
+                    self.micro_log.coms(f"{func_name} returned OK: {result}")
+            return result
+        return wrapper
+    return decorator
+
+
 def apply_pseudocal_forwards(func):
     def wrapper(self, wavelength, *args, **kwargs):
         if getattr(self, 'apply_pseudocal', False) is True:
@@ -63,6 +80,7 @@ def ui_callable(func):
     """
     func.is_ui_process_callable = True
     return func
+
 
 def string_to_float(value, message=''):
     try:
@@ -511,6 +529,7 @@ class Microscope(Instrument):
         self.simulate = simulate
         self.apply_pseudocal = False  # Whether to apply pseudocalibration corrections
         self.apply_live_calibration = True
+        self.apply_debug_mode = True  # Whether to apply debug mode, which logs all commands and responses
         self.laser_calibrated = False
 
         self.microscope_mode = 'ramanmode'
@@ -546,6 +565,7 @@ class Microscope(Instrument):
             # calibration commands
             'pscal': self.toggle_pseudocal,
             'livecal': self.toggle_live_calibration,
+            'debugmode': self.toggle_debug_mode,
             # general commands
             'wai': self.where_am_i,
             'rg': self.get_spectrometer_position,
@@ -634,7 +654,7 @@ class Microscope(Instrument):
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
-            'closecamera': self.close_camera_connection,
+            # 'closecamera': self.close_camera_connection,
             'checkfan': self.check_camera_fan_speed,
 
             # laser commands
@@ -669,10 +689,14 @@ class Microscope(Instrument):
         """
         threads = threading.enumerate()
         thread_names = [thread.name for thread in threads]
-        thread_string = '\n'.join(thread_names)
-        self.logger.info(f"Active threads:\n{thread_string}")
-        return 
-    
+        self.logger.info(f"Active threads:")
+        for thread in threads:
+            if thread.is_alive():
+                self.logger.info(f"{thread.name} is alive")
+            else:
+                self.logger.info(f"{thread.name} is not alive")
+        return thread_names
+
     def capture_instrument_state(self):
         '''Not yet implemented. #TODO
         Capture the current state of the instrument by getting all relavent attributes.
@@ -705,10 +729,7 @@ class Microscope(Instrument):
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
         if self.camera.is_running:
-            run_camera = True
-            self.stop_continuous_acquisition()  # Stop camera if it is running to avoid interference with laser detection
-        else:
-            run_camera = False
+            self.stop_continuous_acquisition() # Stop camera if running to avoid conflicts during calibration
 
         estimated_wavelength = self.laser_wavelengths.get('l1')
         
@@ -727,7 +748,6 @@ class Microscope(Instrument):
 
         attempts = 0
         while attempts < 5:
-
             image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
             result = self.laser_detection.detect_laser(image_data, wavelength_axis) # returns "Peak" object with pos and height attributes, or None if no peak is found
             if result is not None:
@@ -738,7 +758,7 @@ class Microscope(Instrument):
                 self.micro_log.info("Adjusting camera to 1s acquisition time for laser detection.")
                 self.set_acquisition_time(1)  # Set acquisition time to 1s for laser detection
             else:
-                self.micro_log.debug(f"Laser not found, moving g4 + 1s. Attempt {attempts}/5")
+                self.micro_log.debug(f"Laser not found, moving g4 + 1. Attempt {attempts}/5")
                 self.move_motors({'g4': 1}, backlash=False)  # Move grating 4 two steps
                 time.sleep(0.5)
                 attempts += 1
@@ -758,8 +778,6 @@ class Microscope(Instrument):
         # self.restore_motor_state(original_motor_positions) 
         # self.go_to_spectrometer_wavelength(original_spec_wl)
 
-        if run_camera:
-            self.start_continuous_acquisition()  # Restart camera if it was running
         self.micro_log.info(f"Live laser calibration complete. Calibrated wavelength: {calibrated_wavelength}")
 
         return calibrated_wavelength
@@ -839,6 +857,20 @@ class Microscope(Instrument):
             self.micro_log.error('Invalid argument for toggle_live_calibration. Use True or False to set the state.')
         status = "enabled" if self.apply_live_calibration else "disabled"
         self.micro_log.info(f"Live calibration {status}")
+
+        return status
+    
+    @ui_callable
+    def toggle_debug_mode(self, *args):
+        '''Toggle the debug mode. In debug mode, all commands and responses are logged.'''
+        if not args:
+            self.apply_debug_mode = not self.apply_debug_mode
+        elif len(args) == 1 and isinstance(args[0], bool):
+            self.apply_debug_mode = args[0]
+        else:
+            self.micro_log.error('Invalid argument for toggle_debug_mode. Use True or False to set the state.')
+        status = "enabled" if self.apply_debug_mode else "disabled"
+        self.micro_log.info(f"DEBUG MODE {status}")
 
         return status
     
@@ -1714,10 +1746,10 @@ class Microscope(Instrument):
 
     #? camera commands
 
-    @ui_callable
-    def close_camera_connection(self):
-        '''Closes the camera connection.'''
-        self.camera.close_camera_connection()
+    # @ui_callable
+    # def close_camera_connection(self):
+    #     '''Closes the camera connection.'''
+    #     self.camera.close_camera()
 
     @ui_callable
     def check_camera_fan_speed(self):
@@ -1726,6 +1758,7 @@ class Microscope(Instrument):
         return speed
 
     @ui_callable
+    @debug_return()
     def set_acquisition_time(self, value):
         try:
             value = float(value)
@@ -1738,6 +1771,7 @@ class Microscope(Instrument):
         
         self.interface.acq_ctrl.general_parameters['acquisition_time'] = value
         self.camera.set_exposure_time(str(value))
+        return True
 
     @ui_callable
     def set_filename(self, filename):
@@ -1892,10 +1926,12 @@ class Microscope(Instrument):
 
 
     @ui_callable
+    @debug_return()
     def go_to_spectrometer_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
         self.interface.spectrometer.go_to_wavelength(wavelength)
         self.generate_wavelength_axis()
+        return True
 
     @ui_callable
     def read_entrance_slit(self):
@@ -1908,7 +1944,7 @@ class Microscope(Instrument):
             return None
         
 
-
+    @debug_return()
     def set_spectrometer_enter_slit(self, slit_width: int):
         '''Sets the entrance slit width of the spectrometer.'''
         try:
@@ -1923,7 +1959,7 @@ class Microscope(Instrument):
         move_slit = slit_width - current_width
         if move_slit == 0:
             self.micro_log.debug("Slit width is already set to {} microns".format(slit_width))
-            return
+            return True
         self.interface.spectrometer.move_enterance_slit(move_slit)
 
         # poll to see if current width is achieved, wait until it is
@@ -1936,6 +1972,8 @@ class Microscope(Instrument):
                 return
         
         self.micro_log.info("Slit width set to {} microns".format(slit_width))
+
+        return True
             
 
 
@@ -2235,6 +2273,7 @@ class Microscope(Instrument):
 
 
     @ui_callable
+    @debug_return()
     def go_to_monochromator_wavelength(self, wavelength):
         """
         Move the monochromator to the specified wavelength.
@@ -2264,6 +2303,7 @@ class Microscope(Instrument):
         return True
     
     @ui_callable
+    @debug_return()
     def go_to_grating_wavelength(self, wavelength):
         """
         Move all gratings (first and second tunable filters) to the specified wavelength.
