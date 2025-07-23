@@ -1871,7 +1871,7 @@ class Microscope(Instrument):
     def get_detector_temperature(self):
         '''Returns the camera temperature.'''
         # self.logger.debug
-        cam_temp = self.camera.check_camera_temperature()
+        cam_temp = self.camera.get_temperature()
         return cam_temp
     
     @ui_callable
