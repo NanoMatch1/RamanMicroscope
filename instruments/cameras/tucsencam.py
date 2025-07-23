@@ -175,6 +175,11 @@ class TucsenCamera(QObject):
         self.hardware.close_camera()
         self.logger.info("Camera connection closed and API uninitialized.")
 
+    @synchronized
+    def shutdown_api(self):
+        self.logger.info("Uninitialising TUCAM library...")
+        self.hardware.uninit_api()
+
     def grab_frame_safe(self, target_temp=-15, timeout=100000):
         while True:
             temp = self.hardware.get_temperature()
