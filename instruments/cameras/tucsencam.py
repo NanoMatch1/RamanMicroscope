@@ -182,10 +182,10 @@ class TucsenCamera(QObject):
 
     def grab_frame_safe(self, target_temp=-15, timeout=100000):
         while True:
-            temp = self.hardware.get_temperature()
+            temp = self.hardware.check_camera_temperature()
             if temp < target_temp:
                 image_data = self.grab_frame(timeout=timeout)
-                temp = self.get_temperature()
+                temp = self.check_camera_temperature()
                 if temp > target_temp:
                     self.logger.info(f"Frame acquired at {temp}°C. Discarding and retrying")
                     continue
