@@ -171,6 +171,7 @@ class TucsenCamera(QObject):
 
     @synchronized
     def close_camera(self):
+        self.hardware.close_stream()
         self.hardware.close_camera()
         self.logger.info("Camera connection closed and API uninitialized.")
 
