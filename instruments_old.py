@@ -1369,13 +1369,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            print("Invalid travel distance. Must be a number.")
+            self.logger.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"x": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"x": travel_distance})
-        print('x stage moved by {} micrometers'.format(travel_distance))
+        self.logger.info('x stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
@@ -1383,13 +1383,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            print("Invalid travel distance. Must be a number.")
+            self.logger.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"y": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"y": travel_distance})
-        print('y stage moved by {} micrometers'.format(travel_distance))
+        self.logger.info('y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
@@ -1397,13 +1397,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            print("Invalid travel distance. Must be a number.")
+            self.logger.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"z": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"z": travel_distance})
-        print('z stage moved by {} micrometers'.format(travel_distance))
+        self.logger.info('z stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def set_stage_home(self):
@@ -1413,7 +1413,7 @@ class Microscope(Instrument):
 
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
-        print('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
+        self.logger.info('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
 
     @ui_callable
     def enter_focus_mode(self):
