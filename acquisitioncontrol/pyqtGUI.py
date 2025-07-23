@@ -38,16 +38,28 @@ def run_in_thread_and_refresh(func):
     the Qt main loop.
     """
     def wrapper(self, *args, **kwargs):
+        if self.__class__ != MainWindow:
+            print("Warning: run_in_thread_and_refresh should is only for MainWindow GUI methods. Returning without running.")
+            return
+
+        if not self.gui_lock.acquire(blocking=False):
+            self.logger.warning(f"Microscope busy, skipping {func.__name__}(\"{args[0]}\") call.")
+            return
+
         def target():
             try:
                 func(self, *args, **kwargs)
+            except Exception as e:
+                error_details = traceback.format_exc()
+                result = f"Error in {func.__name__}: \n{e}\n{error_details}"
+                self.logger.error(result)
             finally:
-                pass
-                # Schedule refresh_ui() back on the GUI thread
+                self.gui_lock.release()
                 QMetaObject.invokeMethod(self,
                                          "refresh_ui",
                                          Qt.QueuedConnection)
-        threading.Thread(target=target, daemon=True).start()
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
 
     return wrapper
 
@@ -320,6 +332,8 @@ class MainWindow(QMainWindow):
         self.scan_mode = acq_ctrl.scan_mode
         self.separate_resolution = acq_ctrl.separate_resolution
         self.z_scan = acq_ctrl.z_scan
+
+        self.gui_lock = threading.Lock()
 
         self.scanning = False
         self.cancel_event = threading.Event()
