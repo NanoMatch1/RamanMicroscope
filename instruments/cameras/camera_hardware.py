@@ -270,17 +270,13 @@ class RealHardware(CameraHardwareBase):
             self.logger.info('Open the camera success!')
 
     def close_camera(self):
-        """
-        Close the currently open camera if any.
-        """
-        
-        self.uninit_api()
-
-        if self.TUCAMOPEN.hIdxTUCam != 0 and self.TUCAMOPEN.hIdxTUCam is not None:
+        if self.TUCAMOPEN.hIdxTUCam:
             ret = TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
             if ret != self.conflag:
                 self.logger.error(f'TUCAM: Failed to close camera: {ret}')
-        
+            else:
+                self.logger.info("Camera closed.")
+            self.TUCAMOPEN.hIdxTUCam = 0
 
     
     def uninit_api(self):
