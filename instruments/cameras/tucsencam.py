@@ -170,21 +170,8 @@ class TucsenCamera(QObject):
         self.hardware.initialise()
 
     @synchronized
-    def _open_camera(self):
-        self.hardware.open_camera()
-
-    @synchronized
-    def _close_camera(self):
-        self.hardware.close_camera()
-        self.logger.info("Close the camera success")
-
-    @synchronized
-    def _uninit_api(self):
-        self.hardware.uninit_api()
-
     def close_camera(self):
-        self._close_camera()
-        self._uninit_api()
+        self.hardware.close_camera()
         self.logger.info("Camera connection closed and API uninitialized.")
 
     def grab_frame_safe(self, target_temp=-15, timeout=100000):

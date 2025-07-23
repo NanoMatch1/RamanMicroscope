@@ -734,8 +734,6 @@ class AcquisitionControl(QObject):
             print("Error: image data is None. Aborting acquisition.")
             return
         
-        camera_temp = self.interface.microscope.get_detector_temperature()
-        self.logger.debug("Camera temp: {}".format(camera_temp)) #NOTE TODO: This is actually a workaround for a noted bug where callling the camera in this way causes the temperature to stop cooling. The Check temp command seems to remind it to cool.
 
         return image_data
     

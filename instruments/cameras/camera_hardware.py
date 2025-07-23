@@ -277,7 +277,6 @@ class RealHardware(CameraHardwareBase):
             ret = TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
             if ret != self.conflag:
                 self.logger.error(f'TUCAM: Failed to close camera: {ret}')
-            self.logger.info("Close the camera success")
         
         self.uninit_api()
 
