@@ -152,7 +152,7 @@ class Interface:
                 command = input("Enter a command: ")
                 if command == 'exit':
                     self.camera.close_camera()
-                    self.camera.shutdown_api()
+                    # self.camera.shutdown_api()
                     break
 
                 if command == 'gui':
