@@ -629,7 +629,6 @@ class Microscope(Instrument):
             'acqtime': self.set_acquisition_time,
             'filename': self.set_filename,
             'ramanshift': self.set_raman_shift,
-            'laserpower': self.set_laser_power,
             'runscan': self.run_scan_thread,
             'cancel': self.cancel_scan,
 
@@ -660,7 +659,8 @@ class Microscope(Instrument):
             # laser hardware commands
             'setpower': self.set_laser_power,
             'getpower': self.get_laser_power,
-            ''
+            'laseron': self.laser_on,
+            'laseroff': self.laser_off,
         }
 
         self.current_shift = 0
@@ -696,6 +696,17 @@ class Microscope(Instrument):
             else:
                 self.logger.info(f"{thread.name} is not alive")
         return thread_names
+
+    @property
+    def laser_status(self):
+        laser_on = self.interface.laser.status
+        if laser_on == 'ON':
+            return True
+        elif laser_on == 'OFF':
+            return False
+        else:
+            self.micro_log.warning(f"Unknown laser status: {laser_on}. Returning False.")
+            return False
 
     def capture_instrument_state(self):
         '''Not yet implemented. #TODO
@@ -1779,6 +1790,27 @@ class Microscope(Instrument):
         
         self.interface.laser.set_power(value)
         self.interface.acq_ctrl.general_parameters['laser_power'] = value
+
+    @ui_callable
+    def get_laser_power(self):
+        '''Returns the current laser power.'''
+        power = self.interface.laser.get_power()
+        self.interface.acq_ctrl.general_parameters['laser_power'] = power
+        return power
+    
+    @ui_callable
+    def laser_on(self):
+        '''Turns the laser on.'''
+        self.interface.laser.turn_on()
+        self.logger.info("Laser turned on")
+        self.interface.emitter.update_laser_status(True)
+    
+    @ui_callable
+    def laser_off(self):
+        '''Turns the laser off.'''
+        self.interface.laser.turn_off()
+        self.logger.info("Laser turned off")
+        self.interface.emitter.update_laser_status(False)
 
     @ui_callable
     def set_raman_shift(self, value):

@@ -678,10 +678,10 @@ class MainWindow(QMainWindow):
                 line_edit.setText(str(d))
 
             # Pseudocal light
-            if getattr(self.interface.microscope, 'apply_pseudocal', False):
-                self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: green;")
+            if getattr(self.interface.microscope, 'laser_status', False):
+                self.light_laser_status.setStyleSheet("border-radius: 10px; background-color: green;")
             else:
-                self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: red;")
+                self.light_laser_status.setStyleSheet("border-radius: 10px; background-color: red;")
 
             # if getattr(self.interface.microscope, 'laser_calibrated', True):
             #     self.light_lasercal.setStyleSheet("border-radius: 10px; background-color: green;")
@@ -859,13 +859,13 @@ class MainWindow(QMainWindow):
             light.setStyleSheet("border-radius: 10px; background-color: gray;")
             return label, light
 
-        lbl1, self.light_pseudocal = make_light("Pseudocal")
+        lbl1, self.light_laser_status = make_light("Laser Status")
         lbl2, self.light_ready = make_light("Instrument Ready")
         lbl3, self.light_livecal = make_light("Live Calibration")
         # lbl4, self.light_scan = make_light("Scan Active")
 
         status_layout.addWidget(lbl1)
-        status_layout.addWidget(self.light_pseudocal)
+        status_layout.addWidget(self.light_laser_status)
         status_layout.addSpacing(20)
         status_layout.addWidget(lbl2)
         status_layout.addWidget(self.light_ready)
