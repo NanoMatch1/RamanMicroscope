@@ -657,10 +657,10 @@ class Microscope(Instrument):
             # 'closecamera': self.close_camera_connection,
             'checkfan': self.check_camera_fan_speed,
 
-            # laser commands
-            'low': self.low_power,
-            'high': self.high_power,
+            # laser hardware commands
             'setpower': self.set_laser_power,
+            'getpower': self.get_laser_power,
+            ''
         }
 
         self.current_shift = 0
@@ -1546,18 +1546,6 @@ class Microscope(Instrument):
         self.go_to_laser_steps(initial_laser)
         self.go_to_grating_steps(initial_grating)
 
-    @ui_callable
-    def low_power(self):
-        '''sets the laser power to low to save on the diode lifetimes'''
-        self.set_laser_power(0.00)
-
-        print("Laser power set to low")
-    
-    @ui_callable
-    def high_power(self, power=4.5):
-        '''Sets the laser power to 4.5 W or otherwise provided in the kwarg for standard ops.'''
-        self.set_laser_power(power)
-        print("Laser power set to {power}".format(power))
 
     @ui_callable
     def go_to_laser_steps(self, target_positions, confirm_pos=True):
