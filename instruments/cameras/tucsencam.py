@@ -243,8 +243,16 @@ class TucsenCamera(QObject):
 
     @synchronized
     def set_exposure_time(self, value):
+        restart = False
+
+        if not self.stop_flag.is_set():
+            self.stop_continuous_acquisition()
+            restart = True
+
         self.hardware.set_exposure_time(value)
         self.logger.info(f"Set exposure to {value} seconds.")
+        if restart:
+            self.start_continuous_acquisition(report=True)
 
     @synchronized
     def _set_image_and_gain(self, img_mode=1, gain_level=0):
