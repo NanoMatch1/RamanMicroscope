@@ -9,7 +9,8 @@ from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import MillenniaLaser, Triax
 from calibration import Calibration
-from acquisitioncontrol import AcquisitionControl, MainWindow, GUIEmitterService
+from acquisitioncontrol import AcquisitionControl, MainWindow
+from acquisitioncontrol.gui_services import GUIEmitterService
 from PyQt5.QtWidgets import QApplication
 
 from instruments.cameras.tucsencam import TucsenCamera
