@@ -761,7 +761,8 @@ class Microscope(Instrument):
                 self.micro_log.debug(f"Laser not found, moving g4 + 1. Attempt {attempts}/5")
                 self.move_motors({'g4': 1}, backlash=False)  # Move grating 4 two steps
                 time.sleep(0.5)
-                attempts += 1
+                
+            attempts += 1
 
         if result is None:
             self.micro_log.info("Laser not found after 5 attempts. Staying at current wavelength.")
