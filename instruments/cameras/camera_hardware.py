@@ -365,7 +365,7 @@ class SimulatedHardware(CameraHardwareBase):
             return True
 
     def _generate_simulated_laser_signal(self, width=2048, height=148, laser_position=None, wavelength_axis=None, laser_width=5, y_spread=20, peak_height=30000, peak_sigma=0.1):
-        if self.interface.laser.status != 'ON' or self.laser.current_power < 3:
+        if self.interface.laser.status != 'ON' or self.interface.laser.current_power < 3:
             self.logger.coms("[SIM] Laser is off or power too low; signal zero.")
             return np.zeros((height, width), dtype=np.float32)
 

@@ -9,8 +9,7 @@ from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import MillenniaLaser, Triax
 from calibration import Calibration
-from acquisitioncontrol import AcquisitionControl
-from acquisitioncontrol import MainWindow
+from acquisitioncontrol import AcquisitionControl, MainWindow, GUIEmitterService
 from PyQt5.QtWidgets import QApplication
 
 from instruments.cameras.tucsencam import TucsenCamera
@@ -88,6 +87,7 @@ class Interface:
         )
 
         self.acq_ctrl = AcquisitionControl(self)
+        self.emitter = GUIEmitterService(self)
 
         if len(debug_skip) > 0:
             from simulation import (SimulatedTriax)
