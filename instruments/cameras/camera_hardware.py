@@ -186,10 +186,9 @@ class RealHardware(CameraHardwareBase):
         ret = TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
         if ret != TUCAMRET.TUCAMRET_SUCCESS:
             self.logger.error(f"TUCAM: Failed to set exposure time: {ret}")
-        else:
-            self.logger.info(f"Exposure time set to {value} ms")
         
         self.open_stream()
+        return True
 
     def set_image_and_gain(self, img_mode, gain_level):
         ret_set = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
@@ -328,9 +327,10 @@ class SimulatedHardware(CameraHardwareBase):
     def set_exposure_time(self, value):
         try:
             self.acqtime = float(value)
-            self.logger.info(f"[SIM] Exposure time set to {self.acqtime} seconds")
+            return True
         except ValueError:
             self.logger.error("[SIM] Invalid exposure time value")
+            return False
 
     def set_image_and_gain(self, img_mode, gain_level):
         self.logger.debug("[SIM] set_image_and_gain() stub.")

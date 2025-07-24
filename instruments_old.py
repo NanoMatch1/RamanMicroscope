@@ -689,12 +689,12 @@ class Microscope(Instrument):
         """
         threads = threading.enumerate()
         thread_names = [thread.name for thread in threads]
-        self.logger.info(f"Active threads:")
+        self.micro_log.info(f"Active threads:")
         for thread in threads:
             if thread.is_alive():
-                self.logger.info(f"{thread.name} is alive")
+                self.micro_log.info(f"{thread.name} is alive")
             else:
-                self.logger.info(f"{thread.name} is not alive")
+                self.micro_log.info(f"{thread.name} is not alive")
         return thread_names
 
     @property
@@ -739,8 +739,10 @@ class Microscope(Instrument):
         # if self.interface.spectrometer.is_simulated:
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
-        if self.camera.is_running:
+        if not self.camera.stop_flag.is_set():
             self.stop_continuous_acquisition() # Stop camera if running to avoid conflicts during calibration
+            self.micro_log.debug("NOTE: Live camera was running. Stopped")
+            return False
 
         estimated_wavelength = self.laser_wavelengths.get('l1')
         
@@ -1414,13 +1416,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            self.logger.info("Invalid travel distance. Must be a number.")
+            self.micro_log.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"x": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"x": travel_distance})
-        self.logger.info('x stage moved by {} micrometers'.format(travel_distance))
+        self.micro_log.info('x stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
@@ -1428,13 +1430,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            self.logger.info("Invalid travel distance. Must be a number.")
+            self.micro_log.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"y": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"y": travel_distance})
-        self.logger.info('y stage moved by {} micrometers'.format(travel_distance))
+        self.micro_log.info('y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
@@ -1442,13 +1444,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            self.logger.info("Invalid travel distance. Must be a number.")
+            self.micro_log.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"z": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"z": travel_distance})
-        self.logger.info('z stage moved by {} micrometers'.format(travel_distance))
+        self.micro_log.info('z stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def set_stage_home(self):
@@ -1458,7 +1460,7 @@ class Microscope(Instrument):
 
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
-        self.logger.info('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
+        self.micro_log.info('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
 
     @ui_callable
     def enter_focus_mode(self):
@@ -1755,7 +1757,7 @@ class Microscope(Instrument):
     @ui_callable
     def check_camera_fan_speed(self):
         speed = self.camera.get_fan_speed()
-        self.logger.info("Fan Speed: {}".format(speed))
+        self.micro_log.info("Fan Speed: {}".format(speed))
         return speed
 
     @ui_callable
@@ -1785,7 +1787,7 @@ class Microscope(Instrument):
         try:
             value = float(value)
         except ValueError:
-            self.logger.info("Invalid laser power {}. Must be a number.".format(value))
+            self.micro_log.info("Invalid laser power {}. Must be a number.".format(value))
             return
         
         self.interface.laser.set_power(value)
@@ -1802,14 +1804,14 @@ class Microscope(Instrument):
     def laser_on(self):
         '''Turns the laser on.'''
         self.interface.laser.turn_on()
-        self.logger.info("Laser turned on")
+        self.micro_log.info("Laser turned on")
         self.interface.emitter.update_laser_status(True)
     
     @ui_callable
     def laser_off(self):
         '''Turns the laser off.'''
         self.interface.laser.turn_off()
-        self.logger.info("Laser turned off")
+        self.micro_log.info("Laser turned off")
         self.interface.emitter.update_laser_status(False)
 
     @ui_callable
@@ -1893,7 +1895,7 @@ class Microscope(Instrument):
     @ui_callable
     def get_detector_temperature(self):
         '''Returns the camera temperature.'''
-        # self.logger.debug
+        # self.micro_log.debug
         cam_temp = self.camera.get_temperature()
         return cam_temp
     
@@ -1992,7 +1994,7 @@ class Microscope(Instrument):
             count += 1
             if count > 50:
                 self.micro_log.error("Failed to set slit width to {} microns".format(slit_width))
-                return
+                return False
         
         self.micro_log.info("Slit width set to {} microns".format(slit_width))
 
