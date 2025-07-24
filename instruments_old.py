@@ -702,7 +702,7 @@ class Microscope(Instrument):
         laser_on = self.interface.laser.status
         if laser_on == 'ON':
             return True
-        elif laser_on == 'OFF':
+        elif laser_on == 'OFF' or laser_on == 'WARMUP':
             return False
         else:
             self.micro_log.warning(f"Unknown laser status: {laser_on}. Returning False.")
