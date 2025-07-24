@@ -45,7 +45,7 @@ class TucsenCamera(QObject):
 
         self.interface = interface
         self.simulate = kwargs.get('simulate', False)
-        self.logger = interface.logger.getChild('TucsenCamera')
+        self.logger = interface.logger.getChild('Camera')
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.acqtime = 0.5
         self.full_roi = (0, 0, 2048, 2048)
@@ -95,6 +95,7 @@ class TucsenCamera(QObject):
 
     @synchronized
     def grab_frame(self, timeout=100000):
+        self.logger.info("Acquiring for {} seconds...".format(self.acqtime))
         return self.hardware.grab_frame(timeout=timeout)
 
     @synchronized
@@ -153,10 +154,10 @@ class TucsenCamera(QObject):
     @synchronized
     def stop_continuous_acquisition(self):
         self.stop_flag.set()
-        # if self.acquisition_thread and self.acquisition_thread.is_alive():
-        #     self.acquisition_thread.join(timeout=2)
-        #     self.acquisition_thread = None
-        # # self.close_stream()
+        if self.acquisition_thread and self.acquisition_thread.is_alive():
+            self.acquisition_thread.join(timeout=2)
+            self.acquisition_thread = None
+        # self.close_stream()
         self.logger.info("Continuous acquisition stopped.")
 
     @synchronized
@@ -243,16 +244,15 @@ class TucsenCamera(QObject):
 
     @synchronized
     def set_exposure_time(self, value):
-        restart = False
 
         if not self.stop_flag.is_set():
             self.stop_continuous_acquisition()
-            restart = True
 
-        self.hardware.set_exposure_time(value)
-        self.logger.info(f"Set exposure to {value} seconds.")
-        if restart:
-            self.start_continuous_acquisition(report=True)
+        ret = self.hardware.set_exposure_time(value)
+        if ret is True:
+            self.acqtime = value
+            self.logger.info(f"Exposure time set to {float(value)*1000} ms")
+
 
     @synchronized
     def _set_image_and_gain(self, img_mode=1, gain_level=0):

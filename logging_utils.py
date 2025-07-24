@@ -22,11 +22,13 @@ class QtLogHandler(logging.Handler, QObject):
 class LoggerInterface:
 
     aliases = {
+    'Microscope': 'M.',
     'interface.Microscope': 'M.',
     'interface.Arduino': 'A.',
     'interface.Laser': 'L.',
     'interface.Triax': 'T.',
     'interface': 'I.',
+    'interface.Camera': 'C.',
 
     }
 
@@ -39,9 +41,9 @@ class LoggerInterface:
         'coms': 5,  # Custom level for command messages
     }
 
-    def __init__(self, name: str = 'instrument'):
+    def __init__(self, name: str):
         # 1) Define your level number and name
-        logger_name = self.aliases.get(name, name)
+        logger_name = self.aliases.get(str(name), name)
         COMMAND_LEVEL_NUM = 5
         logging.addLevelName(COMMAND_LEVEL_NUM, "COMS")
 
