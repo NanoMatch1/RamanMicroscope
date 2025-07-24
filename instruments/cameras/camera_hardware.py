@@ -175,16 +175,21 @@ class RealHardware(CameraHardwareBase):
             self.logger.error(f"TUCAM: Failed to set auto exposure: {ret}")
 
     def set_exposure_time(self, value):
-        self.close_stream()
+        # self.close_stream()
 
         value = float(value) * 1000
+        ret1 = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
+        if ret1 != self.conflag:
+            self.logger.error(f"TUCAM: Failed to disable auto exposure: {ret1}")
+            return
+        
         ret = TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0)
         if ret != TUCAMRET.TUCAMRET_SUCCESS:
             self.logger.error(f"TUCAM: Failed to set exposure time: {ret}")
         else:
             self.logger.info(f"Exposure time set to {value} ms")
         
-        self.open_stream()
+        # self.open_stream()
 
     def set_image_and_gain(self, img_mode, gain_level):
         ret_set = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_IMGMODESELECT.value, img_mode)
@@ -243,7 +248,7 @@ class RealHardware(CameraHardwareBase):
 
     def set_roi(self, roi_tuple):
         self.close_stream()
-        
+
         roi = TUCAM_ROI_ATTR()
         roi.bEnable = 1
         roi.nHOffset, roi.nVOffset, roi.nWidth, roi.nHeight = roi_tuple
