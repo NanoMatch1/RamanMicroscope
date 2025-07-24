@@ -119,8 +119,10 @@ class MillenniaLaser(Laser):
         self.current_power = 0.0
         self.laser_lock = threading.Lock()
 
+        self.command_functions = {}  # will be populated by @ui_callable decorator
+
         # UI-callable commands registry
-        self.command_functions.update({
+        self.command_map = {
             'connectlaser': self.connect,
             'disconnectlaser': self.disconnect,
             'reconnectlaser': self.reconnect,
@@ -138,7 +140,7 @@ class MillenniaLaser(Laser):
             'diagnosis': self.laser_diagnosis,
             'laserstatus': self.get_status,
             'enable': self.enable_laser
-        })
+        }
 
     def initialise(self):
         '''Initialise the laser and establish a connection.'''
