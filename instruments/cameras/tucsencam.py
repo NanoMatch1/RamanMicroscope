@@ -153,10 +153,10 @@ class TucsenCamera(QObject):
     @synchronized
     def stop_continuous_acquisition(self):
         self.stop_flag.set()
-        if self.acquisition_thread and self.acquisition_thread.is_alive():
-            self.acquisition_thread.join(timeout=2)
-            self.acquisition_thread = None
-        # self.close_stream()
+        # if self.acquisition_thread and self.acquisition_thread.is_alive():
+        #     self.acquisition_thread.join(timeout=2)
+        #     self.acquisition_thread = None
+        # # self.close_stream()
         self.logger.info("Continuous acquisition stopped.")
 
     @synchronized
