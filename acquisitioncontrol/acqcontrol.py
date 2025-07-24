@@ -152,6 +152,9 @@ class CameraScanner:
 
     def _acquire_once(self):
         """acquires a single frame and saves it."""
+        if not self.camera.stop_flag.is_set():
+            self.interface.microscope.stop_continuous_acquisition()
+
         try:
             # self.camera.open_stream()
             image_data = None
