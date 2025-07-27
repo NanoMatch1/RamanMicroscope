@@ -18,6 +18,25 @@ from functools import wraps
 
 from datafit.laser_detection import LaserDetection
 
+def enforce_response(func, expected_response=True, callback=None):
+    """
+    Decorator to assert that a function returns the expected response.
+    If the response does not match, it logs the error and runs a callback if defined.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        response = func(self, *args, **kwargs)
+        if response != expected_response:
+            self.logger.error(f"Expected response: {expected_response}, but got: {response}")
+            if callback:
+                self.logger.error(f"Running callback: {callback.__name__}")
+                callback(response)
+            elif hasattr(self, 'call_on_failure'):
+                self.call_on_failure(response)
+                self.logger.error(f"Running default failure callback: {self.call_on_failure.__name__}")
+        return response
+    return wrapper
+
 
 def debug_return(success_criteria=lambda x: x is True and x is not None):
     def decorator(func):
@@ -36,6 +55,7 @@ def debug_return(success_criteria=lambda x: x is True and x is not None):
 
 
 def apply_pseudocal_forwards(func):
+    @wraps(func)
     def wrapper(self, wavelength, *args, **kwargs):
         if getattr(self, 'apply_pseudocal', False) is True:
             # Apply offset correction before the function runs
@@ -225,6 +245,7 @@ class MotionControl:
         """
         return {motor: self.motor_map[motor] for motor in motor_list if motor in self.motor_map}
 
+
     def confirm_motor_positions(self, target_positions):
         """
         Confirm that motors have reached their target positions.
@@ -257,12 +278,12 @@ class MotionControl:
                 }
         
         if all_match:
-            print("Motors at target positions")
+            self.micro_log.debug("Motors at target positions")
             return True
         else:
-            print("ERROR: Motors not at target positions")
+            self.micro_log.warning("ERROR: Motors not at target positions")
             for motor, info in discrepancies.items():
-                print(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
+                self.micro_log.warning(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
             return False
         
     def get_motor_positions(self, motor_dict, report=True):
@@ -1948,12 +1969,23 @@ class Microscope(Instrument):
         self.micro_log.info(f"All components set to wavelength: {wavelength} nm")
         return True
     
+    def check_spectrometer_wavelength(self, wavelength):
+        wavelength = string_to_float(wavelength)
+
+        if not self.check_hard_limits(wavelength, self.hard_limits['spectrometer_wavelength']):
+            self.micro_log.info('Spectrometer wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['spectrometer_wavelength']))
+            return False
+        
+        return True
 
 
     @ui_callable
     @debug_return()
     def go_to_spectrometer_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
+        if self.check_spectrometer_wavelength(wavelength) is False:
+            return False
+        
         self.interface.spectrometer.go_to_wavelength(wavelength)
         self.generate_wavelength_axis()
         return True
@@ -2211,7 +2243,7 @@ class Microscope(Instrument):
             print('Laser wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['laser_wavelength']))
             return False
         
-        return wavelength
+        return True
 
     def calculate_laser_steps_to_wavelength(self, target_wavelength):
         '''
@@ -2269,8 +2301,7 @@ class Microscope(Instrument):
         bool: True if successful, False otherwise
         """
         # Validate the wavelength is within allowed range
-        wavelength = self.check_laser_wavelength(wavelength)
-        if wavelength is False:
+        if self.check_laser_wavelength(wavelength) is False:
             return False
         
         # Safety: close shutter during movement
@@ -2340,13 +2371,10 @@ class Microscope(Instrument):
         bool: True if successful, False otherwise
         """
         # Validate the wavelength is within allowed range
-        wavelength = self.check_grating_wavelength(wavelength)
-        if wavelength is False:
+        if self.check_grating_wavelength(wavelength) is False:
             return False
         
-        # Safety: close shutter during movement
-        # self.close_mono_shutter()
-        
+
         # Get target positions from calibration service
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
         
@@ -2371,7 +2399,7 @@ class Microscope(Instrument):
             self.micro_log.info('Grating wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['grating_wavelength']))
             return False
         
-        return wavelength
+        return True
     
     @ui_callable
     def go_to_grating_steps(self, target_positions):
