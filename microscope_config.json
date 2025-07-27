@@ -41,6 +41,10 @@
     "grating_wavelength": [
       500,
       1300
+    ],
+    "spectrometer_wavelength": [
+      500,
+      1300
     ]
   },
   "home_positions": {
