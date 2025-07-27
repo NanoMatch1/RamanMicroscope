@@ -327,7 +327,7 @@ class AcquisitionControl(QObject):
     def __init__(self, interface):
         super().__init__()
         self.interface = interface
-        self.logger = interface.logger.getChild('acquisition_control')
+        self.logger = interface.logger.getChild('Acquisition')
 
         self.camera = interface.microscope.camera
         self.acquisitionControlDir = interface.microscope.acquisitionControlDir
@@ -732,9 +732,10 @@ class AcquisitionControl(QObject):
     def _acquire_one_frame(self):
         '''Acquires a single frame and returns it without saving'''
         camera_scanner = CameraScanner(self)
+        self.logger.info("Acquiring for {} seconds...".format(self.general_parameters['acquisition_time']))
         image_data = camera_scanner._acquire_once()
         if image_data is None:
-            print("Error: image data is None. Aborting acquisition.")
+            self.logger.error("Error: image data is None. Aborting acquisition.")
             return
         
 

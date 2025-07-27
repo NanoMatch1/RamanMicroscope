@@ -796,7 +796,7 @@ class Microscope(Instrument):
                 self.set_acquisition_time(1)  # Set acquisition time to 1s for laser detection
             else:
                 self.micro_log.debug(f"Laser not found, moving g4 + 1. Attempt {attempts}/5")
-                self.move_motors({'g4': 1}, backlash=False)  # Move grating 4 two steps
+                self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
                 time.sleep(0.5)
                 
             attempts += 1
@@ -1785,7 +1785,8 @@ class Microscope(Instrument):
         return speed
 
     @ui_callable
-    @debug_return()
+    # @debug_return()
+    @enforce_response
     def set_acquisition_time(self, value):
         try:
             value = float(value)
@@ -2021,7 +2022,8 @@ class Microscope(Instrument):
             return None
         
 
-    @debug_return()
+    # @debug_return()
+    @enforce_response
     def set_spectrometer_enter_slit(self, slit_width: int):
         '''Sets the entrance slit width of the spectrometer.'''
         try:
@@ -2361,14 +2363,9 @@ class Microscope(Instrument):
         bool: True if successful, False otherwise
         """
         # Validate the wavelength is within allowed range
-        wavelength = self.check_monochromator_wavelength(wavelength)
-        if wavelength is False:
+        if self.check_monochromator_wavelength(wavelength) is False:
             return False
-        
-        # Safety: close shutter during movement
-        # self.close_mono_shutter()
-        
-        # Get target positions from calibration service
+
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
         
         # Move to target positions

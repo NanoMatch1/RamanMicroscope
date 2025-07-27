@@ -95,7 +95,6 @@ class TucsenCamera(QObject):
 
     @synchronized
     def grab_frame(self, timeout=100000):
-        self.logger.info("Acquiring for {} seconds...".format(self.acqtime))
         return self.hardware.grab_frame(timeout=timeout)
 
     @synchronized
