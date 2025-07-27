@@ -124,8 +124,10 @@ class MotionControl:
     - Homing commands to not apply backlash corrections to the homed position. This means if the backlash changes, the motor homes need to be recalibrated.
     - Home calibration is performed at the microscope level by calling "calhome" at the interface level. Home positions are stored in the config file.'''
 
-    def __init__(self, controller, motor_map, config):
-        self.controller = controller
+    def __init__(self, interface, motor_map, config):
+        self.interface = interface
+        self.controller = interface.controller
+        self.logger = interface.logger.getChild('MotionControl')
         self.motor_map = motor_map  # Dictionary mapping motor names to IDs
         self.config = config
         self.home_positions = config.get("home_positions", {})
@@ -138,7 +140,6 @@ class MotionControl:
         self._spectrometer_wavelength = None
 
         self.last_direction = True
-
 
 
     def extract_coms_flag(self, message):
@@ -278,12 +279,12 @@ class MotionControl:
                 }
         
         if all_match:
-            self.micro_log.debug("Motors at target positions")
+            self.logger.debug("Motors at target positions")
             return True
         else:
-            self.micro_log.warning("ERROR: Motors not at target positions")
+            self.logger.warning("ERROR: Motors not at target positions")
             for motor, info in discrepancies.items():
-                self.micro_log.warning(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
+                self.logger.warning(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
             return False
         
     def get_motor_positions(self, motor_dict, report=True):
@@ -578,7 +579,7 @@ class Microscope(Instrument):
         # acquisition parameters
 
         # Motion control
-        self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
+        self.motion_control = MotionControl(interface, self.motor_map, self.config)
 
         self.command_functions = {
             'nyi': self.not_yet_implemented,
@@ -2004,6 +2005,7 @@ class Microscope(Instrument):
     @enforce_response
     def go_to_spectrometer_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
+        wavelength = string_to_float(wavelength)
         if self.check_spectrometer_wavelength(wavelength) is False:
             return False
         
@@ -2258,8 +2260,6 @@ class Microscope(Instrument):
         
     def check_laser_wavelength(self, wavelength):
         '''Checks the validity of the entered value for laser wavelength.'''
-        
-        wavelength = string_to_float(wavelength)
 
         if not self.check_hard_limits(wavelength, self.hard_limits['laser_wavelength']):
             print('Laser wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['laser_wavelength']))
@@ -2322,6 +2322,7 @@ class Microscope(Instrument):
         Returns:
         bool: True if successful, False otherwise
         """
+        wavelength = string_to_float(wavelength)
         # Validate the wavelength is within allowed range
         if self.check_laser_wavelength(wavelength) is False:
             return False
@@ -2362,6 +2363,7 @@ class Microscope(Instrument):
         Returns:
         bool: True if successful, False otherwise
         """
+        wavelength = string_to_float(wavelength)
         # Validate the wavelength is within allowed range
         if self.check_monochromator_wavelength(wavelength) is False:
             return False
@@ -2389,6 +2391,7 @@ class Microscope(Instrument):
         bool: True if successful, False otherwise
         """
         # Validate the wavelength is within allowed range
+        wavelength = string_to_float(wavelength)
         if self.check_grating_wavelength(wavelength) is False:
             return False
         
