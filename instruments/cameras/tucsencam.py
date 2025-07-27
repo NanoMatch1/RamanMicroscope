@@ -55,6 +55,7 @@ class TucsenCamera(QObject):
         self.camera_capabilities = {}
         self.camera_lock = threading.RLock()
         self.stop_flag = threading.Event()
+        self.stop_flag.set() # Initialize the stop flag to set
         self.is_running = False
         self.acquisition_thread = None
         self.command_functions = {}
