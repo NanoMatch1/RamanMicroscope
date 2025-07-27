@@ -1851,7 +1851,7 @@ class Microscope(Instrument):
     @ui_callable
     def enable_laser(self):
         '''Enables the laser.'''
-        self.interface.laser.enable()
+        self.interface.laser.enable_laser()
 
     @ui_callable
     def set_raman_shift(self, value):
