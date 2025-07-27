@@ -682,6 +682,9 @@ class Microscope(Instrument):
             'getpower': self.get_laser_power,
             'laseron': self.laser_on,
             'laseroff': self.laser_off,
+            'cycleshutter': self.cycle_laser_shutter,
+            'laserstatus': self.get_laser_status,
+            'enable': self.enable_laser,
         }
 
         self.current_shift = 0
@@ -1836,6 +1839,22 @@ class Microscope(Instrument):
         self.interface.emitter.update_laser_status(False)
 
     @ui_callable
+    def cycle_laser_shutter(self):
+        '''Cycles the laser shutter.'''
+        self.interface.laser.cycle_shutter()
+    
+    @ui_callable
+    def get_laser_status(self):
+        '''Returns the current laser status.'''
+        status = self.interface.laser.get_status()
+        return status
+    
+    @ui_callable
+    def enable_laser(self):
+        '''Enables the laser.'''
+        self.interface.laser.enable()
+
+    @ui_callable
     def set_raman_shift(self, value):
         self.current_shift = value
         self.go_to_wavenumber(value)
@@ -1980,7 +1999,8 @@ class Microscope(Instrument):
 
 
     @ui_callable
-    @debug_return()
+    # @debug_return()
+    @enforce_response
     def go_to_spectrometer_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
         if self.check_spectrometer_wavelength(wavelength) is False:
@@ -2359,7 +2379,8 @@ class Microscope(Instrument):
         return True
     
     @ui_callable
-    @debug_return()
+    # @debug_return()
+    @enforce_response
     def go_to_grating_wavelength(self, wavelength):
         """
         Move all gratings (first and second tunable filters) to the specified wavelength.
@@ -2374,16 +2395,11 @@ class Microscope(Instrument):
         if self.check_grating_wavelength(wavelength) is False:
             return False
         
-
         # Get target positions from calibration service
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
         
-        # Move to target positions
         moved = self.go_to_grating_steps(target_positions)
-        # self.laser_safety_check()
-        # self.open_mono_shutter()
-        
-        # Report primary wavelength
+
         if moved is True:
             self.micro_log.info("New grating wavelength: {}".format(self.report_grating_wavelength))
         else:
