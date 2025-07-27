@@ -85,12 +85,12 @@ def live_laser_calibration(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         # Call the original function first, catch the 
-        true_wavelength = func(self, *args, **kwargs)
+        func(self, *args, **kwargs)
         # Then run the live calibration
         if self.apply_live_calibration is True:
-            true_wavelength = self.live_calibration_laser()
+            response = self.live_calibration_laser()
 
-        return true_wavelength
+        return response  # Indicate success
     return wrapper
 
 def ui_callable(func):
@@ -764,10 +764,7 @@ class Microscope(Instrument):
         # if self.interface.spectrometer.is_simulated:
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
-        if not self.camera.stop_flag.is_set():
-            self.stop_continuous_acquisition() # Stop camera if running to avoid conflicts during calibration
-            self.micro_log.debug("NOTE: Live camera was running. Stopped")
-            return False
+
 
         estimated_wavelength = self.laser_wavelengths.get('l1')
         
@@ -819,7 +816,7 @@ class Microscope(Instrument):
 
         self.micro_log.info(f"Live laser calibration complete. Calibrated wavelength: {calibrated_wavelength}")
 
-        return calibrated_wavelength
+        return True
 
     
     def _get_motor_positions(self, motor_dict):
@@ -1976,7 +1973,11 @@ class Microscope(Instrument):
         """
         self.micro_log.info(f"Moving all components to wavelength: {wavelength} nm")
         # First move the laser
-        wavelength = self.go_to_laser_wavelength(wavelength)
+        self.go_to_laser_wavelength(wavelength)
+        # If the laser wavelength is calibrated, use that instead
+        if self.laser_wavelength_calibrated is not None:
+            wavelength = self.laser_wavelength_calibrated
+
         self.go_to_grating_wavelength(wavelength) # move all grating motors
         
         # Then handle the monochromator
@@ -2326,7 +2327,10 @@ class Microscope(Instrument):
         # Validate the wavelength is within allowed range
         if self.check_laser_wavelength(wavelength) is False:
             return False
-        
+
+        if not self.camera.stop_flag.is_set():
+            self.stop_continuous_acquisition() # Stop camera if running to avoid conflicts during calibration
+            self.micro_log.debug("NOTE: Live camera was running. Stopped")
         # Safety: close shutter during movement
         # self.close_mono_shutter()
         
@@ -2348,7 +2352,7 @@ class Microscope(Instrument):
             self.micro_log.debug("Laser no longer calibrated...")
         else:
             self.micro_log.info("Laser motors already at target position - no motion initiated.")
-        return wavelength
+        return True
 
 
     @ui_callable

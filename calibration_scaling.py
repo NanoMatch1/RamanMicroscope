@@ -1,86 +1,3 @@
-# import os
-# import json
-# import glob
-# import numpy as np
-
-# # Microstepping values to generate calibrations for
-# MICROSTEP_VALUES = [16, 32, 64]
-# REFERENCE_MICROSTEP = 128  # The current base microstepping factor
-# reference_keys = ['g1', 'g2', 'g3', 'g4']  # Keys to be used for reference
-
-# # Folder containing your calibration JSONs
-# SOURCE_DIR = os.path.join(os.path.dirname(__file__), "calibration")  # Change as needed
-
-# def wl_to_steps(coeff):
-#     distr = np.arange(700, 900, 1)  # Example distribution of wavelengths
-#     calib = np.poly1d(coeff)
-#     steps = calib(distr)  # Apply polynomial to wavelength distribution
-#     return steps
-
-
-# def steps_to_wl(coeff):
-#     distr = np.arange(-10000,10000, 1)  # Example distribution of steps
-#     calib = np.poly1d(coeff)
-#     wl = calib(distr)  # Apply polynomial to steps distribution
-#     return wl
-
-
-# test = wl_to_steps([0.10804683994803718, 331.8588098129754, 43950.89354704326])
-# print("Steps:", test)
-
-
-
-# # Create scaled versions
-# def scale_polynomial(coeffs, scale, mode='forward'):
-#     """Scales polynomial coefficients by a step factor."""
-#     if mode == 'forward':  # wl_to_motor: steps increase with microstep
-#         return [c * scale**i for i, c in enumerate(reversed(coeffs))][::-1]
-#     elif mode == 'reverse':  # motor_to_wl: input steps are larger → divide
-#         return [c / (scale**i) for i, c in enumerate(reversed(coeffs))][::-1]
-#     else:
-#         raise ValueError("mode must be 'forward' or 'reverse'")
-
-# # Process each file
-# json_files = [file for file in os.listdir(SOURCE_DIR) if file.endswith('.json')]
-
-
-# for microstep in MICROSTEP_VALUES:
-#     scale = microstep / REFERENCE_MICROSTEP
-#     if not os.path.exists(os.path.join(SOURCE_DIR, f"microstep_{microstep}")):
-#         os.makedirs(os.path.join(SOURCE_DIR, f"microstep_{microstep}"))
-#     for file in json_files:
-#         cal_dict = {}
-#         filepath = os.path.join(SOURCE_DIR, file)        
-
-#         with open(filepath, 'r') as f:
-#             data = json.load(f)
-
-
-
-#         for key, coeffs in data.items():
-#             if not any(k in key for k in reference_keys):
-#                 cal_dict[key] = coeffs # leave untouched if not matched to key
-#                 continue
-#             # Skip keys that are not in reference_keys
-#             if key.startswith("wl_to_"):
-#                 cal_dict[key] = scale_polynomial(coeffs, scale, mode='forward')
-#                 print(f"Forward scaling for {key}: {cal_dict[key]}")
-#             elif key.endswith("_to_wl"):
-#                 cal_dict[key] = scale_polynomial(coeffs, scale, mode='reverse')
-#                 print(f"Reverse scaling for {key}: {cal_dict[key]}")
-#             else:
-#                 cal_dict[key] = coeffs  # leave untouched if unknown key
-
-#             # Save to subdirectory
-#             out_dir = os.path.join(SOURCE_DIR, f"microstep_{microstep}")
-#             os.makedirs(out_dir, exist_ok=True)
-#             out_path = os.path.join(out_dir, file)
-
-#             with open(out_path, 'w') as f:
-#                 json.dump(cal_dict, f, indent=2)
-
-#             # print(f"Saved scaled calibration for µstep={microstep}: {out_path}")
-
 
 import os
 import json
@@ -198,21 +115,120 @@ def main(input_dir, output_dir, microsteps, poly_order=2, wl_min=400, wl_max=800
     print(f"Processed calibrations saved in {output_folder}")
     print(f"Master calibration file saved as {master_file_path}")
 
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+import shutil
+import os
+
+def shift_master_calibration(master_calib_path, shift_steps,
+                             wl_min=700, wl_max=900, n_points=200,
+                             poly_order=2, make_backup=True):
+    """
+    Reads in the 'master' calibration JSON, applies a constant motor-step shift
+    to the triax-axis calibration, re-fits forward & inverse polynomials,
+    and overwrites the master file (optionally keeping a timestamped backup).
+
+    Parameters
+    ----------
+    master_calib_path : str
+        Path to the JSON file containing at least keys
+        "wl_to_triax" and "triax_to_wl".
+    shift_steps : float
+        The number of motor steps to subtract from the original forward mapping.
+    wl_min, wl_max : float
+        Wavelength range (nm) over which to sample & re-fit.
+    n_points : int
+        Number of points for the dense sampling grid.
+    poly_order : int
+        Order of the polynomial to fit (typically 2 or 3).
+    make_backup : bool
+        If True, copy the original file to
+        master_calib_path + '.bak-<timestamp>' before overwriting.
+
+    Returns
+    -------
+    new_calib : dict
+        The updated calibration dict with keys
+        "wl_to_triax" and "triax_to_wl".
+    """
+
+    # Backup original file
+    if make_backup:
+        base, ext = os.path.splitext(master_calib_path)
+        backup_path = os.path.join(base, f".bak-{int(np.round(np.datetime64('now')/1e6))}" + ext)
+        shutil.copy2(master_calib_path, backup_path)
+        print(f"Backup saved to {backup_path}")
+
+    # Load existing calibration
+    with open(master_calib_path, 'r') as f:
+        calib = json.load(f)
+
+    # Sample wavelengths
+    wavelengths = np.linspace(wl_min, wl_max, n_points)
+
+    # Original forward poly: wavelength → steps
+    p_fwd_orig = np.poly1d(calib["wl_to_triax"])
+    steps_orig = p_fwd_orig(wavelengths)
+
+    # Apply constant shift
+    steps_shifted = steps_orig - shift_steps
+
+    # Re‑fit forward (wavelength → shifted steps)
+    new_fwd_coeff = np.polyfit(wavelengths, steps_shifted, poly_order).tolist()
+
+    # Re‑fit inverse (shifted steps → wavelength)
+    new_inv_coeff = np.polyfit(steps_shifted, wavelengths, poly_order).tolist()
+
+    # (Optional) Plot for quick sanity check
+    plt.figure(figsize=(8,4))
+    plt.plot(wavelengths, steps_orig, 'r--', label="Original")
+    plt.plot(wavelengths, steps_shifted, 'b-', label="Shifted")
+    plt.xlabel("Wavelength (nm)")
+    plt.ylabel("Triax Steps")
+    plt.title("Calibration Shift")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # Update and overwrite
+    calib["wl_to_triax"] = new_fwd_coeff
+    calib["triax_to_wl"] = new_inv_coeff
+    with open(master_calib_path, 'w') as f:
+        json.dump(calib, f, indent=4)
+
+    print(f"Master calibration updated in {master_calib_path}")
+    return calib
+
+
+
 if __name__ == "__main__":
 
 
-    input_dir = os.path.join(os.path.dirname(__file__), "calibration")
-    output_dir = os.path.join(os.path.dirname(__file__), "calibration", "scaled_calibrations")
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # input_dir = os.path.join(os.path.dirname(__file__), "calibration")
+    # output_dir = os.path.join(os.path.dirname(__file__), "calibration", "scaled_calibrations")
+    # if not os.path.exists(output_dir):
+        # os.makedirs(output_dir)
 
+    calibration_path = os.path.join(os.path.dirname(__file__), 'calibration', 'master_calibration_microsteps_32.json')
 
-    main(
-        input_dir=input_dir,
-        output_dir=output_dir,
-        microsteps=32,  # Example microsteps value
-        poly_order=2,
-        wl_min=700.0,
-        wl_max=900.0,
-        n_points=100
+    # Example usage of shift_master_calibration
+    shift_steps = 10  # Example shift value
+    shift_master_calibration(
+        master_calib_path=calibration_path,
+        shift_steps=shift_steps,
+        wl_min=650,
+        wl_max=1100,
+        n_points=200,
+        poly_order=2
     )
+
+    # main(
+    #     input_dir=input_dir,
+    #     output_dir=output_dir,
+    #     microsteps=32,  # Example microsteps value
+    #     poly_order=2,
+    #     wl_min=700.0,
+    #     wl_max=900.0,
+    #     n_points=100
+    # )

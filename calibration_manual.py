@@ -275,7 +275,7 @@ class Calibration:
         return self.motor_dict
     
     def calculate_wavelength_from_triax(self, calibration_file='master_calibration_microsteps_32.json', prompt=True, save=False):
-        '''Attempts to full the value for wavelength from the most recent calibration file for the triax spectrometer. Designed for manual one-off use, do not use unless you have a good reason.'''
+        '''Attempts to pull the value for wavelength from the most recent calibration file for the triax spectrometer. Designed for manual one-off use, do not use unless you have a good reason.'''
 
         with open(os.path.join(os.path.dirname(__file__), 'calibration', calibration_file)) as file:
             calibrations = json.load(file)
