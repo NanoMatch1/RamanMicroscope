@@ -2584,7 +2584,8 @@ class Microscope(Instrument):
     def get_spectrometer_position(self):
         '''Get the current position of the spectrometer in motor steps.'''
         self.interface.spectrometer.get_spectrometer_position()
-        print('Current spectrometer position: {}'.format(self.interface.spectrometer.spectrometer_position))
+        self.interface.acq_ctrl._current_parameters['spectrometer_steps'] = self.interface.spectrometer.spectrometer_position
+        self.logger.info('Current spectrometer position: {}'.format(self.interface.spectrometer.spectrometer_position))
         return self.interface.spectrometer.spectrometer_position
     
 
