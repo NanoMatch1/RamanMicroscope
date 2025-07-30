@@ -780,7 +780,7 @@ class Microscope(Instrument):
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
         self.go_to_grating_wavelength(estimated_wavelength)
         self.go_to_spectrometer_wavelength(estimated_wavelength)  # Move spectrometer to laser wavelength
-        self.set_spectrometer_enter_slit(0)
+        self.set_spectrometer_enter_slit(5)
         self.go_to_monochromator_wavelength(current_laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
 
         attempts = 0
