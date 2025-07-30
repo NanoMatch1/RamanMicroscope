@@ -174,8 +174,17 @@ class LaserDetection(QObject):
             # If the image is 3D, take the first channel #TODO Fix this at the camera level later
             image = image[:, :, 0]
         is_laser_present, laser_position = self.detect_laser_peak(image)
+        
         if not is_laser_present:
             print("No laser signal detected in the image.")
+            if self.logger.level <= 9 or show_plot == True:
+                plt.figure(figsize=(10, 5))
+                plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
+                plt.colorbar(label='Intensity')
+                plt.title("No Laser Signal Detected")
+                plt.xlabel("X (Spectral Axis)")
+                plt.ylabel("Y (Spatial Axis)")
+                plt.show()
             return None
 
         dataY = self.image_to_spectrum(image, laser_position)
