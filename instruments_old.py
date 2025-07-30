@@ -1140,8 +1140,9 @@ class Microscope(Instrument):
 
         motor_id = self.motor_map[label]
         # Send homing command
-
+        self.micro_log.info(f"Recalibrating home position for motor {motor_id}")
         response = self.controller.send_command(f"h{motor_id}")
+
         response = response[0]
         self.micro_log.info(f"Homing response: {response}")
         if "at position" in response:
@@ -1157,6 +1158,7 @@ class Microscope(Instrument):
         self.write_config()
         time.sleep(0.01)
         self.motion_control.move_motors({label: -position})  # Move to home position
+        self.micro_log.info(f"Moved motor {motor_id} to home position {position}")
 
 
     @ui_callable
