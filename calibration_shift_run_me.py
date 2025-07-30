@@ -109,7 +109,7 @@ if __name__ == "__main__":
     cal = CalibrationEdit()
     cal.shift_calibration(
         'triax_calibrations',
-        shift=('nm', -2),  # shift by -2 nm at 800 nm
+        shift=('nm', 2.1),  # shift by -2 nm at 800 nm
         wl_min=650,
         wl_max=1100,
         n_points=200,
