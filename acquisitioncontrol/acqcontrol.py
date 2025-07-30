@@ -747,7 +747,9 @@ class AcquisitionControl(QObject):
         # if self.camera.is_running:
         #     self.camera.stop_continuous_acquisition()
         #     time.sleep(0.5)  # wait for the camera to stop
-
+        if self.general_parameters['n_frames'] > 1:
+            self.general_parameters['n_frames'] = 1  # set n_frames to 1 for laser calibration
+            
         image_data = self._acquire_one_frame()
         if image_data is None:
             print("Error: image data is None. Aborting acquisition.")
