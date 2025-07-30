@@ -686,6 +686,7 @@ class Microscope(Instrument):
             'cycleshutter': self.cycle_laser_shutter,
             'laserstatus': self.get_laser_status,
             'enable': self.enable_laser,
+            'warmup': self.get_warmup_status,
         }
 
         self.current_shift = 0
@@ -1852,6 +1853,13 @@ class Microscope(Instrument):
     def enable_laser(self):
         '''Enables the laser.'''
         self.interface.laser.enable_laser()
+
+    @ui_callable
+    def get_warmup_status(self):
+        '''Returns the current laser warmup status.'''
+        status = self.interface.laser.get_warmup_status()
+        self.micro_log.info("Laser warmup status: {}%".format(status))
+        return status
 
     @ui_callable
     def set_raman_shift(self, value):
