@@ -84,6 +84,7 @@ def live_laser_calibration(func):
     """
     @wraps(func)
     def wrapper(self, *args, **kwargs):
+        response = True
         # Call the original function first, catch the 
         func(self, *args, **kwargs)
         # Then run the live calibration
