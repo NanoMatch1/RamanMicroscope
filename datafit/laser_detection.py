@@ -315,7 +315,7 @@ class LaserDetection(QObject):
         '''Searches for a laser peak in the image by integrating along the X-axis and applying a threshold based on robust statistics.Returns a tuple (is_laser_present, (x_max, y_max)) where is_laser_present is True if a peak is found, and (x_max, y_max) are the coordinates of the peak.'''
         
         # Step 1: Collapse in Y to get intensity along X
-        profile_x = np.median(image, axis=0)  # shape = (X,)
+        profile_x = np.median(image[50:90, :], axis=0)  # shape = (X,)
         
         # Step 2: Estimate background using robust statistics
         med = np.median(profile_x)
