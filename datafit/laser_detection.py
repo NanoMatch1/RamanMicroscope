@@ -329,9 +329,6 @@ class LaserDetection(QObject):
         # Step 3: Find where signal exceeds threshold
         signal_mask = profile_x > threshold
 
-        breakpoint()
-
-
         # Step 4: Optional: filter by minimum width
         from scipy.ndimage import label
         labeled, num_features = label(signal_mask)
