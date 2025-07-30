@@ -174,7 +174,7 @@ class LaserDetection(QObject):
             # If the image is 3D, take the first channel #TODO Fix this at the camera level later
             image = image[:, :, 0]
         is_laser_present, laser_position = self.detect_laser_peak(image)
-        
+
         if not is_laser_present:
             print("No laser signal detected in the image.")
             if self.logger.level <= 9 or show_plot == True:
@@ -328,6 +328,8 @@ class LaserDetection(QObject):
 
         # Step 3: Find where signal exceeds threshold
         signal_mask = profile_x > threshold
+
+        breakpoint()
 
 
         # Step 4: Optional: filter by minimum width
