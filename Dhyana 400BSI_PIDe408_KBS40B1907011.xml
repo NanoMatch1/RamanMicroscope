@@ -14,7 +14,7 @@
         <Sharpness>0</Sharpness>
         <DenoiseValue>0</DenoiseValue>
         <DenoisePermission>1</DenoisePermission>
-        <Temperature>40</Temperature>
+        <Temperature>30</Temperature>
         <FanMode>3</FanMode>
         <ImageModeSelect>1</ImageModeSelect>
         <Enhance>0</Enhance>

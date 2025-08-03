@@ -152,9 +152,11 @@ class CameraScanner:
 
     def _acquire_once(self):
         """acquires a single frame and saves it."""
-        self.camera.camera_lock.acquire()
+        if not self.camera.stop_flag.is_set():
+            self.interface.microscope.stop_continuous_acquisition()
+
         try:
-            self.camera.open_stream()
+            # self.camera.open_stream()
             image_data = None
             n_frames = self.acq_ctrl.general_parameters['n_frames']
 
@@ -172,10 +174,10 @@ class CameraScanner:
 
             return image_data
         
-        finally:
-            self.camera.close_stream()
-            self.camera.camera_lock.release()
-
+        # finally:
+        except Exception as e:
+            self.logger.info(f"Error during acq_ctrl._acquire_once frame acquisition: {e}")
+            # self.camera.close_stream()
 
     def _acquire_scan(self, cancel_event, status_cb, progress_cb, timeout=100000):
         """
@@ -187,10 +189,8 @@ class CameraScanner:
         start_time = time.time()
         failed_steps = []
 
-        # Lock camera and open stream
-        self.camera.camera_lock.acquire()
         try:
-            self.camera.open_stream()
+            # self.camera.open_stream()
 
             for idx, step in enumerate(self.acq_ctrl.scan_sequence):
                 self.acq_ctrl.hidden_parameters['scan_index'] = idx
@@ -223,9 +223,8 @@ class CameraScanner:
             self.logger.error(f"Unexpected error during scan: {tb}")
             status_cb(f"Scan aborted due to unexpected error: {e}")
 
-        finally:
-            self.camera.close_stream()
-            self.camera.camera_lock.release()
+        # finally:
+        #     self.camera.close_stream()
 
         return failed_steps
 
@@ -281,8 +280,7 @@ class CameraScanner:
         acqtimelist = [1, 2, 4, 8, 16, 32, 64, 128] # seconds acqtime
         # acqtimelist = [1, 2, 4, 8, 12, 16, 20, 22, 23, 24, 25, 26, 27, 28]
         
-        self.camera.camera_lock.acquire()
-        self.camera.open_stream()
+        # self.camera.open_stream()
 
         try:
             for acqtime in acqtimelist:
@@ -316,9 +314,11 @@ class CameraScanner:
                 index = len([file for file in os.listdir(dataDir) if filename in file]) 
                 self.acq_ctrl.save_spectrum(image_data, scan_index=index)
         
-        finally:
-            self.camera.close_stream()
-            self.camera.camera_lock.release()
+        except Exception as e:
+            self.logger.error(f"Error during custom scan acquisition: {e}")
+            # print(f"Error during custom scan acquisition: {e}")
+        # finally:
+        #     self.camera.close_stream()
 
 
 class AcquisitionControl(QObject):
@@ -327,7 +327,7 @@ class AcquisitionControl(QObject):
     def __init__(self, interface):
         super().__init__()
         self.interface = interface
-        self.logger = interface.logger.getChild('acquisition_control')
+        self.logger = interface.logger.getChild('Acquisition')
 
         self.camera = interface.microscope.camera
         self.acquisitionControlDir = interface.microscope.acquisitionControlDir
@@ -732,13 +732,12 @@ class AcquisitionControl(QObject):
     def _acquire_one_frame(self):
         '''Acquires a single frame and returns it without saving'''
         camera_scanner = CameraScanner(self)
+        self.logger.info("Acquiring for {} seconds...".format(self.general_parameters['acquisition_time']))
         image_data = camera_scanner._acquire_once()
         if image_data is None:
-            print("Error: image data is None. Aborting acquisition.")
+            self.logger.error("Error: image data is None. Aborting acquisition.")
             return
         
-        camera_temp = self.interface.microscope.get_detector_temperature()
-        self.logger.debug("Camera temp: {}".format(camera_temp)) #NOTE TODO: This is actually a workaround for a noted bug where callling the camera in this way causes the temperature to stop cooling. The Check temp command seems to remind it to cool.
 
         return image_data
     
@@ -748,7 +747,9 @@ class AcquisitionControl(QObject):
         # if self.camera.is_running:
         #     self.camera.stop_continuous_acquisition()
         #     time.sleep(0.5)  # wait for the camera to stop
-
+        if self.general_parameters['n_frames'] > 1:
+            self.general_parameters['n_frames'] = 1  # set n_frames to 1 for laser calibration
+            
         image_data = self._acquire_one_frame()
         if image_data is None:
             print("Error: image data is None. Aborting acquisition.")
@@ -827,13 +828,12 @@ class AcquisitionControl(QObject):
 
         # TODO:add wavelength axis to the image data along a new axis
         save_path = os.path.join(self.interface.microscope.dataDir, 'transient_data', 'transient_data.npy')
-        # if kwargs.get('report', False):
-        #     print(f"Saving transient data to {save_path}")
-        # print(f"Saving transient data to {save_path}")
+
         try:
             np.save(save_path, image_data) # TODO: remove once integrated data viewer is complete
-        except OSError:
-            print(f"Transient save failed - skipping")
+        except OSError as e:
+            self.logger.error(str(traceback.print_exc()))
+            self.logger.error(f"Transient save failed - skipping")
             
         self.spectrum_ready.emit(image_data, wavelength_axis)
 
