@@ -96,9 +96,11 @@ class LdrScan:
     
 class Calibration:
 
-    def __init__(self):
+    def __init__(self, interface):
+        self.interface = interface
         self.scriptDir = os.path.dirname(os.path.abspath(__file__))
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
+        self.logger = self.interface.logger.getChild('Calibration')
         # self.generate_calibrations()
 
         self.mode_change_steps = 100_000 # number of steps required for change from raman to image mode
@@ -115,7 +117,7 @@ class Calibration:
         """
         with open(os.path.join(self.scriptDir, 'calibration', 'calibrations_main.json'), 'r') as f:
             calibrations = json.load(f)
-            print('Calibrations loaded from file')
+            self.logger.info('Calibrations loaded from file')
 
         calibrations.update(self.load_triax_calibration())
         return calibrations
@@ -126,7 +128,7 @@ class Calibration:
         """
         with open(os.path.join(self.scriptDir, 'calibration', 'triax_calibrations.json'), 'r') as f:
             calibrations = json.load(f)
-            print('Triax calibrations loaded from file')
+            self.logger.info('Triax calibrations loaded from file')
         return calibrations
 
     def generate_calibrations(self, report=False):
@@ -135,16 +137,16 @@ class Calibration:
         
         for name, calib in self.all_calibrations.items():
             if len(calib) == 7:
-                print("Loading {} as poly_sin".format(name))
+                self.logger.debug("Loading {} as poly_sin".format(name))
                 self.__setattr__(name, PolySinModulation(*calib))
             if len(calib) == 6:
-                print("Loading {} as poly_sin".format(name))
+                self.logger.debug("Loading {} as poly_sin".format(name))
                 self.__setattr__(name, LinSinModulation(*calib))
             else:
-                print("Loading {} as poly1d".format(name))
+                self.logger.debug("Loading {} as poly1d".format(name))
                 self.__setattr__(name, np.poly1d(calib))
 
-        print("Calibrations successfully built.")
+        self.logger.info("Calibrations successfully built.")
 
     def invert_calibrations(self):
         '''Inverts the calibrations for use in the controller. Takes a dictionary of motor names and their calibration functions'''
@@ -156,12 +158,12 @@ class Calibration:
             else:
                 self.__setattr__(name, np.poly1d(calib) * -1)
 
-        print('Inverted calibrations successfully.')
+        self.logger.info('Inverted calibrations successfully.')
 
     def load_master_calibration(self, microsteps=32):
         with open(os.path.join(self.scriptDir, 'calibration', 'master_calibration_microsteps_{}.json'.format(microsteps)), 'r') as f:
             calibrations = json.load(f)
-            print('Master calibrations at {} microsteps loaded from file'.format(microsteps))
+            self.logger.info('Master calibrations at {} microsteps loaded from file'.format(microsteps))
 
         # calibrations.update(self.load_triax_calibration())
         return calibrations
@@ -170,19 +172,19 @@ class Calibration:
         master_calibration = self.load_master_calibration(microsteps)
 
         for action_group, dataset in master_calibration.items():
-            print("---> Loading {} calibrations".format(action_group))
+            self.logger.debug("---> Loading {} calibrations".format(action_group))
             for name, calib in dataset.items():
                 if len(calib) == 7:
-                    print("Loading {} as poly_sin".format(name))
+                    self.logger.debug("Loading {} as poly_sin".format(name))
                     self.__setattr__(name, PolySinModulation(*calib))
                 if len(calib) == 6:
-                    print("Loading {} as poly_sin".format(name))
+                    self.logger.debug("Loading {} as poly_sin".format(name))
                     self.__setattr__(name, LinSinModulation(*calib))
                 else:
-                    print("Loading {} as poly1d".format(name))
+                    self.logger.debug("Loading {} as poly1d".format(name))
                     self.__setattr__(name, np.poly1d(calib))
         
-        print("Master calibrations successfully built.")
+        self.logger.info("Master calibrations successfully built.")
 
     def generate_wavelength_axis(self, spectrometer_wavelength, array_length=2048):
         pseudo_pixel = self.wl_to_pixel(spectrometer_wavelength)
@@ -196,7 +198,7 @@ class Calibration:
             self.mode = 'imagemode'
         else:
             self.mode = 'ramanmode'
-        print(f'Microscope mode identified as {self.mode}')
+        self.logger.info(f'Microscope mode identified as {self.mode}')
 
         return self.mode
     
@@ -212,7 +214,7 @@ class Calibration:
             elif motor == "z":
                 steps_dict[motor] = round(action_group[motor] * self.z_steps_per_micron)
             else:
-                print(f'{motor} not found in calibrations')
+                self.logger.info(f'{motor} not found in calibrations')
                 steps_dict[motor] = action_group[motor]
 
         return steps_dict
@@ -229,7 +231,7 @@ class Calibration:
             elif motor == 'z':
                 micron_dict[motor] = action_group[motor] / self.z_steps_per_micron
             else:
-                print(f'{motor} not found in calibrations')
+                self.logger.info(f'{motor} not found in calibrations')
                 micron_dict[motor] = action_group[motor]
 
         return micron_dict
@@ -244,7 +246,7 @@ class Calibration:
                 calibration = getattr(self, calibration_name)
                 steps_dict[motor] = round(calibration(wavelength)) # round to nearest integer
             else:
-                print(f'{motor} not found in calibrations')
+                self.logger.info(f'{motor} not found in calibrations')
                 self.__dict__[calibration_name] = np.poly1d([0]) # default to zero
                 steps_dict[motor] = 0
 
@@ -265,7 +267,7 @@ class Calibration:
                 calibration = getattr(self, calibration_name)
                 wl_dict[motor] = calibration(steps)
             else:
-                print(f'{motor} not found in calibrations')
+                self.logger.info(f'{motor} not found in calibrations')
                 self.__dict__[calibration_name] = np.poly1d([0]) # default to zero
                 wl_dict[motor] = None
 
@@ -277,7 +279,7 @@ class Calibration:
 
 
         if len(json_files) == 0:
-            print('No autocalibration data found.')
+            self.logger.info('No autocalibration data found.')
             return
         
         report_dict = {}
@@ -288,28 +290,24 @@ class Calibration:
                 data = json.load(f)
 
             for name, calib in data.items():
-                # print("Updating {} with autocalibration data".format(name))
                 if len(calib) == 7:
-                    # print("Loading {} as poly_sin".format(name))
                     report_dict[name] ='poly_sin'
                     self.all_calibrations[name] = calib
                     self.__setattr__(name, PolySinModulation(*calib))
                 elif len(calib) == 6:
-                    # print("Loading {} as lin_sin".format(name))
                     report_dict[name] = 'lin_sin'
                     self.all_calibrations[name] = calib
                     self.__setattr__(name, LinSinModulation(*calib))
                 else:
-                    # print("Loading {} as poly1d".format(name))
                     report_dict[name] = 'poly1d'
                     self.all_calibrations[name] = calib
                     self.__setattr__(name, np.poly1d(calib))
 
         if report:
             for key, value in report_dict.items():
-                print(f'{key} updated as {value}')
-        print('Calibrations updated with autocalibration data')
-        print('-'*20)
+                self.logger.info(f'{key} updated as {value}')
+        self.logger.info('Calibrations updated with autocalibration data')
+        self.logger.info('-'*20)
 
     def update_monochromator_calibrations(self, report=True):
         '''Updates g3 and g4 calibrations using the final monochromator calibration'''
@@ -318,10 +316,10 @@ class Calibration:
             with open(os.path.join(self.calibrationDir, 'monochromator_calibrations.json'), 'r') as f:
                 data = json.load(f)
         except FileNotFoundError:
-            print('No monochromator calibration data found.')
+            self.logger.info('No monochromator calibration data found.')
             return
         except Exception as e:
-            print(f'Error loading monochromator calibration data: {e}')
+            self.logger.info(f'Error loading monochromator calibration data: {e}')
             return
 
         report_dict = {}
@@ -330,26 +328,23 @@ class Calibration:
             #TODO: refactor the generation code into a function
 
             if len(calib) == 7:
-                # print("Loading {} as poly_sin".format(name))
                 report_dict[name] ='poly_sin'
                 self.all_calibrations[name] = calib
                 self.__setattr__(name, PolySinModulation(*calib))
             elif len(calib) == 6:
-                # print("Loading {} as lin_sin".format(name))
                 report_dict[name] = 'lin_sin'
                 self.all_calibrations[name] = calib
                 self.__setattr__(name, LinSinModulation(*calib))
             else:
-                # print("Loading {} as poly1d".format(name))
                 report_dict[name] = 'poly1d'
                 self.all_calibrations[name] = calib
                 self.__setattr__(name, np.poly1d(calib))
 
         if report:
             for key, value in report_dict.items():
-                print(f'{key} updated as {value}')
-        print('Monochromator calibration added.')
-        print('-'*20)
+                self.logger.debug(f'{key} updated as {value}')
+        self.logger.info('Monochromator calibration added.')
+        self.logger.info('-'*20)
 
 
 class PseudoCalibration:
@@ -384,8 +379,6 @@ class PseudoCalibration:
 
         self.cal_forward = spline_frw
         self.cal_backward = spline_back
-
-        print("Pseudo calibration data loaded - NOW automatically correcting laser drift.")
 
         return spline_frw, spline_back
 

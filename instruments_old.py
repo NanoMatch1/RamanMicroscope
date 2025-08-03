@@ -1,70 +1,61 @@
-# l1: 46 steps
-# l2: -5 steps
-# l3: -247 steps
+
 import inspect
 import serial
 import time
-import pyvisa
 import numpy as np
 import os
 import json
-import ctypes
 from copy import copy
-from ctypes import *
-try:
-    from tucsen.TUCam import *
-except Exception as e:  # catch all exceptions, not just ImportError
-    print(f"TUcam error: {e}. Can continue with simulated camera but will crash if camera is required.")
-import sys
-if sys.platform == "win32":
-    from ctypes import OleDLL
-if sys.platform == "linux":
-    print("Linux detected, using libtucam.so")
-    print("implementation not yet available")
-else:
-    print("Unsupported platform. Please use Windows or Linux.")
 
-
-from enum import Enum
 import time
 import numpy as np
 import os
 import threading
-import tkinter as tk
-from tkinter import ttk, messagebox
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import wraps
 
-from calibration import Calibration, LdrScan
-from acquisitioncontrol import AcquisitionControl, AcquisitionGUI
 from datafit.laser_detection import LaserDetection
 
-# def simulate(expected_value=None, function_handler=None):
-#     """
-#     Decorator that returns a simulated response when self.simulate is True.
-    
-#     Args:
-#         expected_value: Static value to return when simulating
-#         function_handler: Optional callable that receives self and original args/kwargs
-#                          and returns a dynamic simulated value
-#     """
-#     def decorator(func):
-#         @wraps(func)
-#         def wrapper(self, *args, **kwargs):
-#             if self.simulate:
-#                 # If a function handler is provided, use it to get dynamic response
-#                 if function_handler is not None:
-#                     return function_handler(self, *args, **kwargs)
-#                 # Otherwise return the static expected value
-#                 return expected_value
-#             return func(self, *args, **kwargs)
-#         return wrapper
-#     return decorator
+def enforce_response(func, expected_response=True, callback=None):
+    """
+    Decorator to assert that a function returns the expected response.
+    If the response does not match, it logs the error and runs a callback if defined.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        response = func(self, *args, **kwargs)
+        if response != expected_response:
+            self.logger.error(f"Expected response: {expected_response}, but got: {response}")
+            if callback:
+                self.logger.error(f"Running callback: {callback.__name__}")
+                callback(response)
+            elif hasattr(self, 'call_on_failure'):
+                self.call_on_failure(response)
+                self.logger.error(f"Running default failure callback: {self.call_on_failure.__name__}")
+        return response
+    return wrapper
+
+
+def debug_return(success_criteria=lambda x: x is True and x is not None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            result = func(self, *args, **kwargs)
+            if self.apply_debug_mode:
+                func_name = f"{self.__class__.__name__}.{func.__name__}"
+                if not success_criteria(result):
+                    self.micro_log.warning(f"[WARNING] {func_name} returned suspicious result: {result}")
+                else:
+                    self.micro_log.coms(f"{func_name} returned OK: {result}")
+            return result
+        return wrapper
+    return decorator
 
 
 def apply_pseudocal_forwards(func):
+    @wraps(func)
     def wrapper(self, wavelength, *args, **kwargs):
         if getattr(self, 'apply_pseudocal', False) is True:
             # Apply offset correction before the function runs
@@ -93,13 +84,14 @@ def live_laser_calibration(func):
     """
     @wraps(func)
     def wrapper(self, *args, **kwargs):
+        response = True
         # Call the original function first, catch the 
-        true_wavelength = func(self, *args, **kwargs)
+        func(self, *args, **kwargs)
         # Then run the live calibration
         if self.apply_live_calibration is True:
-            true_wavelength = self.live_calibration_laser()
+            response = self.live_calibration_laser()
 
-        return true_wavelength
+        return response  # Indicate success
     return wrapper
 
 def ui_callable(func):
@@ -109,6 +101,7 @@ def ui_callable(func):
     """
     func.is_ui_process_callable = True
     return func
+
 
 def string_to_float(value, message=''):
     try:
@@ -132,8 +125,10 @@ class MotionControl:
     - Homing commands to not apply backlash corrections to the homed position. This means if the backlash changes, the motor homes need to be recalibrated.
     - Home calibration is performed at the microscope level by calling "calhome" at the interface level. Home positions are stored in the config file.'''
 
-    def __init__(self, controller, motor_map, config):
-        self.controller = controller
+    def __init__(self, interface, motor_map, config):
+        self.interface = interface
+        self.controller = interface.controller
+        self.logger = interface.logger.getChild('MotionControl')
         self.motor_map = motor_map  # Dictionary mapping motor names to IDs
         self.config = config
         self.home_positions = config.get("home_positions", {})
@@ -146,7 +141,6 @@ class MotionControl:
         self._spectrometer_wavelength = None
 
         self.last_direction = True
-
 
 
     def extract_coms_flag(self, message):
@@ -253,6 +247,7 @@ class MotionControl:
         """
         return {motor: self.motor_map[motor] for motor in motor_list if motor in self.motor_map}
 
+
     def confirm_motor_positions(self, target_positions):
         """
         Confirm that motors have reached their target positions.
@@ -285,12 +280,12 @@ class MotionControl:
                 }
         
         if all_match:
-            print("Motors at target positions")
+            self.logger.debug("Motors at target positions")
             return True
         else:
-            print("ERROR: Motors not at target positions")
+            self.logger.warning("ERROR: Motors not at target positions")
             for motor, info in discrepancies.items():
-                print(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
+                self.logger.warning(f"Motor {motor}: Expected {info['expected']}, Actual {info['actual']}")
             return False
         
     def get_motor_positions(self, motor_dict, report=True):
@@ -533,7 +528,6 @@ class Microscope(Instrument):
         'Stage positions in microns are held by the microscope in the stage_positions_microns dictionary. Every move XYZ axis command will update the dictionary and call an AcquisitionControl.update_stage_positions to ensure the stage positions are in sync with the acquisition control, which needs them to calculate scan positions.',
         'All @ui_callable methods are callable from the GUI and the CLI. Some commands serve as a bridge for the '
         
-    
     ]
 
     def __init__(self, interface, calibration_service=None, controller=None, camera=None, 
@@ -545,6 +539,7 @@ class Microscope(Instrument):
         self.micro_log
         self.laser_detection = LaserDetection(interface=interface) # set up laser calibration capability
         self.laser_wavelength_calibrated = None # this holds the true laser calibration when measured live.
+        self.cam_temp = None
 
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
@@ -557,6 +552,7 @@ class Microscope(Instrument):
         self.simulate = simulate
         self.apply_pseudocal = False  # Whether to apply pseudocalibration corrections
         self.apply_live_calibration = True
+        self.apply_debug_mode = True  # Whether to apply debug mode, which logs all commands and responses
         self.laser_calibrated = False
 
         self.microscope_mode = 'ramanmode'
@@ -584,13 +580,15 @@ class Microscope(Instrument):
         # acquisition parameters
 
         # Motion control
-        self.motion_control = MotionControl(self.controller, self.motor_map, self.config)
+        self.motion_control = MotionControl(interface, self.motor_map, self.config)
 
         self.command_functions = {
             'nyi': self.not_yet_implemented,
+            'threads': self.list_threads,
             # calibration commands
             'pscal': self.toggle_pseudocal,
             'livecal': self.toggle_live_calibration,
+            'debugmode': self.toggle_debug_mode,
             # general commands
             'wai': self.where_am_i,
             'rg': self.get_spectrometer_position,
@@ -654,10 +652,8 @@ class Microscope(Instrument):
             'acqtime': self.set_acquisition_time,
             'filename': self.set_filename,
             'ramanshift': self.set_raman_shift,
-            'laserpower': self.set_laser_power,
             'runscan': self.run_scan_thread,
             'cancel': self.cancel_scan,
-            'gui': self.open_acquisition_gui,
 
             'mshut': self.close_mono_shutter,
             'mopen': self.open_mono_shutter,
@@ -680,12 +676,18 @@ class Microscope(Instrument):
             'camspec': self.set_acq_spectrum_mode,
             'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
-            'closecamera': self.close_camera_connection,
+            # 'closecamera': self.close_camera_connection,
             'checkfan': self.check_camera_fan_speed,
 
-            # laser commands
-            'low': self.low_power,
-            'high': self.high_power,
+            # laser hardware commands
+            'setpower': self.set_laser_power,
+            'getpower': self.get_laser_power,
+            'laseron': self.laser_on,
+            'laseroff': self.laser_off,
+            'cycleshutter': self.cycle_laser_shutter,
+            'laserstatus': self.get_laser_status,
+            'enable': self.enable_laser,
+            'warmup': self.get_warmup_status,
         }
 
         self.current_shift = 0
@@ -706,6 +708,33 @@ class Microscope(Instrument):
             raise ValueError(f"Unknown command: '{command}'")
         return self.command_functions[command](*args, **kwargs)
     
+    @ui_callable
+    def list_threads(self):
+        """
+        Lists all active threads in the current process.
+        Returns a list of thread names.
+        """
+        threads = threading.enumerate()
+        thread_names = [thread.name for thread in threads]
+        self.micro_log.info(f"Active threads:")
+        for thread in threads:
+            if thread.is_alive():
+                self.micro_log.info(f"{thread.name} is alive")
+            else:
+                self.micro_log.info(f"{thread.name} is not alive")
+        return thread_names
+
+    @property
+    def laser_status(self):
+        laser_on = self.interface.laser.status
+        if laser_on == 'ON':
+            return True
+        elif laser_on == 'OFF' or laser_on == 'WARMUP':
+            return False
+        else:
+            self.micro_log.warning(f"Unknown laser status: {laser_on}. Returning False.")
+            return False
+
     def capture_instrument_state(self):
         '''Not yet implemented. #TODO
         Capture the current state of the instrument by getting all relavent attributes.
@@ -737,11 +766,7 @@ class Microscope(Instrument):
         # if self.interface.spectrometer.is_simulated:
             # self.micro_log.debug("Simulated spectrometer, skipping live laser calibration.")
             # return None
-        if self.camera.is_running:
-            run_camera = True
-            self.stop_continuous_acquisition()  # Stop camera if it is running to avoid interference with laser detection
-        else:
-            run_camera = False
+
 
         estimated_wavelength = self.laser_wavelengths.get('l1')
         
@@ -755,20 +780,25 @@ class Microscope(Instrument):
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
         self.go_to_grating_wavelength(estimated_wavelength)
         self.go_to_spectrometer_wavelength(estimated_wavelength)  # Move spectrometer to laser wavelength
-        self.set_spectrometer_enter_slit(0)
+        self.set_spectrometer_enter_slit(5)
         self.go_to_monochromator_wavelength(current_laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
-        image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
 
         attempts = 0
         while attempts < 5:
+            image_data, wavelength_axis = self.interface.acq_ctrl._acquire_laser()
             result = self.laser_detection.detect_laser(image_data, wavelength_axis) # returns "Peak" object with pos and height attributes, or None if no peak is found
             if result is not None:
                 calibrated_wavelength = result.pos
                 break
 
-            self.micro_log.debug(f"Laser not found, moving g4 + 2s. Attempt {attempts}/5")
-            self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
-            time.sleep(0.2)
+            if attempts == 0:
+                self.micro_log.info("Adjusting camera to 1s acquisition time for laser detection.")
+                self.set_acquisition_time(1)  # Set acquisition time to 1s for laser detection
+            else:
+                self.micro_log.debug(f"Laser not found, moving g4 + 1. Attempt {attempts}/5")
+                self.move_motors({'g4': 2}, backlash=False)  # Move grating 4 two steps
+                time.sleep(0.5)
+                
             attempts += 1
 
         if result is None:
@@ -786,11 +816,9 @@ class Microscope(Instrument):
         # self.restore_motor_state(original_motor_positions) 
         # self.go_to_spectrometer_wavelength(original_spec_wl)
 
-        if run_camera:
-            self.start_continuous_acquisition()  # Restart camera if it was running
         self.micro_log.info(f"Live laser calibration complete. Calibrated wavelength: {calibrated_wavelength}")
 
-        return calibrated_wavelength
+        return True
 
     
     def _get_motor_positions(self, motor_dict):
@@ -870,6 +898,20 @@ class Microscope(Instrument):
 
         return status
     
+    @ui_callable
+    def toggle_debug_mode(self, *args):
+        '''Toggle the debug mode. In debug mode, all commands and responses are logged.'''
+        if not args:
+            self.apply_debug_mode = not self.apply_debug_mode
+        elif len(args) == 1 and isinstance(args[0], bool):
+            self.apply_debug_mode = args[0]
+        else:
+            self.micro_log.error('Invalid argument for toggle_debug_mode. Use True or False to set the state.')
+        status = "enabled" if self.apply_debug_mode else "disabled"
+        self.micro_log.info(f"DEBUG MODE {status}")
+
+        return status
+    
     @property
     def filename(self):
         return self.interface.acq_ctrl.filename
@@ -933,16 +975,6 @@ class Microscope(Instrument):
 
 
     
-    @ui_callable
-    def open_acquisition_gui(self):
-        def run_gui():
-            root = tk.Tk()
-            params = self.interface.acq_ctrl
-            app = AcquisitionGUI(root, params)
-            root.mainloop()
-
-        threading.Thread(target=run_gui, daemon=True).start()
-
 
 
 
@@ -985,7 +1017,8 @@ class Microscope(Instrument):
             motor_positions = instrument_state.get('motor_dict', {})
             stage_positions = instrument_state.get('stage_positions', {})
             self.micro_log.info('Instrument state loaded from file')
-            self.write_motor_positions(motor_dict=motor_positions)
+        
+            # self.write_motor_positions(motor_dict=motor_positions) #PATCH: reenable and make check for motors being the same and selecting to write or not
             self.stage_positions_microns = stage_positions
             
             self.get_all_current_wavelengths()
@@ -1108,8 +1141,9 @@ class Microscope(Instrument):
 
         motor_id = self.motor_map[label]
         # Send homing command
-
+        self.micro_log.info(f"Recalibrating home position for motor {motor_id}")
         response = self.controller.send_command(f"h{motor_id}")
+
         response = response[0]
         self.micro_log.info(f"Homing response: {response}")
         if "at position" in response:
@@ -1125,6 +1159,7 @@ class Microscope(Instrument):
         self.write_config()
         time.sleep(0.01)
         self.motion_control.move_motors({label: -position})  # Move to home position
+        self.micro_log.info(f"Moved motor {motor_id} to home position {position}")
 
 
     @ui_callable
@@ -1206,18 +1241,6 @@ class Microscope(Instrument):
         return self.config.get("home_positions", {}).get(motor_id)
 
 
-    # @ui_callable
-    # def connect_to_triax(self):
-    #     '''Connects to the spectrometer after already running.'''
-    #     self.interface.connect_to_triax()
-    #     self.micro_log.info('Connected to TRIAX spectrometer')
-    #     self.generate_wavelength_axis()
-
-    # @ui_callable
-    # def connect_to_camera(self):
-    #     '''Connects to the camera after already running.'''
-    #     self.interface.connect_to_camera()
-
     @ui_callable
     def write_motor_positions(self, motor_positions='', motor_dict=None):
         '''Writes the current motor positions to a file for a string entered by the user. Optionally, a dictionary of motor names to positions can be passed.'''
@@ -1271,11 +1294,6 @@ class Microscope(Instrument):
         with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'w') as f:
             json.dump(current_data, f)
             # f.write('\n')
-            
-        # with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.txt'), 'a') as f:
-        #     f.write('{}:{}:{}:{}\n'.format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
-        # self.micro_log.info("Exporting: {}:{}:{}:{}".format(laser_motor_positions, monochromator_motor_positions, triax_position, extra))
-        # return f"{laser_motor_positions}:{monochromator_motor_positions}:{triax_position}:{extra}"
 
 
     def initialise(self):
@@ -1417,35 +1435,20 @@ class Microscope(Instrument):
             
         self.interface.acq_ctrl.update_stage_positions()
         
-    # def move_stage(self, motor_steps):
-    #     '''Moves the microcsope sample stage in steps in the X, Y and Z directions'''
 
-    #     motion_dict = self._parse_stage_motion_command(motor_steps)
-    #     self.motion_control.move_motors(motion_dict)
-    #     if "x" in motion_dict:
-    #         # self.move_x(motion_dict['X'])
-    #         x_steps = self.calibration_service.microns_to_steps(motion_dict['X'])
-    #     if "y" in motion_dict:
-    #         self.move_y(motion_dict['Y'])
-    #     if "z" in motion_dict:
-    #         self.move_z(motion_dict['Z'])
-    #     self.update_stage_positions(motion_dict)
-
-    #     print('Stage moved to {}'.format(self.interface.acq_ctrl.current_stage_coordinates))
-    
     @ui_callable
     def move_x(self, travel_distance):
         '''Moves the microcsope sample stage in the X direction, by travel distance in micrometers. Note no backlash compensation is applied.'''
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            print("Invalid travel distance. Must be a number.")
+            self.micro_log.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"x": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"x": travel_distance})
-        print('x stage moved by {} micrometers'.format(travel_distance))
+        self.micro_log.info('x stage moved by {} micrometers'.format(travel_distance))
     
     @ui_callable
     def move_y(self, travel_distance):
@@ -1453,13 +1456,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            print("Invalid travel distance. Must be a number.")
+            self.micro_log.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"y": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"y": travel_distance})
-        print('y stage moved by {} micrometers'.format(travel_distance))
+        self.micro_log.info('y stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def move_z(self, travel_distance):
@@ -1467,13 +1470,13 @@ class Microscope(Instrument):
         try:
             travel_distance = float(travel_distance)
         except ValueError:
-            print("Invalid travel distance. Must be a number.")
+            self.micro_log.info("Invalid travel distance. Must be a number.")
             return
         
         motor_dict = self.calibration_service.microns_to_steps({"z": travel_distance})
         self.motion_control.move_motors(motor_dict, backlash=False, report=False)
         self.update_stage_positions({"z": travel_distance})
-        print('z stage moved by {} micrometers'.format(travel_distance))
+        self.micro_log.info('z stage moved by {} micrometers'.format(travel_distance))
 
     @ui_callable
     def set_stage_home(self):
@@ -1483,7 +1486,7 @@ class Microscope(Instrument):
 
         for key in self.stage_positions_microns.keys():
             self.stage_positions_microns[key] = 0
-        print('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
+        self.micro_log.info('Stage home ({}) set to current position'.format(self.interface.acq_ctrl.current_stage_coordinates))
 
     @ui_callable
     def enter_focus_mode(self):
@@ -1582,18 +1585,6 @@ class Microscope(Instrument):
         self.go_to_laser_steps(initial_laser)
         self.go_to_grating_steps(initial_grating)
 
-    @ui_callable
-    def low_power(self):
-        '''sets the laser power to low to save on the diode lifetimes'''
-        self.set_laser_power(0.00)
-
-        print("Laser power set to low")
-    
-    @ui_callable
-    def high_power(self, power=4.5):
-        '''Sets the laser power to 4.5 W or otherwise provided in the kwarg for standard ops.'''
-        self.set_laser_power(power)
-        print("Laser power set to {power}".format(power))
 
     @ui_callable
     def go_to_laser_steps(self, target_positions, confirm_pos=True):
@@ -1759,6 +1750,11 @@ class Microscope(Instrument):
         return self.interface.spectrometer.read_enterance_slit()
     
     @property
+    def report_camera_temp(self):
+        '''Returns the current camera temperature.'''
+        return self.camera.get_temperature()
+    
+    @property
     def current_monochromator_wavenumber(self):
         '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
         wavelength_sample = next(iter(self.monochromator_wavelengths.values()))
@@ -1779,18 +1775,20 @@ class Microscope(Instrument):
 
     #? camera commands
 
-    @ui_callable
-    def close_camera_connection(self):
-        '''Closes the camera connection.'''
-        self.camera.close_camera_connection()
+    # @ui_callable
+    # def close_camera_connection(self):
+    #     '''Closes the camera connection.'''
+    #     self.camera.close_camera()
 
     @ui_callable
     def check_camera_fan_speed(self):
         speed = self.camera.get_fan_speed()
-        self.logger.info("Fan Speed: {}".format(speed))
+        self.micro_log.info("Fan Speed: {}".format(speed))
         return speed
 
     @ui_callable
+    # @debug_return()
+    @enforce_response
     def set_acquisition_time(self, value):
         try:
             value = float(value)
@@ -1803,6 +1801,7 @@ class Microscope(Instrument):
         
         self.interface.acq_ctrl.general_parameters['acquisition_time'] = value
         self.camera.set_exposure_time(str(value))
+        return True
 
     @ui_callable
     def set_filename(self, filename):
@@ -1811,8 +1810,59 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_laser_power(self, value):
+        '''Sets the laser power to the specified value.'''
+        try:
+            value = float(value)
+        except ValueError:
+            self.micro_log.info("Invalid laser power {}. Must be a number.".format(value))
+            return
+        
         self.interface.laser.set_power(value)
         self.interface.acq_ctrl.general_parameters['laser_power'] = value
+
+    @ui_callable
+    def get_laser_power(self):
+        '''Returns the current laser power.'''
+        power = self.interface.laser.get_power()
+        self.interface.acq_ctrl.general_parameters['laser_power'] = power
+        return power
+    
+    @ui_callable
+    def laser_on(self):
+        '''Turns the laser on.'''
+        self.interface.laser.turn_on()
+        self.micro_log.info("Laser turned on")
+        self.interface.emitter.update_laser_status(True)
+    
+    @ui_callable
+    def laser_off(self):
+        '''Turns the laser off.'''
+        self.interface.laser.turn_off()
+        self.micro_log.info("Laser turned off")
+        self.interface.emitter.update_laser_status(False)
+
+    @ui_callable
+    def cycle_laser_shutter(self):
+        '''Cycles the laser shutter.'''
+        self.interface.laser.cycle_shutter()
+    
+    @ui_callable
+    def get_laser_status(self):
+        '''Returns the current laser status.'''
+        status = self.interface.laser.get_status()
+        return status
+    
+    @ui_callable
+    def enable_laser(self):
+        '''Enables the laser.'''
+        self.interface.laser.enable_laser()
+
+    @ui_callable
+    def get_warmup_status(self):
+        '''Returns the current laser warmup status.'''
+        status = self.interface.laser.get_warmup_status()
+        self.micro_log.info("Laser warmup status: {}%".format(status))
+        return status
 
     @ui_callable
     def set_raman_shift(self, value):
@@ -1854,6 +1904,7 @@ class Microscope(Instrument):
 
     @ui_callable
     def acquire_once(self, filename=None):
+        self.interface.acq_ctrl.prepare_acquisition_params()
         self.interface.acq_ctrl.acquire_once(filename)
         return
     
@@ -1861,27 +1912,6 @@ class Microscope(Instrument):
     def acquire_custom_scan(self):
         self.interface.acq_ctrl.acquire_custom_scan()
         return
-    
-    # @ui_callable
-    
-    # def save_acquisition(self, image_data, filename=None, save_folder=None, scan_index=0):
-        
-    #     if self.wavelength_axis is None:
-    #         self.wavelength_axis = np.arange(image_data.shape[1]) 
-
-    #     if not save_folder:
-    #         save_folder = self.dataDir
-    #     out_path = os.path.join(self.scriptDir, save_folder, self.filename, f"{self.filename}_{scan_index:06}.npz")
-
-    #     print(out_path)
-        
-    #     if not os.path.exists(os.path.dirname(out_path)):
-    #         os.makedirs(os.path.dirname(out_path))
-
-    #     np.savez_compressed(out_path,
-    #                         image=image_data,
-    #                         wavelength=self.wavelength_axis,
-    #                         metadata=json.dumps(self.interface.acq_ctrl.metadata))
 
 
     def prepare_dataset_acquisition(self):
@@ -1915,7 +1945,9 @@ class Microscope(Instrument):
     @ui_callable
     def get_detector_temperature(self):
         '''Returns the camera temperature.'''
-        return round(self.camera.check_camera_temperature(), 2)
+        # self.micro_log.debug
+        cam_temp = self.camera.get_temperature()
+        return cam_temp
     
     @ui_callable
     def set_detector_temperature(self, temperature):
@@ -1952,7 +1984,11 @@ class Microscope(Instrument):
         """
         self.micro_log.info(f"Moving all components to wavelength: {wavelength} nm")
         # First move the laser
-        wavelength = self.go_to_laser_wavelength(wavelength)
+        self.go_to_laser_wavelength(wavelength)
+        # If the laser wavelength is calibrated, use that instead
+        if self.laser_wavelength_calibrated is not None:
+            wavelength = self.laser_wavelength_calibrated
+
         self.go_to_grating_wavelength(wavelength) # move all grating motors
         
         # Then handle the monochromator
@@ -1966,27 +2002,42 @@ class Microscope(Instrument):
         self.micro_log.info(f"All components set to wavelength: {wavelength} nm")
         return True
     
+    def check_spectrometer_wavelength(self, wavelength):
+        wavelength = string_to_float(wavelength)
+
+        if not self.check_hard_limits(wavelength, self.hard_limits['spectrometer_wavelength']):
+            self.micro_log.info('Spectrometer wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['spectrometer_wavelength']))
+            return False
+        
+        return True
 
 
     @ui_callable
+    # @debug_return()
+    @enforce_response
     def go_to_spectrometer_wavelength(self, wavelength):
         '''Moves the spectrometer to the specified wavelength.'''
+        wavelength = string_to_float(wavelength)
+        if self.check_spectrometer_wavelength(wavelength) is False:
+            return False
+        
         self.interface.spectrometer.go_to_wavelength(wavelength)
         self.generate_wavelength_axis()
+        return True
 
     @ui_callable
     def read_entrance_slit(self):
         '''Reads the current entrance slit width of the spectrometer.'''
         try:
             slit_width = self.interface.spectrometer.read_enterance_slit()
-            breakpoint()
             return slit_width
         except Exception as e:
             self.micro_log.error(f"Error reading entrance slit: {e}")
             return None
         
 
-
+    # @debug_return()
+    @enforce_response
     def set_spectrometer_enter_slit(self, slit_width: int):
         '''Sets the entrance slit width of the spectrometer.'''
         try:
@@ -2001,7 +2052,7 @@ class Microscope(Instrument):
         move_slit = slit_width - current_width
         if move_slit == 0:
             self.micro_log.debug("Slit width is already set to {} microns".format(slit_width))
-            return
+            return True
         self.interface.spectrometer.move_enterance_slit(move_slit)
 
         # poll to see if current width is achieved, wait until it is
@@ -2011,9 +2062,11 @@ class Microscope(Instrument):
             count += 1
             if count > 50:
                 self.micro_log.error("Failed to set slit width to {} microns".format(slit_width))
-                return
+                return False
         
         self.micro_log.info("Slit width set to {} microns".format(slit_width))
+
+        return True
             
 
 
@@ -2208,47 +2261,8 @@ class Microscope(Instrument):
     def wavelength_to_wavenumber(self, wavelength):
         return 10_000_000/wavelength
     
-    # @ui_callable
-    # def simple_calibration_shift(self, raman_shift=None):
-    #     '''We observe a known Raman shift at this wavelength, but the wavelength does not match the shift. This function takes the current motor positions as the new position for the current wavelength. Simply sets the motor steps to the calcualted position for the current wavelength.'''
 
-    #     def obtain_
-
-    #     if raman_shift is not None:
-    #         self.current_shift = float(raman_shift)
-
-        
-        
-    #     current_laser_pos = [i for i in self.get_laser_motor_positions()]
-    #     current_laser_wavelength = self.calculate_laser_wavelength(current_laser_pos)
-    #     current_grating_pos = [i for i in self.get_monochromator_motor_positions()]
-
-    #     # What the current wavelength should be at the detector
-    #     current_monochromator_wavelength = self.wavenumber_to_wavelength(self.current_monochromator_wavenumber)
-
-    #     current_laser_pos[0] = round(self.calibration_service.wl_to_l1(current_laser_wavelength[0]))
-    #     current_laser_pos[1] = round(self.calibration_service.wl_to_l2(current_laser_wavelength[0]))
-    #     current_grating_pos[0] = round(self.calibration_service.wl_to_g1(current_monochromator_wavelength[0]))
-    #     current_grating_pos[1] = round(self.calibration_service.wl_to_g2(current_monochromator_wavelength[0]))
-
-    #     print('Current Positions:\n Laser: {}\n Monochromator: {}'.format(current_laser_pos, current_grating_pos))
-    #     print('Target Positions:\n Laser: {}\n Monochromator: {}'.format([l1_target, l2_target], [g1_target, g2_target]))
-
-    #     # set the motor positions to the calculated positions, shifting the calibration to the current wavelength
-    #     self.set_absolute_positions_A(f'{l1_target},{l2_target},0,0')
-    #     self.set_absolute_positions_B(f'{g1_target},{g2_target},0,0')
-        
-    #     new_laser_pos = self.get_laser_motor_positions()
-    #     new_laser_wavelength, l2_wavelength = self.calculate_laser_wavelength(new_laser_pos)
-    #     new_grating_pos = self.get_monochromator_motor_positions()
-    #     new_grating_wavelength = self.calculate_monochromator_wavelength(new_grating_pos)[0]
-        
-    #     if new_grating_pos[0] == g1_target and new_grating_pos[1] == g2_target and new_laser_pos[0] == l1_target and new_laser_pos[1] == l2_target:
-    #         print('Calibration shift successful')
-    #         print('New Positions:\n Laser: {}\n Grating: {}'.format(new_laser_wavelength, new_grating_wavelength))
-    #     else:
-    #         print('Calibration shift failed')
-    #         print('New Positions:\n Laser: {}\n Grating: {}'.format(new_laser_wavelength, new_grating_wavelength))
+  
 
     def check_hard_limits(self, value, limits):
         '''Checks the hard limits dictionary of the microscope for the allowed range of values.'''
@@ -2258,14 +2272,12 @@ class Microscope(Instrument):
         
     def check_laser_wavelength(self, wavelength):
         '''Checks the validity of the entered value for laser wavelength.'''
-        
-        wavelength = string_to_float(wavelength)
 
         if not self.check_hard_limits(wavelength, self.hard_limits['laser_wavelength']):
             print('Laser wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['laser_wavelength']))
             return False
         
-        return wavelength
+        return True
 
     def calculate_laser_steps_to_wavelength(self, target_wavelength):
         '''
@@ -2322,11 +2334,14 @@ class Microscope(Instrument):
         Returns:
         bool: True if successful, False otherwise
         """
+        wavelength = string_to_float(wavelength)
         # Validate the wavelength is within allowed range
-        wavelength = self.check_laser_wavelength(wavelength)
-        if wavelength is False:
+        if self.check_laser_wavelength(wavelength) is False:
             return False
-        
+
+        if not self.camera.stop_flag.is_set():
+            self.stop_continuous_acquisition() # Stop camera if running to avoid conflicts during calibration
+            self.micro_log.debug("NOTE: Live camera was running. Stopped")
         # Safety: close shutter during movement
         # self.close_mono_shutter()
         
@@ -2348,10 +2363,11 @@ class Microscope(Instrument):
             self.micro_log.debug("Laser no longer calibrated...")
         else:
             self.micro_log.info("Laser motors already at target position - no motion initiated.")
-        return wavelength
+        return True
 
 
     @ui_callable
+    @debug_return()
     def go_to_monochromator_wavelength(self, wavelength):
         """
         Move the monochromator to the specified wavelength.
@@ -2362,15 +2378,11 @@ class Microscope(Instrument):
         Returns:
         bool: True if successful, False otherwise
         """
+        wavelength = string_to_float(wavelength)
         # Validate the wavelength is within allowed range
-        wavelength = self.check_monochromator_wavelength(wavelength)
-        if wavelength is False:
+        if self.check_monochromator_wavelength(wavelength) is False:
             return False
-        
-        # Safety: close shutter during movement
-        # self.close_mono_shutter()
-        
-        # Get target positions from calibration service
+
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
         
         # Move to target positions
@@ -2381,6 +2393,8 @@ class Microscope(Instrument):
         return True
     
     @ui_callable
+    # @debug_return()
+    @enforce_response
     def go_to_grating_wavelength(self, wavelength):
         """
         Move all gratings (first and second tunable filters) to the specified wavelength.
@@ -2392,22 +2406,15 @@ class Microscope(Instrument):
         bool: True if successful, False otherwise
         """
         # Validate the wavelength is within allowed range
-        wavelength = self.check_grating_wavelength(wavelength)
-        if wavelength is False:
+        wavelength = string_to_float(wavelength)
+        if self.check_grating_wavelength(wavelength) is False:
             return False
-        
-        # Safety: close shutter during movement
-        # self.close_mono_shutter()
         
         # Get target positions from calibration service
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
         
-        # Move to target positions
         moved = self.go_to_grating_steps(target_positions)
-        # self.laser_safety_check()
-        # self.open_mono_shutter()
-        
-        # Report primary wavelength
+
         if moved is True:
             self.micro_log.info("New grating wavelength: {}".format(self.report_grating_wavelength))
         else:
@@ -2423,7 +2430,7 @@ class Microscope(Instrument):
             self.micro_log.info('Grating wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['grating_wavelength']))
             return False
         
-        return wavelength
+        return True
     
     @ui_callable
     def go_to_grating_steps(self, target_positions):
@@ -2588,7 +2595,8 @@ class Microscope(Instrument):
     def get_spectrometer_position(self):
         '''Get the current position of the spectrometer in motor steps.'''
         self.interface.spectrometer.get_spectrometer_position()
-        print('Current spectrometer position: {}'.format(self.interface.spectrometer.spectrometer_position))
+        self.interface.acq_ctrl._current_parameters['spectrometer_steps'] = self.interface.spectrometer.spectrometer_position
+        self.logger.info('Current spectrometer position: {}'.format(self.interface.spectrometer.spectrometer_position))
         return self.interface.spectrometer.spectrometer_position
     
 
@@ -2731,32 +2739,6 @@ class Microscope(Instrument):
         self.micro_log.info(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
 
-    # def acquire_spectrum(self, overwrite=False, save=True):
-    #     '''Acquires a single spectrum and saves it in the saved_data directory.'''
-
-    #     print("Acquiring...")
-    #     data = self.interface.camera.acquire_one_frame()
-    #     np.save(os.path.join(self.interface.transientDir, "transient_data.npy"), data) # save to transient dir for immediate plotting/viewing
-
-    #     data = np.array(data, dtype=np.int32) # convert to numpy array for fast saving
-    #     if overwrite is False:
-    #         file_index = len([x for x in os.listdir(self.saveDir) if x.split('_')[0] == self.filename])
-    #     else:
-    #         file_index = 0
-
-    #     filename = os.path.join(self.saveDir, f'{self.filename}_{file_index}.npy')
-        
-    #     while True:
-    #         try:
-    #             if save is True:
-    #                 np.save(filename, data)
-    #             return data
-    #         except PermissionError:
-    #             print('File in use. Waiting 0.1 s...')
-    #             time.sleep(0.1)
-    #             continue
-
-
 class Camera(Instrument):
     def __init__(self, interface, simulate=False):
         super().__init__()
@@ -2784,214 +2766,6 @@ class Camera(Instrument):
 
     def connect_to_camera(self):
         return serial.Serial
-
-    # def acquire_one_frame(self):
-    #     '''Acquires a single frame from the camera.'''
-    #     return self.acquire_frame()
-    
-# class TucsenCamera(Camera):
-#     def __init__(self, interface, simulate=False, set_ROI=(0, 0, 2048, 2048)):
-#         self.simulate = simulate
-#         self.scriptDir = interface.scriptDir
-#         self.transientDir = interface.transientDir
-#         self.set_ROI = set_ROI
-
-#         self.camera_lock = threading.Lock()
-#         self.stop_flag = threading.Event()
-#         self.is_running = False
-
-#         self.command_functions = {
-#             'acquire_one_frame': self.acquire_one_frame,
-#             'start_continuous_acquire': self.start_continuous_acquisition,
-#             'stop_continuous_acquire': self.stop_continuous_acquisition
-#         }
-
-#     def connect(self):
-#         print("Connecting to Tucsen...")
-#         self.TUCAMINIT = TUCAM_INIT(0, self.scriptDir.encode('utf-8'))
-#         self.TUCAMOPEN = TUCAM_OPEN(0, 0)
-#         self.handle = self.TUCAMOPEN.hIdxTUCam
-#         TUCAM_Api_Init(pointer(self.TUCAMINIT), 5000)
-#         print("Connected to Tucsen.")
-        
-#         # self.open_camera(0)
-#         # self.SetROI(set_ROI=self.set_ROI)
-
-#     @ui_callable
-#     def acquire_one_frame(self):
-#         self.open_camera(0)
-#         self.SetROI(set_ROI=(0, 0, 2048, 2048))
-#         self.SetExposure(200)
-#         dataDict = self.WaitForImageData(nframes=1)
-#         self.close_camera()
-#         return dataDict[0] if dataDict else None
-
-#     @ui_callable
-#     def continuous_acquisition(self):
-#         self.stop_flag.clear()
-#         self.open_camera(0)
-#         self.SetROI(set_ROI=(0, 0, 2048, 2048))
-#         self.SetExposure(200)
-#         self.write_dir = self.transientDir
-
-#         while not self.stop_flag.is_set():
-#             try:
-#                 with self.camera_lock:
-#                     dataDict = self.WaitForImageData(nframes=1)
-#                 if not dataDict:
-#                     continue
-#                 data = dataDict[0]
-#                 np.save(os.path.join(self.transientDir, "transient_data.npy"), data)
-#                 time.sleep(0.001)
-#             except Exception as e:
-#                 print(f"Acquisition error: {e}")
-#                 break
-
-#         self.close_camera()
-
-#     @ui_callable
-#     def start_continuous_acquisition(self):
-#         acq_thread = threading.Thread(target=self.continuous_acquisition)
-#         acq_thread.daemon = True
-#         acq_thread.start()
-#         print("Started continuous acquisition.")
-#         self.is_running = True
-
-#     def stop_continuous_acquisition(self):
-#         print("Stopping continuous acquisition.")
-#         self.stop_flag.set()
-#         self.is_running = False
-
-#     def open_camera(self, Idx):
-
-#         if  Idx >= self.TUCAMINIT.uiCamCount:
-#             return
-
-#         self.TUCAMOPEN = TUCAM_OPEN(Idx, 0)
-
-#         TUCAM_Dev_Open(pointer(self.TUCAMOPEN))
-
-#         if 0 == self.TUCAMOPEN.hIdxTUCam:
-#             print('Open the camera failure!')
-#             return
-#         else:
-#             print('Open the camera success!')
-
-#     def close_camera(self):
-#         if 0 != self.TUCAMOPEN.hIdxTUCam:
-#             TUCAM_Dev_Close(self.TUCAMOPEN.hIdxTUCam)
-#         print('Close the camera success')
-
-#     def UnInitApi(self):
-#         TUCAM_Api_Uninit()
-
-#     def SetROI(self, set_ROI=(0, 0, 2048, 2048)):
-#         if len(set_ROI) != 4:
-#             print('ROI must be a tuple of 4 elements, (HOffset, VOffset, Width, Height)')
-#             return
-#         roi = TUCAM_ROI_ATTR()
-#         roi.bEnable  = 1
-#         roi.nHOffset = set_ROI[0]
-#         roi.nVOffset = set_ROI[1]
-#         roi.nWidth   = set_ROI[2]
-#         roi.nHeight  = set_ROI[3]
-
-#         try:
-#            TUCAM_Cap_SetROI(self.TUCAMOPEN.hIdxTUCam, roi)
-#            print('Set ROI state success, HOffset:%#d, VOffset:%#d, Width:%#d, Height:%#d'%(roi.nHOffset,
-#                     roi.nVOffset, roi.nWidth, roi.nHeight))
-#         except Exception:
-#             print('Set ROI state failure, HOffset:%#d, VOffset:%#d, Width:%#d, Height:%#d' % (roi.nHOffset,
-#                     roi.nVOffset, roi.nWidth,roi.nHeight))
-
-#     def convert_to_numpy(self, m_frame):
-#         # Convert buffer to list
-#         buffer = ctypes.cast(m_frame.pBuffer, ctypes.POINTER(ctypes.c_ubyte))
-#         buffer_list = list(buffer[:m_frame.uiImgSize])
-#         # Create numpy array from buffer list
-#         np_array = np.array(buffer_list, dtype=np.uint8)
-#         # Reshape array to match image dimensions
-#         np_array = np_array.reshape((m_frame.usHeight, m_frame.usWidth, m_frame.ucElemBytes))
-#         return np_array
-#         # return buffer_list
-
-#     def WaitForImageData(self, nframes=10):
-#         dataDict = {}
-#         m_frame = TUCAM_FRAME()
-#         m_format = TUIMG_FORMATS
-#         m_frformat = TUFRM_FORMATS
-#         m_capmode = TUCAM_CAPTURE_MODES
-
-#         m_frame.pBuffer = 0;
-#         m_frame.ucFormatGet = m_frformat.TUFRM_FMT_USUAl.value
-#         m_frame.uiRsdSize = 1
-
-#         TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(m_frame))
-#         TUCAM_Cap_Start(self.TUCAMOPEN.hIdxTUCam, m_capmode.TUCCM_SEQUENCE.value)
-
-#         for i in range(nframes):
-#             try:
-#                 result = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(m_frame), 1000)
-
-#                 # print("Buffer as list:", buffer_list)
-#                 print(
-#                     "Grab the frame success, index number is %#d, width:%d, height:%#d, channel:%#d, elembytes:%#d, image size:%#d"%(i, m_frame.usWidth, m_frame.usHeight, m_frame.ucChannels,
-#                     m_frame.ucElemBytes, m_frame.uiImgSize)
-#                     )
-#             except Exception:
-#                 print('Grab the frame failure, index number is %#d',  i)
-#                 continue
-#                 # Convert buffer to list
-#             # buffer = ctypes.cast(m_frame.pBuffer, ctypes.POINTER(ctypes.c_ubyte))
-#             try:
-#                 data = self.convert_to_numpy(m_frame)
-#             # dataDict[i] = data
-#             # buffer_list = list(buffer[:m_frame.uiImgSize])
-#                 dataDict[i] = data
-#             except Exception as e:
-#                 print(e)
-#                 print('Convert to numpy failed')
-#                 continue
-
-#         TUCAM_Buf_AbortWait(self.TUCAMOPEN.hIdxTUCam)
-#         TUCAM_Cap_Stop(self.TUCAMOPEN.hIdxTUCam)
-#         TUCAM_Buf_Release(self.TUCAMOPEN.hIdxTUCam)
-
-#         return dataDict
-    
-#     def export_data(self, data, filename='default', spectrum=False):
-#         self.save_dir = os.path.join(self.scriptDir, 'data')
-#         if not os.path.exists(self.save_dir):
-#             os.makedirs(self.save_dir)
-    
-#             # plt.plot(data[:, 0], data[:, 1])
-#         filepath = os.path.join(self.save_dir, filename)
-#         np.save(filepath, data)
-#         if not 'transient_data' in filename:
-#             print('Data saved to %s' % filepath)
-
-#     def SetExposure(self, value):
-
-#         TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_ATEXPOSURE.value, 0)
-#         TUCAM_Prop_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, value, 0);
-#         print("Set exposure:", value)
-#         # self.ShowAverageGray()
-
-#     def get_camera_info(self):
-#         from tucsen.TUCam import get_camera_gain_attributes
-
-#         gain = get_camera_gain_attributes(self.handle)
-#         print(gain)
-#         self.gain = gain
-
-#     def refresh_camera(self):
-#         print("refreshing camera")
-#         self.close_camera()
-#         self.open_camera(0)
-#         # demo.get_camera_info()
-#         self.get_camera_info()
-
-
 
 
 class Spectrometer(Instrument):
@@ -3023,451 +2797,3 @@ class Spectrometer(Instrument):
     @ui_callable
     def go_to_position(self, position):
         print("Going to the position: {}".format(position))
-
-
-
-
-# class Laser(Instrument):
-#     def __init__(self, interface, controller=None, calibration_service=None, simulate=False):
-#         super().__init__()
-#         self.interface = interface
-#         self.controller = controller or interface.laser_controller
-#         self.calibration_service = calibration_service or interface.calibration_service
-#         self.simulate = simulate
-#         self.command_functions = {
-#             'set_power': self.set_power,
-#             'get_power': self.get_power,
-#             'turn_on': self.turn_on,
-#             'turn_off': self.turn_off
-#         }
-
-#         self._integrity_checker()
-        
-#     def initialise(self):
-#         """Initialize the laser"""
-#         if hasattr(self.controller, 'initialise'):
-#             self.controller.initialise()
-#         print("Laser initialized")
-#         return "Laser initialized"
-        
-#     @ui_callable
-#     def turn_on(self):
-#         """Turn the laser on"""
-#         if hasattr(self.controller, 'turn_on'):
-#             return self.controller.turn_on()
-#         print("Turning laser on")
-#         return "Laser turned on"
-        
-#     @ui_callable
-#     def turn_off(self):
-#         """Turn the laser off"""
-#         if hasattr(self.controller, 'turn_off'):
-#             return self.controller.turn_off()
-#         print("Turning laser off")
-#         return "Laser turned off"
-
-#     def __str__(self):
-#         return "Laser"
-
-#     def __call__(self, command: str, *args, **kwargs):
-#         if command not in self.command_functions:
-#             raise ValueError(f"Unknown laser command: '{command}'")
-#         return self.command_functions[command](*args, **kwargs)
-    
-#     def initialise(self):
-#         self.connect()
-    
-#     def connect(self):
-#         print("Connecting to the laser.")
-#         pass
-
-#     @ui_callable
-#     def set_power(self):
-#         '''Set the laser power.'''
-#         print("Setting the laser power.")
-
-#     @ui_callable
-#     def get_power(self):
-#         '''Get the laser power.'''
-#         print("Getting the laser power.")
-
-# class StageControl(Instrument):
-#     '''Handles functions and generating of commands for the controller.'''
-#     def __init__(self, interface, controller=None, simulate=False):
-#         super().__init__()
-#         self.interface = interface
-#         self.controller = controller or interface.controller
-#         self.simulate = simulate
-#         self.command_functions = {
-#             'movestage': self.move_stage,
-#             'homestage': self.home_stage
-#         }
-
-#         self._integrity_checker()
-        
-#     def initialise(self):
-#         """Initialize the stage controller"""
-#         print("Stage controller initialized")
-#         return "Stage controller initialized"
-
-#     def __str__(self):
-#         return "Stage Control"
-
-#     def __call__(self, command: str, *args, **kwargs):
-#         if command not in self.command_functions:
-#             raise ValueError(f"Unknown stage command: '{command}'")
-#         return self.command_functions[command](*args, **kwargs)
-    
-#     @ui_callable
-#     def move_stage(self, motor_positions:str):
-#         '''Moves the stage to the specified position.'''
-#         # print("Moving the stage to the specified position.")
-#         motor_dict = {}
-
-#         # example = 'x300 y200'
-#         motor_dict = {}
-#         for motor in motor_positions.split(' '):
-#             try:
-#                 name = motor[0]
-#                 position = int(motor[1:])
-#             except Exception as e:
-#                 print(f"Error parsing motor position: {e}")
-#                 continue
-#             if name not in self.motor_map:
-#                 print(f"Unknown motor name: {name}")
-#                 continue
-#             if name in motor_dict:
-#                 print(f"Duplicate motor name: {name}")
-#                 continue
-            
-#             if position != 0:
-#                 motor_dict[name] = position
-            
-#         motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items() if motor in self.motor_map}
-
-#         self.controller.move_stage(motor_id_dict)
-            
-    
-#     @ui_callable
-#     def move_x(self, distance):
-#         '''Moves the stage in the x direction by the specified distance in micro meters.'''
-#         print("Moving stage X {} microns".format(distance))
-        
-        
-
-#     @ui_callable
-#     def move_y(self, distance):
-#         '''Moves the stage in the y direction by the specified distance in micro meters.'''
-#         pass
-
-#     @ui_callable
-#     def move_stage(self, motor_dict):
-#         '''Sends the move command to the motion controller.'''
-
-#         print("Moving the stage.")
-
-#     @ui_callable
-#     def home_stage(self):
-#         print("Homing the stage.")
-
-
-
-# class MillenniaLaser(Instrument):
-#     def __init__(self, interface, port='COM13', baudrate=9600, simulate=False):
-#         super().__init__()
-#         self.interface = interface
-#         self.port = port
-#         self.baudrate = baudrate
-#         self.simulate = simulate
-#         self.ser = None
-#         self.status = "OFF"
-
-#         self.command_functions = {
-#             'laseron': self.turn_on,
-#             'laseroff': self.turn_off,
-#             'setpower': self.set_power,
-#             'getpower': self.get_power,
-#             'warmup': self.get_warmup_status,
-#             'openshutter': self.open_shutter,
-#             'closeshutter': self.close_shutter,
-#             'identify': self.identify,
-#             'getdiode': self.get_diode_status,
-#             'enable': self.enable_laser,
-#             'status': self.get_status,
-#             'shutterstatus': self.get_shutter_status,
-#             'getpowerset' : self.get_power_setpoint,
-#             'cycleshutter': self.cycle_shutter,
-#             'diagnosis': self.laser_diagnosis,
-#             'connect': self.connect,
-#         }
-
-#     def initialise(self):
-#         '''Initialise the laser and establish a connection.'''
-#         if self.simulate:
-#             print("Simulated connection.")
-#             return
-#         self.connect()
-#         setpoint = self.get_power_setpoint()
-#         current_power = self.get_power()
-#         warmup = self.get_warmup_status()
-
-#         print("Laser initialised.")
-#         print("Current power setpoint: {}W".format(setpoint))
-#         print("Current power: {}W".format(current_power))
-#         print("Warmup status: {}%".format(warmup))
-
-#         if warmup == 0:
-#             self.enable_laser()
-
-#         return setpoint, current_power, warmup
-
-#     @ui_callable
-#     def connect(self):
-#         if self.simulate:
-#             print("Simulated connection.")
-#             return
-        
-#         print("Connecting to the laser on port {}...".format(self.port))
-
-#         self.ser = serial.Serial(
-#             port=self.port,
-#             baudrate=self.baudrate,
-#             parity=serial.PARITY_NONE,
-#             stopbits=serial.STOPBITS_ONE,
-#             bytesize=serial.EIGHTBITS,
-#             timeout=1
-#         )
-
-#         if not self.ser.is_open:
-#             self.ser.open()
-
-#         time.sleep(2)
-#         print(f"Connected to laser on port {self.port}")
-
-#     @ui_callable
-#     def get_status(self):
-#         print("Laser Status: {}".format(self.status))
-#         return self.status
-
-#     @ui_callable
-#     def get_shutter_status(self):
-#         '''Returns the current status of the shutter. This is a simple command to check if the shutter is open or closed.'''
-#         response = self.send_command('?SHUTTER')
-#         if response == "1":
-#             print("Shutter is OPEN.")
-#         elif response == "0":
-#             print("Shutter is CLOSED.")
-#         else:
-#             print("Unknown shutter status.")
-#         return response
-
-#     @ui_callable
-#     def laser_diagnosis(self):
-#         '''Runs through a series of checks to determine the status of the laser. This includes checking the power setpoint, actual power, and diode status.'''
-#         print("Running laser diagnostics...")
-
-#         def check_status():
-
-#             diode_power = self.get_diode_status()
-#             diode_power = [float(x[:-2]) for x in diode_power]
-#             power_setpoint = self.get_power_setpoint()
-#             power_actual = self.get_power()
-#             warmup = self.get_warmup_status()
-
-#             print("Current status: {}".format(self.status))
-#             print("Warmup: {}".format(warmup))
-#             print("Power setpoint: {}, Power actual: {}".format(power_setpoint, power_actual))
-#             print("Diode power: {}".format(diode_power))
-
-#             return {
-#                 'amps': diode_power,
-#                 'setpoint': power_setpoint, 
-#                 'power': power_actual,
-#                 'warmup': warmup
-#             }
-        
-#         def cycle_power_setpoint(diag_dict):
-
-#             power_actual = diag_dict['power']
-#             power_setpoint = diag_dict['setpoint']
-#             warmup = diag_dict['warmup']
-            
-#             if power_actual < power_setpoint * 0.8:
-#                 print("Power not yet stabilised.")
-#             print("Cycling setpoint...")
-
-#             self.set_power(0.05)
-#             time.sleep(2)
-#             self.set_power(power_setpoint)
-#             time.sleep(5)
-#             power_actual = self.get_power()
-
-#             if power_actual < power_setpoint * 0.8:
-#                 print("Power not stabilised after cycling setpoint. Inspect laser manually.")
-#                 return False
-#             else:
-#                 print("Power stabilised after cycling setpoint.")
-#                 self.status = "ON"
-#                 print("Laser is ON at {}.".format(power_setpoint))
-#                 return True
-
-#         diag_dict = check_status()
-#         if diag_dict['warmup'] != 100:
-#             print("Laser is warming up. Please wait.")
-#             return False
-        
-#         cycle_power_setpoint(diag_dict)
-
-#         print("Laser diagnostics complete. All checks passed. If any issues persist, please inspect the laser manually.")
-#         print("Remember to cycle the shutter - it sometimes gets stuck.")
-
-#     @ui_callable
-#     def cycle_shutter(self):
-#         '''Cycles the shutter to ensure it is functioning properly. This is a simple command to open and close the shutter.'''
-#         self.close_shutter()
-#         time.sleep(1)
-#         self.open_shutter()
-#         print("Shutter cycled.")
-#         return True
-
-#     @ui_callable
-#     def enable_laser(self):
-#         '''Handles the turning on of the laser, from warmup to on state. The final step is to open the shutter.'''
-
-#         warmup = self.get_warmup_status()
-#         power = self.get_power()
-        
-#         if power >= 3.5:
-#             print("Laser is already ON at {} watts. Change power with 'setpower' command.".format(power))
-#             return True
-
-#         if self.status == "ON":
-#             power = self.get_power()
-#             print("Laser is ON at {} watts. Ramping to 4.0 Watts".format(power))
-#             self.close_shutter()
-#             self.set_power(4.0)
-#             print("Laser is now ON at 4.0 watts. Open the shutter to pump the tunable cavity (NIR laser).")
-#             return True
-        
-#         elif warmup == 100:
-#             response = self.send_command('ON')
-#             print("Laser is now ON")
-#             self.set_power(0.05)
-#             self.status = "ON"
-#             print("Low-power mode (not lasing). Return in 2 minutes to increase power.")
-#             return True
-        
-#         elif 0 < warmup < 100:
-#             self.status = "WARMUP"
-#             print("Laser is warming up at {}%. Please wait...".format(warmup))
-#             return False
-
-#         elif warmup == 0:
-#             print(f"In standby mode. Beginning warmup: {warmup}")
-#             self.send_command('ON')
-#             self.status = "WARMUP"
-#             return False
-        
-#     def disconnect(self):
-#         if self.ser and self.ser.is_open:
-#             self.ser.close()
-#             print("Serial connection closed.")
-
-#     def send_command(self, command):
-#         if self.simulate:
-#             print(f"Simulated command sent: {command}")
-#             return "SIMULATED RESPONSE"
-
-#         full_command = command.strip() + '\r\n'
-#         self.ser.write(full_command.encode('ascii'))
-#         time.sleep(0.2)
-#         response = self.ser.read_all().decode('ascii').strip()
-#         return response
-
-#     @ui_callable
-#     def turn_on(self):
-#         warmup = self.get_warmup_status()
-#         if warmup == 100:
-#             response = self.send_command('ON')
-#             self.status = "ON"
-#             print("Laser is now ON.")
-#             return True
-#         else:
-#             warmup = self.send_command('ON')
-#             self.status = "WARMUP"
-#             print("In standby mode. Beginning warmup: {warmup}")
-#             return False
-        
-#     @ui_callable
-#     def get_diode_status(self):
-#         response_1 = self.send_command('?C1')
-#         breakpoint()
-#         print(f"Diode 1 status: {response_1}")
-#         response_2 = self.send_command('?C2')
-#         print(f"Diode 2 status: {response_2}")
-#         return (response_1, response_2)
-
-#     @ui_callable
-#     def turn_off(self):
-#         response = self.send_command('OFF')
-#         self.status = "OFF"
-#         self.close_shutter()
-#         print("Laser is now OFF.")
-#         return response
-
-#     @ui_callable
-#     def set_power(self, power_watts):
-#         try:
-#             power_watts = round(float(power_watts), 2)
-#         except ValueError:
-#             raise ValueError("Power must be a numeric value.")
-
-#         if power_watts < 0 or power_watts > 6:
-#             raise ValueError("Power must be between 0 and 6 Watts.")
-        
-#         response = self.send_command('P:{}'.format(power_watts))
-#         print("Power set to {} Watts.".format(power_watts))
-#         return response
-
-#     @ui_callable
-#     def get_power(self):
-#         response = self.send_command('?P')
-#         return float(response[:-1])
-    
-#     @ui_callable
-#     def get_power_setpoint(self):
-#         response = self.send_command('?PSET')
-#         # print(f"Power setpoint: {response}")
-#         return float(response[:-1])
-
-#     @ui_callable
-#     def get_warmup_status(self):
-#         response = self.send_command('?WARMUP%')
-#         return float(response[:-1])
-
-#     @ui_callable
-#     def open_shutter(self):
-#         response = self.send_command('SHUTTER:1')
-#         return response
-
-#     @ui_callable
-#     def close_shutter(self):
-#         response = self.send_command('SHUTTER:0')
-#         return response
-
-#     @ui_callable
-#     def identify(self):
-#         response = self.send_command('?IDN')
-#         return response
-
-#     def __str__(self):
-#         return f"Millennia Laser"
-
-#     def __call__(self, command: str, *args, **kwargs):
-#         if command not in self.command_functions:
-#             raise ValueError(f"Unknown laser command: '{command}'")
-#         return self.command_functions[command](*args, **kwargs)
-
-#     def __del__(self):
-#         self.disconnect()
-

@@ -169,12 +169,22 @@ class LaserDetection(QObject):
         - wavelength_axis: 1D numpy array representing the wavelength axis of the image.
         """
         #
+
         if image.ndim == 3:
             # If the image is 3D, take the first channel #TODO Fix this at the camera level later
             image = image[:, :, 0]
         is_laser_present, laser_position = self.detect_laser_peak(image)
+
         if not is_laser_present:
             print("No laser signal detected in the image.")
+            if self.logger.level <= 9 or show_plot == True:
+                plt.figure(figsize=(10, 5))
+                plt.imshow(image, aspect='auto', cmap='gray', origin='lower')
+                plt.colorbar(label='Intensity')
+                plt.title("No Laser Signal Detected")
+                plt.xlabel("X (Spectral Axis)")
+                plt.ylabel("Y (Spatial Axis)")
+                plt.show()
             return None
 
         dataY = self.image_to_spectrum(image, laser_position)
@@ -218,7 +228,7 @@ class LaserDetection(QObject):
         
         return baselinedY
 
-    def image_to_spectrum(self, image, laser_position, binning_width=20):
+    def image_to_spectrum(self, image, laser_position, binning_width=10):
         """Generate a 1D spectrum by averaging over a specified width in the Y dimension."""
 
         xpos, ypos = laser_position
@@ -305,7 +315,7 @@ class LaserDetection(QObject):
         '''Searches for a laser peak in the image by integrating along the X-axis and applying a threshold based on robust statistics.Returns a tuple (is_laser_present, (x_max, y_max)) where is_laser_present is True if a peak is found, and (x_max, y_max) are the coordinates of the peak.'''
         
         # Step 1: Collapse in Y to get intensity along X
-        profile_x = np.median(image, axis=0)  # shape = (X,)
+        profile_x = np.median(image[50:90, :], axis=0)  # shape = (X,)
         
         # Step 2: Estimate background using robust statistics
         med = np.median(profile_x)
@@ -318,7 +328,6 @@ class LaserDetection(QObject):
 
         # Step 3: Find where signal exceeds threshold
         signal_mask = profile_x > threshold
-
 
         # Step 4: Optional: filter by minimum width
         from scipy.ndimage import label

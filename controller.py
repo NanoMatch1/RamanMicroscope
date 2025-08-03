@@ -1,8 +1,6 @@
 import serial
 import time
 
-from instruments_old import Instrument, ui_callable
-
 class ArduinoMEGA:
 
     def __init__(self, interface, com_port='COM10', baud=9600, simulate=False, report=True, dtr=False):

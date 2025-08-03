@@ -9,12 +9,9 @@ from instruments_old import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import MillenniaLaser, Triax
 from calibration import Calibration
-from acquisitioncontrol import AcquisitionControl
-from acquisitioncontrol import MainWindow
+from acquisitioncontrol import AcquisitionControl, MainWindow
+from acquisitioncontrol.gui_services import GUIEmitterService
 from PyQt5.QtWidgets import QApplication
-
-
-import logging
 
 from instruments.cameras.tucsencam import TucsenCamera
 
@@ -26,13 +23,28 @@ def thread_locked(method):
     Decorator to ensure that a method is thread-safe by acquiring a lock. Any method decorated with this will be safe to call from multiple threads.
     """
     def wrapper(self, *args, **kwargs):
-        with self.lock:
+        # with self.lock:
+        if not self.lock.acquire(blocking=False):
+            return " > Error: Method is currently locked by another thread. Please try again later."
+        try:
             return method(self, *args, **kwargs)
+        except Exception as e:
+            error_details = traceback.format_exc()
+            return f" > Error: {e}\n{error_details}"
+        finally:
+            self.lock.release()
     return wrapper
 
 class Interface:
 
     def __init__(self, simulate=False, com_port='COM10', baud=9600, debug_skip=[]):
+
+        self.flag_dict = { 
+            'S0': 'ok',
+            'R1': 'motors running',
+            'F0': 'invalid command',
+            '#CF': 'end of response',
+        }
 
         self.logger = LoggerInterface(name='interface')
 
@@ -48,29 +60,24 @@ class Interface:
         self.baud = baud
         self.debug_skip = debug_skip
         self.connected_to_camera = False
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         self.scriptDir = os.path.dirname(os.path.realpath(__file__))
         self.dataDir = os.path.join(self.scriptDir, 'data')
-        self.transientDir = os.path.join(self.scriptDir, 'transient')
+        self.transientDir = os.path.join(self.scriptDir, 'data', 'transient_data')
         self.saveDir = os.path.join(self.dataDir, 'data')
         self.autocalibrationDir = os.path.join(self.scriptDir, 'autocalibration')
         self.calibrationDir = os.path.join(self.scriptDir, 'calibration')
         
         self._build_directories()
-        self.calibration_service = Calibration()
+        self.calibration_service = Calibration(self)
 
 
         # Create hardware instances
         self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
-        if simulate:
-            from instruments.cameras.simulated_camera import SimulatedCameraInterface
-            self.camera = SimulatedCameraInterface(self)
-        else:
-            self.camera = TucsenCamera(self, simulate=simulate)
+        self.camera = TucsenCamera(self, simulate=simulate)
         self.spectrometer = Triax(self, simulate=simulate)
         self.laser = MillenniaLaser(self, simulate=simulate)
-
         self.microscope = Microscope(
             interface=self, 
             calibration_service=self.calibration_service,
@@ -81,6 +88,7 @@ class Interface:
         )
 
         self.acq_ctrl = AcquisitionControl(self)
+        self.emitter = GUIEmitterService(self)
 
         if len(debug_skip) > 0:
             from simulation import (SimulatedTriax)
@@ -97,16 +105,11 @@ class Interface:
                 
             if 'camera' in debug_skip:
                 from instruments.cameras.simulated_camera import SimulatedCameraInterface
-                self.camera = SimulatedCameraInterface(self)
+                self.camera.simulate = True
                     
         self.command_map = self._generate_command_map()
 
-        self.flag_dict = { 
-            'S0': 'ok',
-            'R1': 'motors running',
-            'F0': 'invalid command',
-            '#CF': 'end of response',
-        }
+
 
         # Initialize hardware components in the correct order
         self.spectrometer.initialise()
@@ -119,8 +122,6 @@ class Interface:
 
         self.heartbeat = self.laser.watchdog.heartbeat
 
-        # self.microscope.set_acquisition_time(1) # workaround for the camera not responsing correctly on startup
-        
         self._integrity_checker()
 
     def run_batch(self, commands):
@@ -144,13 +145,15 @@ class Interface:
         else:
             self.logger.modify_handler(handler, level)
         
-
+    @thread_locked
     def cli(self):
         '''Command line interface for the microscope control.'''
         while True:
             try:
                 command = input("Enter a command: ")
                 if command == 'exit':
+                    self.camera.close_camera()
+                    # self.camera.shutdown_api()
                     break
 
                 if command == 'gui':
@@ -209,6 +212,12 @@ class Interface:
         """
         cmd = command.strip()
         result = self._command_handler(cmd)
+        # if result is None:
+        #     result = " > No result returned from command"
+        # else:
+        if result not in [None, '', True, False]:
+            result = str(result).strip()
+            self.logger.info(f"[GUI RES] {result}")
         self.save_state()
 
         return result
@@ -356,7 +365,7 @@ class Interface:
 
     #     return motion_commands
 
-    @thread_locked
+    # @thread_locked
     @heartbeat
     def _command_handler(self, command:str):
         '''Handles the command and arguments passed to the Interface'''
@@ -394,16 +403,12 @@ class Interface:
 
         else:
             try:
-
                 result = self.controller.send_command(command)
             except Exception as e:
                 error_details = traceback.format_exc()
                 result = f" > Error: {e}\n{error_details}"
             return result
             # return f" > Unknown command: {funct}"
-
-         # Detail: * operator unpacks the list - since an empty list has nothing to unpack, nothi
-         # ng is passed to the function. This avoids a TypeError -41861
     
     def _command_parser(self, command:str):
         if command == '':

@@ -29,6 +29,45 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 import numpy as np
 import os
+import functools
+
+# def try_except(func):
+#     """
+#     Decorator to catch exceptions in a function and log them.
+#     """
+#     @functools.wraps(func)
+#     def wrapper(self, *args, **kwargs):
+#         try:
+#             if not args and not kwargs:
+#                 return func(self)
+#             return func(self, *args, **kwargs)
+#         except Exception as e:
+#             self.logger.error(f"Exception in {func.__qualname__}: {e}")
+#             self.logger.debug(traceback.format_exc())
+#             return None
+#     return wrapper
+
+def catch_and_log_exceptions(logger=None, return_on_error='Failed'):
+    """
+    Decorator that wraps a function with a try/except block and logs the exception.
+    
+    Parameters:
+        logger: optional logger instance (uses default if None)
+        return_on_error: value to return if an exception is raised (default: None)
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            # used_logger = logger or logging.getLogger(func.__module__)
+            self.logger.info(f"Calling {func.__qualname__} with args: {args}, kwargs: {kwargs}")
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                self.logger.error(f"Exception in {func.__qualname__}: {e}")
+                self.logger.debug(traceback.format_exc())
+                return return_on_error
+        return wrapper
+    return decorator
 
 
 def run_in_thread_and_refresh(func):
@@ -36,18 +75,31 @@ def run_in_thread_and_refresh(func):
     Decorator that runs `func(self, *args, **kwargs)` in a daemon
     thread and, when it finishes, schedules self.refresh_ui() on
     the Qt main loop.
+    is thread locked, so it can only be called once at a time.
     """
     def wrapper(self, *args, **kwargs):
+        if self.__class__ != MainWindow:
+            print("Warning: run_in_thread_and_refresh should is only for MainWindow GUI methods. Returning without running.")
+            return
+
+        if not self.gui_lock.acquire(blocking=False):
+            self.logger.warning(f"Microscope busy, skipping {func.__name__}(\"{args[0]}\") call.")
+            return
+
         def target():
             try:
                 func(self, *args, **kwargs)
+            except Exception as e:
+                error_details = traceback.format_exc()
+                result = f"Error in {func.__name__}: \n{e}\n{error_details}"
+                self.logger.error(result)
             finally:
-                pass
-                # Schedule refresh_ui() back on the GUI thread
+                self.gui_lock.release()
                 QMetaObject.invokeMethod(self,
                                          "refresh_ui",
                                          Qt.QueuedConnection)
-        threading.Thread(target=target, daemon=True).start()
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
 
     return wrapper
 
@@ -91,6 +143,7 @@ class LiveDataViewer(QWidget):
         super().__init__(parent)
         self.interface = interface
         self.logger = interface.logger.getChild("LiveDataViewer")
+        self.logger.info("Initializing LiveDataViewer")
         self.current_image = None
         self.sel_y0 = 0
         self.sel_y1 = None
@@ -312,6 +365,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.acq_ctrl = acq_ctrl
         self.interface = interface
+        self.logger = interface.logger.getChild("MainWindow")
         self.setWindowTitle("Acquisition GUI")
         self.resize(1200, 800)
         self.param_entries = {}
@@ -321,10 +375,13 @@ class MainWindow(QMainWindow):
         self.separate_resolution = acq_ctrl.separate_resolution
         self.z_scan = acq_ctrl.z_scan
 
+        self.gui_lock = threading.Lock()
+
         self.scanning = False
         self.cancel_event = threading.Event()
         self.scan_complete_signal.connect(self.scan_finished)
         self.progress_update_signal.connect(self.update_progress_bar)
+        self.interface.microscope.camera.temp_signal.connect(self.update_camera_temp)
         # self.peak_spectrum_ready.connect(self.update_peak_plot)
 
         self.init_ui()
@@ -414,6 +471,9 @@ class MainWindow(QMainWindow):
         Called when the user clicks 'Run Scan'. Builds the scan, asks for confirmation,
         then launches the scan in a background thread.
         """
+        if self.interface.camera.is_running:
+            self.send_cli_command("stop")
+
         scan_sequence = self.acq_ctrl.build_scan_sequence()
         if not self.confirm_scan(scan_sequence):
             return
@@ -432,12 +492,25 @@ class MainWindow(QMainWindow):
             self.progress_update_signal.emit(value)
         # wrapper to handel scan and emit signal to end
         def run_and_emit():
-            self.acq_ctrl.acquire_scan(
-                self.cancel_event,
-                self.update_status,
-                thread_safe_progress_callback
-            )
-            self.scan_complete_signal.emit()  # emits safely from any thread
+            if not self.gui_lock.acquire(blocking=False):
+                self.logger.warning(f"Microscope busy, unable to start scan.")
+                return
+            try:
+                self.acq_ctrl.acquire_scan(
+                    self.cancel_event,
+                    self.update_status,
+                    thread_safe_progress_callback
+                )
+                self.scan_complete_signal.emit()  # emits safely from any thread
+                # release the lock after scan is done
+            except Exception as e:
+                error_details = traceback.format_exc()
+                result = f"Error during scan: \n{e}\n{error_details}"
+                self.logger.error(result)
+                self.update_status(result)
+            finally:
+                self.gui_lock.release()
+
 
         self.scan_thread = threading.Thread(target=run_and_emit)
         self.scan_thread.start()
@@ -605,10 +678,10 @@ class MainWindow(QMainWindow):
                 line_edit.setText(str(d))
 
             # Pseudocal light
-            if getattr(self.interface.microscope, 'apply_pseudocal', False):
-                self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: green;")
+            if getattr(self.interface.microscope, 'laser_status', False):
+                self.light_laser_status.setStyleSheet("border-radius: 10px; background-color: green;")
             else:
-                self.light_pseudocal.setStyleSheet("border-radius: 10px; background-color: red;")
+                self.light_laser_status.setStyleSheet("border-radius: 10px; background-color: red;")
 
             # if getattr(self.interface.microscope, 'laser_calibrated', True):
             #     self.light_lasercal.setStyleSheet("border-radius: 10px; background-color: green;")
@@ -656,6 +729,7 @@ class MainWindow(QMainWindow):
             self.lbl_spectrometer.setText(f"{self.interface.microscope.report_spectrometer_wavelength:.2f} nm")
             self.lbl_laser_power.setText(f"{self.interface.laser.current_power:.2f} W")
             self.lbl_entrance_slit.setText(f"{self.interface.microscope.report_enterance_slit_width:.2f} um")
+            self.lbl_cam_temp.setText(f"{self.interface.microscope.report_camera_temp:.2f} C")
 
             self.btn_toggle_mode.setText(f"Mode: {self.interface.microscope.microscope_mode}")
 
@@ -785,13 +859,13 @@ class MainWindow(QMainWindow):
             light.setStyleSheet("border-radius: 10px; background-color: gray;")
             return label, light
 
-        lbl1, self.light_pseudocal = make_light("Pseudocal")
+        lbl1, self.light_laser_status = make_light("Laser Status")
         lbl2, self.light_ready = make_light("Instrument Ready")
         lbl3, self.light_livecal = make_light("Live Calibration")
         # lbl4, self.light_scan = make_light("Scan Active")
 
         status_layout.addWidget(lbl1)
-        status_layout.addWidget(self.light_pseudocal)
+        status_layout.addWidget(self.light_laser_status)
         status_layout.addSpacing(20)
         status_layout.addWidget(lbl2)
         status_layout.addWidget(self.light_ready)
@@ -859,6 +933,7 @@ class MainWindow(QMainWindow):
         self.lbl_spectrometer = QLabel("N/A")
         self.lbl_entrance_slit = QLabel("N/A")
         self.lbl_laser_power = QLabel("N/A")
+        self.lbl_cam_temp = QLabel("N/A")
         sg_form.addRow("Laser wavelength:", self.lbl_laser)
         sg_form.addRow("Grating wavelength:", self.lbl_grating)
         sg_form.addRow("Monochromator wavelength:", self.lbl_monochromator)
@@ -866,6 +941,7 @@ class MainWindow(QMainWindow):
         sg_form.addRow("Entrance slit:", self.lbl_entrance_slit)
         sg_form.addRow("Laser Power", self.lbl_laser_power)
         state_group.setLayout(sg_form)
+        sg_form.addRow("Camera Temp:", self.lbl_cam_temp)
 
         ctrl_state_layout.addWidget(state_group)
 
@@ -873,6 +949,7 @@ class MainWindow(QMainWindow):
 
         # Scan positions / stage positions
         pos_group_layout = QHBoxLayout()
+        # estimated_time = self.get_estimated_time()
 
         # Scan pos
         scan_pos_group = QGroupBox("Positions / Estimate")
@@ -880,7 +957,7 @@ class MainWindow(QMainWindow):
         self.lbl_mode = QLabel(self.scan_mode.capitalize())
         self.lbl_start = QLabel(str(self.start_pos))
         self.lbl_stop = QLabel(str(self.stop_pos))
-        self.lbl_est = QLabel(self.get_estimated_time())
+        self.lbl_est = QLabel('') # TODO: set this to the estimated time once the bug is fixed
         pl.addRow("Mode:", self.lbl_mode)
         pl.addRow("Start Pos:", self.lbl_start)
         pl.addRow("Stop Pos", self.lbl_stop)
@@ -974,10 +1051,31 @@ class MainWindow(QMainWindow):
     def update_progress_bar(self, value: int):
         self.progress_bar.setValue(value)
 
-    def get_estimated_time(self):
-        scan_duration = self.acq_ctrl.update_scan_estimate()
+    def update_camera_temp(self, temp: float):
+        """
+        Update the camera temperature label.
+        This is connected to the camera's temp_signal.
+        """
+        self.lbl_cam_temp.setText(f"{temp:.2f} C")
+        if temp < -15:
+            self.lbl_cam_temp.setStyleSheet("color: green;")
+        else:
+            self.lbl_cam_temp.setStyleSheet("color: red;")
 
-        return f"{scan_duration['duration']} {scan_duration['units']}"
+    def get_estimated_time(self):
+        try:
+            scan_duration = self.acq_ctrl.update_scan_estimate()
+            if scan_duration is None:
+                return "N/A"
+
+            scanstring = f"{scan_duration['duration']} {scan_duration['units']}"
+        except Exception as e:
+            self.logger.error(f"Error estimating scan time: {e}")
+            scanstring = "Error estimating time"
+            traceback.print_exc()
+            return scanstring
+        
+        return scanstring
 
     def handle_command(self, text):
         self.send_cli_command(text)
@@ -998,8 +1096,10 @@ class MainWindow(QMainWindow):
             self.logger.info(f"Microscope mode changed to {new_mode}.")
             self.refresh_ui()
 
-
+    # @catch_and_log_exceptions
+    # @try_except
     def open_developer_window(self):
+        # try:
         self.dev_window = QWidget()
         self.dev_window.setWindowTitle("Developer Options")
         layout = QVBoxLayout(self.dev_window)
@@ -1012,6 +1112,10 @@ class MainWindow(QMainWindow):
         self.chk_apply_livecal.setChecked(self.interface.microscope.apply_live_calibration)
         self.chk_apply_livecal.toggled.connect(self.toggle_live_calibration)
 
+        self.chk_apply_debug = QCheckBox("Debug Mode")
+        self.chk_apply_debug.setChecked(self.interface.microscope.apply_debug_mode)
+        self.chk_apply_debug.toggled.connect(self.toggle_debug_mode)
+        
         # add a textbox for log level control
         # self.log_level_input = QLineEdit()
         # self.log_level_input.setPlaceholderText(str(self.interface.logger.level))
@@ -1019,19 +1123,26 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.chk_apply_pseudocal)
         layout.addWidget(self.chk_apply_livecal)
+        layout.addWidget(self.chk_apply_debug)
 
         self.dev_window.setLayout(layout)
         self.dev_window.resize(300, 100)
         self.dev_window.show()
+        # except Exception as e:
+            # self.logger.error(f"Error opening developer window: {e}")
+            # traceback.print_exc()
     
     def toggle_pseudocal(self, checked):
         self.send_cli_command('pscal')
-        self.refresh_ui()  # Update lights
+        # self.refresh_ui()  # Update lights
 
     def toggle_live_calibration(self, checked):
         self.send_cli_command('livecal')
-        self.refresh_ui()
+        # self.refresh_ui()
 
+    def toggle_debug_mode(self, checked):
+        self.send_cli_command('debugmode')
+        # self.refresh_ui()
 
     def closeEvent(self, event):
         try:
