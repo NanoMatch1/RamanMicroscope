@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>INTERFACE_README.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="raman-microscope-interface-system---developer-guide">Raman Microscope Interface System - Developer Guide</h1>
+<p>This README provides a comprehensive overview of the <code>interface_run_me.py</code> file, which serves as the main entry point and central orchestrator for the Raman Microscope control system.</p>
+<h2 id="overview">Overview</h2>
+<p>The <code>interface_run_me.py</code> file implements the core <code>Interface</code> class that acts as the primary gateway between users and the complex Raman microscope hardware. It provides both Command Line Interface (CLI) and Graphical User Interface (GUI) capabilities, manages hardware initialization, handles command routing, and coordinates between multiple instrument subsystems.</p>
+<h2 id="system-architecture">System Architecture</h2>
+<h3 id="core-design-philosophy">Core Design Philosophy</h3>
+<p>The Interface serves as a <strong>mediator pattern</strong> implementation that:</p>
+<ul>
+<li>Orchestrates communication between independent hardware components</li>
+<li>Provides a unified command interface for both CLI and GUI interactions</li>
+<li>Manages hardware simulation and real hardware switching</li>
+<li>Handles thread safety and error management</li>
+<li>Maintains system state and configuration</li>
+</ul>
+<h3 id="key-components">Key Components</h3>
+<ol>
+<li><strong>Hardware Instruments</strong>: Camera, Spectrometer, Laser, Arduino Controller</li>
+<li><strong>High-level Controllers</strong>: Microscope (main instrument coordinator)</li>
+<li><strong>Services</strong>: Calibration, Acquisition Control, GUI Emitter</li>
+<li><strong>Interface Layer</strong>: Command parsing, routing, and execution</li>
+</ol>
+<h2 id="class-structure-and-functions">Class Structure and Functions</h2>
+<h3 id="interface-class"><code>Interface</code> Class</h3>
+<p>The main class that ties everything together. Key responsibilities include:</p>
+<h4 id="initialization-init">Initialization (<code>__init__</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">__init__</span><span class="hljs-params">(self, simulate=False, com_port=<span class="hljs-string">'COM10'</span>, baud=<span class="hljs-number">9600</span>, debug_skip=[])</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Sets up the entire microscope system with all hardware components and services.</p>
+<p><strong>Key Operations</strong>:</p>
+<ul>
+<li>Creates directory structure for data storage</li>
+<li>Initializes all hardware components (camera, spectrometer, laser, controller)</li>
+<li>Sets up the high-level Microscope coordinator</li>
+<li>Configures simulation vs. real hardware based on parameters</li>
+<li>Establishes command mapping system</li>
+<li>Performs integrity checks</li>
+</ul>
+<p><strong>Hardware Initialization Order</strong>:</p>
+<ol>
+<li>Spectrometer (Triax)</li>
+<li>Arduino Controller (motor control)</li>
+<li>Camera (unless in debug_skip)</li>
+<li>Laser</li>
+<li>Microscope (must be last as it depends on others)</li>
+</ol>
+<h4 id="command-line-interface-cli">Command Line Interface (<code>cli</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-meta">@thread_locked</span>
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">cli</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Provides an interactive command-line interface for microscope control.</p>
+<p><strong>Features</strong>:</p>
+<ul>
+<li>Thread-safe command execution</li>
+<li>Built-in commands: <code>exit</code>, <code>gui</code>, <code>help</code>, <code>debug</code>, <code>reinit</code></li>
+<li>Automatic command routing through <code>_command_handler</code></li>
+<li>Error handling with full stack traces</li>
+<li>State saving after each command</li>
+</ul>
+<h4 id="gui-interface-gui">GUI Interface (<code>gui</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">gui</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Launches the PyQt5-based graphical user interface.</p>
+<p><strong>Implementation</strong>: Creates a QApplication and MainWindow, providing visual control over the microscope system.</p>
+<h3 id="command-processing-system">Command Processing System</h3>
+<h4 id="command-handler-commandhandler">Command Handler (<code>_command_handler</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-meta">@heartbeat</span>
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_command_handler</span><span class="hljs-params">(self, command: str)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Central command routing system that processes all user commands.</p>
+<p><strong>Command Resolution Priority</strong>:</p>
+<ol>
+<li><strong>Interface-level commands</strong> (<code>triax</code>, <code>camera</code>, <code>laser</code>, <code>logger</code>)</li>
+<li><strong>Instrument commands</strong> (from dynamically generated command map)</li>
+<li><strong>Motor commands</strong> (individual motor movement)</li>
+<li><strong>Direct controller commands</strong> (passed through to Arduino)</li>
+</ol>
+<h4 id="command-parser-commandparser">Command Parser (<code>_command_parser</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_command_parser</span><span class="hljs-params">(self, command: str)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Parses user input into function name and arguments.</p>
+<p><strong>Format</strong>: Commands are space-separated with first token as function name and remaining as arguments.</p>
+<h3 id="hardware-management">Hardware Management</h3>
+<h4 id="dynamic-command-mapping-generatecommandmap">Dynamic Command Mapping (<code>_generate_command_map</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_generate_command_map</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Automatically discovers and maps all available commands from instrument objects.</p>
+<p><strong>How it works</strong>: Scans all instrument attributes for objects inheriting from <code>Instrument</code> or <code>InstrumentBase</code>, then extracts their <code>command_functions</code> dictionaries to create a unified command map.</p>
+<h4 id="hardware-connection-functions">Hardware Connection Functions</h4>
+<h5 id="connect-to-triax-connecttotriax">Connect to Triax (<code>connect_to_triax</code>)</h5>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">connect_to_triax</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Switches from simulated to real TRIAX spectrometer connection.</p>
+<h5 id="connect-to-camera-connecttocamera">Connect to Camera (<code>connect_to_camera</code>)</h5>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">connect_to_camera</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Switches from simulated to real camera connection with automatic fallback.</p>
+<h5 id="connect-to-laser-connecttolaser">Connect to Laser (<code>connect_to_laser</code>)</h5>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">connect_to_laser</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Switches from simulated to real laser connection.</p>
+<h3 id="state-management">State Management</h3>
+<h4 id="save-state-savestate">Save State (<code>save_state</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">save_state</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Persists the current microscope state including motor positions, wavelengths, and configuration.</p>
+<h4 id="process-gui-command-processguicommand">Process GUI Command (<code>process_gui_command</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">process_gui_command</span><span class="hljs-params">(self, command: str)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Handles commands originating from the GUI, mirroring CLI behavior with appropriate logging.</p>
+<h3 id="utility-functions">Utility Functions</h3>
+<h4 id="logger-level-control-loggerlevel">Logger Level Control (<code>logger_level</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">logger_level</span><span class="hljs-params">(self, level)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Dynamically adjusts logging verbosity for debugging and operation.</p>
+<h4 id="help-system-showhelp-generatehelp">Help System (<code>show_help</code>, <code>generate_help</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">show_help</span><span class="hljs-params">(self)</span>
+<span class="hljs-title">def</span> <span class="hljs-title">generate_help</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Automatically generates help documentation from all available commands and their docstrings.</p>
+<h4 id="directory-management-builddirectories">Directory Management (<code>_build_directories</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_build_directories</span><span class="hljs-params">(self)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Creates all necessary directory structures for data storage, calibration files, and temporary data.</p>
+<p><strong>Created Directories</strong>:</p>
+<ul>
+<li><code>data/</code> - Main data storage</li>
+<li><code>data/transient_data/</code> - Temporary acquisition data</li>
+<li><code>autocalibration/</code> - Automatic calibration files</li>
+<li><code>calibration/</code> - Manual calibration data</li>
+<li><code>calibration/motor_recordings/</code> - Motor position recordings</li>
+</ul>
+<h4 id="batch-processing-runbatch">Batch Processing (<code>run_batch</code>)</h4>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">run_batch</span><span class="hljs-params">(self, commands)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Executes a list of commands sequentially, useful for initialization scripts and automated procedures.</p>
+<h2 id="thread-safety">Thread Safety</h2>
+<p>The system implements thread safety through:</p>
+<h3 id="threadlocked-decorator"><code>thread_locked</code> Decorator</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">thread_locked</span><span class="hljs-params">(method)</span>
+</span></div></code></pre>
+<p><strong>Purpose</strong>: Ensures thread-safe execution of critical methods using non-blocking locks.</p>
+<p><strong>Behavior</strong>:</p>
+<ul>
+<li>Attempts to acquire lock without blocking</li>
+<li>Returns error message if lock is unavailable</li>
+<li>Automatically releases lock after execution</li>
+<li>Provides full error tracing on exceptions</li>
+</ul>
+<h2 id="simulation-and-debug-features">Simulation and Debug Features</h2>
+<h3 id="debug-skip-system">Debug Skip System</h3>
+<p>The <code>debug_skip</code> parameter allows selective simulation of hardware components:</p>
+<ul>
+<li><code>'camera'</code> - Use simulated camera</li>
+<li><code>'TRIAX'</code> - Use simulated spectrometer</li>
+<li><code>'UNO'</code> - Use simulated Arduino controller</li>
+<li><code>'laser'</code> - Use simulated laser</li>
+</ul>
+<h3 id="hardware-detection">Hardware Detection</h3>
+<p>Automatic simulation detection based on:</p>
+<ul>
+<li>Username detection (<code>&quot;Users\\Sam&quot;</code> triggers simulation)</li>
+<li>Platform detection (Linux triggers simulation)</li>
+<li>Manual override through parameters</li>
+</ul>
+<h2 id="integration-points">Integration Points</h2>
+<h3 id="microscope-integration">Microscope Integration</h3>
+<p>The Interface creates and coordinates with a high-level <code>Microscope</code> object that provides:</p>
+<ul>
+<li>Calibrated wavelength control</li>
+<li>Motor coordination</li>
+<li>Data acquisition</li>
+<li>State management</li>
+</ul>
+<h3 id="acquisition-control-integration">Acquisition Control Integration</h3>
+<p>Links with <code>AcquisitionControl</code> for:</p>
+<ul>
+<li>Scan parameter management</li>
+<li>Data collection coordination</li>
+<li>GUI parameter synchronization</li>
+</ul>
+<h3 id="calibration-service-integration">Calibration Service Integration</h3>
+<p>Connects with <code>Calibration</code> service for:</p>
+<ul>
+<li>Wavelength-to-motor-step conversions</li>
+<li>Live calibration corrections</li>
+<li>Reference calibration procedures</li>
+</ul>
+<h2 id="development-guidelines">Development Guidelines</h2>
+<h3 id="adding-new-commands">Adding New Commands</h3>
+<ol>
+<li><strong>Instrument-level commands</strong>: Add to the appropriate instrument's <code>command_functions</code> dictionary</li>
+<li><strong>Interface-level commands</strong>: Add to <code>self.interface_commands</code> in <code>__init__</code></li>
+<li><strong>Ensure proper docstrings</strong>: Used by help system</li>
+<li><strong>Consider thread safety</strong>: Use <code>@thread_locked</code> for critical operations</li>
+</ol>
+<h3 id="adding-new-hardware">Adding New Hardware</h3>
+<ol>
+<li><strong>Create instrument class</strong> inheriting from <code>InstrumentBase</code></li>
+<li><strong>Add to Interface <code>__init__</code></strong> method</li>
+<li><strong>Include in hardware initialization sequence</strong></li>
+<li><strong>Add simulation fallback</strong> if needed</li>
+<li><strong>Update command mapping</strong> (automatic if using <code>command_functions</code>)</li>
+</ol>
+<h3 id="error-handling-best-practices">Error Handling Best Practices</h3>
+<ol>
+<li><strong>Use try/except blocks</strong> around hardware operations</li>
+<li><strong>Provide meaningful error messages</strong> with context</li>
+<li><strong>Include stack traces</strong> for debugging</li>
+<li><strong>Implement graceful fallbacks</strong> where possible</li>
+<li><strong>Log all errors</strong> appropriately</li>
+</ol>
+<h3 id="configuration-management">Configuration Management</h3>
+<ul>
+<li><strong>Hardware settings</strong>: Stored in <code>microscope_config.json</code></li>
+<li><strong>Calibration data</strong>: Stored in <code>calibration/</code> directory</li>
+<li><strong>Motor positions</strong>: Persisted in instrument state</li>
+<li><strong>Acquisition parameters</strong>: Managed by AcquisitionControl</li>
+</ul>
+<h2 id="usage-examples">Usage Examples</h2>
+<h3 id="basic-startup">Basic Startup</h3>
+<pre class="hljs"><code><div><span class="hljs-comment"># Create interface in simulation mode</span>
+interface = Interface(simulate=<span class="hljs-literal">True</span>, debug_skip=[<span class="hljs-string">'camera'</span>])
+
+<span class="hljs-comment"># Run startup commands</span>
+interface.run_batch([<span class="hljs-string">'sl 800'</span>, <span class="hljs-string">'report'</span>])
+
+<span class="hljs-comment"># Start CLI</span>
+interface.cli()
+</div></code></pre>
+<h3 id="adding-custom-commands">Adding Custom Commands</h3>
+<pre class="hljs"><code><div><span class="hljs-comment"># In instrument class</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyInstrument</span><span class="hljs-params">(InstrumentBase)</span>:</span>
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">__init__</span><span class="hljs-params">(self)</span>:</span>
+        super().__init__()
+        self.command_functions = {
+            <span class="hljs-string">'mycommand'</span>: self.my_function
+        }
+    
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">my_function</span><span class="hljs-params">(self, arg1, arg2)</span>:</span>
+        <span class="hljs-string">"""My custom function documentation"""</span>
+        <span class="hljs-comment"># Implementation here</span>
+        <span class="hljs-keyword">pass</span>
+</div></code></pre>
+<h3 id="hardware-connection-control">Hardware Connection Control</h3>
+<pre class="hljs"><code><div><span class="hljs-comment"># Switch from simulation to real hardware</span>
+interface.process_gui_command(<span class="hljs-string">'triax'</span>)  <span class="hljs-comment"># Connect to real spectrometer</span>
+interface.process_gui_command(<span class="hljs-string">'camera'</span>) <span class="hljs-comment"># Connect to real camera</span>
+interface.process_gui_command(<span class="hljs-string">'laser'</span>)  <span class="hljs-comment"># Connect to real laser</span>
+</div></code></pre>
+<h2 id="common-patterns">Common Patterns</h2>
+<h3 id="command-flow">Command Flow</h3>
+<ol>
+<li>User input → <code>cli()</code> or <code>process_gui_command()</code></li>
+<li>Command parsing → <code>_command_parser()</code></li>
+<li>Command routing → <code>_command_handler()</code></li>
+<li>Execution → Appropriate instrument method</li>
+<li>State saving → <code>save_state()</code></li>
+<li>Response logging</li>
+</ol>
+<h3 id="error-recovery">Error Recovery</h3>
+<ol>
+<li>Hardware errors → Simulation fallback</li>
+<li>Command errors → Error logging + continue</li>
+<li>Critical errors → Full stack trace + safe exit</li>
+</ol>
+<h3 id="state-synchronization">State Synchronization</h3>
+<ol>
+<li>Motor movements → Update calibrated wavelengths</li>
+<li>Wavelength changes → Update motor positions</li>
+<li>GUI changes → Update acquisition parameters</li>
+<li>All changes → Persist to configuration files</li>
+</ol>
+<h2 id="debugging-and-maintenance">Debugging and Maintenance</h2>
+<h3 id="logging-control">Logging Control</h3>
+<ul>
+<li>Use <code>logger 10</code> for debug level logging</li>
+<li>Use <code>logger 20</code> for info level logging</li>
+<li>Use <code>logger 30</code> for warning level logging</li>
+</ul>
+<h3 id="common-debug-commands">Common Debug Commands</h3>
+<ul>
+<li><code>debug</code> - Enter Python debugger</li>
+<li><code>help</code> - Show all available commands</li>
+<li><code>report</code> - Display current system status</li>
+<li><code>wai</code> - &quot;Where am I&quot; - show current positions</li>
+</ul>
+<h3 id="hardware-troubleshooting">Hardware Troubleshooting</h3>
+<ul>
+<li>Check connection strings and COM ports</li>
+<li>Verify hardware power and connections</li>
+<li>Use simulation mode to isolate software issues</li>
+<li>Check log files for error details</li>
+</ul>
+<p>This interface system provides a robust, extensible foundation for controlling the complex Raman microscope hardware while maintaining ease of use and development flexibility.</p>
+
+</body>
+</html>
