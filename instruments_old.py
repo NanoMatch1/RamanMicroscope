@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from functools import wraps
 
 from datafit.laser_detection import LaserDetection
+from instruments.instrument_base import Instrument
 
 def enforce_response(func, expected_response=True, callback=None):
     """
@@ -471,51 +472,6 @@ class MotionControl:
         self._laser_steps = value
 
 
-
-
-
-class Instrument(ABC):
-    def __init__(self):
-        self.command_functions = {}
-
-    def _integrity_checker(self):
-        """
-        Checks that every UI-callable method is in command_functions
-        and that every command_functions entry is actually UI-callable.
-        """
-
-        # 1) Gather all methods (bound or unbound) decorated with @ui_callable
-        ui_callable_methods = set()
-        # Because we want bound methods for the instance, we use `inspect.ismethod`.
-        # That ensures we get `self.run_scan_spectrum` bound to `self`, etc.
-        for _, method in inspect.getmembers(self, predicate=inspect.ismethod):
-            if getattr(method, 'is_ui_process_callable', False):
-                ui_callable_methods.add(method)
-
-        # 2) Gather all methods that appear in your command_functions dict
-        cmd_methods = set(self.command_functions.values())
-
-        # 3) Compare them
-        if ui_callable_methods != cmd_methods:
-            # This means at least one UI-callable method is missing
-            # from self.command_functions or vice versa.
-            missing_in_dict = ui_callable_methods - cmd_methods
-            missing_in_ui = cmd_methods - ui_callable_methods
-
-            message = []
-            if missing_in_dict:
-                message.append(
-                    f"These @ui_callable methods are not in command_functions: "
-                    f"{[m.__name__ for m in missing_in_dict]}"
-                )
-            if missing_in_ui:
-                message.append(
-                    f"These methods in command_functions are not decorated with @ui_callable: "
-                    f"{[m.__name__ for m in missing_in_ui]}"
-                )
-            raise ValueError("\n".join(message))
-
-        print(f"{self.__class__} integrity check passed")
 
 
 
@@ -2738,62 +2694,3 @@ class Microscope(Instrument):
         self.current_shift = wavenumber
         self.micro_log.info(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
-
-class Camera(Instrument):
-    def __init__(self, interface, simulate=False):
-        super().__init__()
-        self.interface = interface
-        self.simulate = simulate
-        self.command_functions = {
-        }
-
-        self._integrity_checker()
-
-    def __str__(self):
-        return "Camera"
-
-    def __call__(self, command: str, *args, **kwargs):
-        if command not in self.command_functions:
-            raise ValueError(f"Unknown camera command: '{command}'")
-        return self.command_functions[command](*args, **kwargs)
-    
-    def initialise(self):
-        self.connect()
-    
-    def connect(self):
-        print("Connecting to the camera.")
-        self.serial = self.connect_to_camera()
-
-    def connect_to_camera(self):
-        return serial.Serial
-
-
-class Spectrometer(Instrument):
-    def __init__(self, interface, simulate=False):
-        super().__init__()
-        self.interface = interface
-        self.simulate = simulate
-        self.command_functions = {
-            'get_spectrometer_position': self.get_spectrometer_position,
-            'go_to_position': self.go_to_position
-        }
-
-        self._integrity_checker()
-
-    def __str__(self):
-        return "Spectrometer"
-
-    def __call__(self, command: str, *args, **kwargs):
-        if command not in self.command_functions:
-            raise ValueError(f"Unknown spectrometer command: '{command}'")
-        return self.command_functions[command](*args, **kwargs)
-
-    @abstractmethod
-    @ui_callable
-    def get_spectrometer_position(self):
-        print("Getting the current position of the spectrometer.")
-
-    @abstractmethod
-    @ui_callable
-    def go_to_position(self, position):
-        print("Going to the position: {}".format(position))
