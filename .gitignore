@@ -1,6 +1,7 @@
 data/
 __pycache__/
 *.py[cod]
+.venv/
 delme.py
 instrument_state.json
 acquisitioncontrol/acquisition_config.json
