@@ -53,8 +53,6 @@ class RamanMicroscopeService:
     
     def initialize_hardware(self, simulate=True, debug_skip=None):
         """Initialize the hardware interface"""
-        if debug_skip is None:
-            debug_skip = ['camera']  # Skip camera by default for web interface
             
         logger.info(f"Attempting to initialize hardware interface (simulate={simulate})")
         
