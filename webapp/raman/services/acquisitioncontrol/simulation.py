@@ -1,5 +1,4 @@
 from .acqcontrol import AcquisitionControl
-from .acqgui import AcquisitionGUI
 import os
 import threading
 import time

@@ -7,7 +7,6 @@ MULETA_Raman_Microscope.egg-info/requires.txt
 MULETA_Raman_Microscope.egg-info/top_level.txt
 acquisitioncontrol/__init__.py
 acquisitioncontrol/acqcontrol.py
-acquisitioncontrol/acqgui.py
 acquisitioncontrol/dearguitest.py
 acquisitioncontrol/pyqtGUI.py
 acquisitioncontrol/simulation.py
