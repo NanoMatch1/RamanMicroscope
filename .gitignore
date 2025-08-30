@@ -1,12 +1,58 @@
-data/
-__pycache__/
+# Original project ignores
+**/data/
+**/__pycache__/
 *.py[cod]
-.venv/
-delme.py
-instrument_state.json
-acquisitioncontrol/acquisition_config.json
-acquisitioncontrol/viewer_settings.json
-instrument_state.json
-logs/
-logs/instrument_errors.log
-acquisitioncontrol/viewer_settings.json
+**/delme.py
+**/instrument_state.json
+**/acquisitioncontrol/acquisition_config.json
+**/acquisitioncontrol/viewer_settings.json
+**/logs/
+**/logs/instrument_errors.log
+**/asdf.md
+**/.venv/
+
+# Django web interface ignores
+webapp/db.sqlite3
+webapp/media/
+webapp/static/
+webapp/*/migrations/__pycache__/
+webapp/*/migrations/*.pyc
+
+# Django settings and secrets
+webapp/_project/local_settings.py
+webapp/_project/secrets.py
+webapp/.env
+
+# Session and cache files
+webapp/sessions/
+webapp/cache/
+
+# User uploaded files
+webapp/scan_data/
+webapp/scan_metadata/
+
+# Log files
+webapp/*.log
+webapp/logs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+.directory
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Temporary files
+*.tmp
+*.temp
+
