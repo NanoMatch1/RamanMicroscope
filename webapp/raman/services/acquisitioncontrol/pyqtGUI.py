@@ -654,6 +654,9 @@ class MainWindow(QMainWindow):
             widget.setStyleSheet("background-color: #ffcccc;")  # light red
             return
 
+        # Enforce rules for the parameter
+        new_value = self.enforce_rules(entry_key, new_value)
+
         # conversion succeeded → mark widget green
         widget.setStyleSheet("background-color: #ccffcc;")  # light green
         # Write it back
@@ -664,6 +667,22 @@ class MainWindow(QMainWindow):
         self.acq_ctrl.save_config()
         self.refresh_ui()
 
+
+    def enforce_rules(self, entry_key: str, new_value):
+        """
+        Enforce logical rules for specific parameter entries.
+        For example, ensure "resolution" is not zero.
+        """
+        # Define rules for specific parameters
+        if "resolution" in entry_key:
+            if new_value == 0:
+                # Auto-rewrite to 1.0 if resolution is zero
+                new_value = 1.0
+                # Update the corresponding widget to reflect the change
+                widget, _ = self.param_entries[entry_key]
+                widget.setText(str(new_value))
+
+        return new_value
 
     @pyqtSlot()
     def refresh_ui(self):

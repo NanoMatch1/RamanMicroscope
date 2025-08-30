@@ -400,6 +400,8 @@ class AcquisitionControl(QObject):
 
         print("Acquisition Control initialized.")
 
+        # TODO: Add check for 0 resolution
+
     def toggle_scan_mode(self):
         self.scan_mode = 'linescan' if self.scan_mode == 'map' else 'map'
         print("Set scan mode to {}".format(self.scan_mode))
@@ -491,7 +493,6 @@ class AcquisitionControl(QObject):
         try:
             duration = self.estimate_scan_duration()
 
-
             if 3600 > duration >= 600:
                 scan_time = duration / 60
                 units = 'minutes'
@@ -510,7 +511,9 @@ class AcquisitionControl(QObject):
             self.estimated_scan_time = scan_time
             return scan_time
         except Exception as e:
-            print(f"Error estimating scan time: {e}")
+            # get traceback
+            self.logger.error(f"Error estimating scan time: {traceback.format_exc()}")
+
         
 
     def prompt_for_cli_parameters(self):
