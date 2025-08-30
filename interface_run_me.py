@@ -3,6 +3,8 @@ import os
 import traceback
 import threading
 
+from command.registry import build_command_map  # new registry extraction
+
 from instruments.util_decorators import heartbeat
 from controller import ArduinoMEGA
 from instruments_old import Instrument, Microscope
@@ -107,7 +109,11 @@ class Interface:
                 from instruments.cameras.simulated_camera import SimulatedCameraInterface
                 self.camera.simulate = True
                     
-        self.command_map = self._generate_command_map()
+                # Build initial command map via external registry builder (backwards compatible)
+                self.command_map = build_command_map(
+                        *[self.__getattribute__(attribute) for attribute in dir(self)
+                            if isinstance(self.__getattribute__(attribute), (Instrument, InstrumentBase))]
+                )
 
 
 
@@ -231,16 +237,17 @@ class Interface:
                 self.spectrometer = Triax(self, simulate=False)
                 self.spectrometer.initialise()
                 self.logger.info("Successfully connected to real TRIAX spectrometer")
-                self.command_map = self._generate_command_map()
+                self.command_map = build_command_map(
+                    *[self.__getattribute__(attribute) for attribute in dir(self)
+                      if isinstance(self.__getattribute__(attribute), (Instrument, InstrumentBase))]
+                )
             except Exception as e:
                 self.logger.error(f"Failed to connect to real TRIAX: {e}")
-                # Fallback to simulation
                 from simulation import SimulatedTriax
                 self.spectrometer = SimulatedTriax(self)
                 self.spectrometer.initialise()
                 self.logger.info("Reverted to simulated TRIAX")
         else:
-            # Already using real hardware
             self.logger.info("Already connected to real TRIAX")
 
     #8.56 -14.81
@@ -253,11 +260,13 @@ class Interface:
             try:
                 self.laser = MillenniaLaser(self, simulate=False)
                 self.laser.initialise()
-                self.command_map = self._generate_command_map()
+                self.command_map = build_command_map(
+                    *[self.__getattribute__(attribute) for attribute in dir(self)
+                      if isinstance(self.__getattribute__(attribute), (Instrument, InstrumentBase))]
+                )
             except Exception as e:
                 self.logger.error(f"Failed to connect to real laser: {e}")
         else:
-            # Already using real hardware
             self.logger.info("Already connected to real laser")
 
     def connect_to_camera(self):
@@ -268,18 +277,20 @@ class Interface:
                 self.camera = TucsenCamera(self, simulate=False)
                 self.camera.initialise()
                 self.logger.info("Successfully connected to real camera")
-                self.debug_skip.remove('camera')
-                self.microscope.camera = self.camera  # Update the microscope's camera reference
-                self.command_map = self._generate_command_map()
+                if 'camera' in self.debug_skip:
+                    self.debug_skip.remove('camera')
+                self.microscope.camera = self.camera
+                self.command_map = build_command_map(
+                    *[self.__getattribute__(attribute) for attribute in dir(self)
+                      if isinstance(self.__getattribute__(attribute), (Instrument, InstrumentBase))]
+                )
             except Exception as e:
                 self.logger.error(f"Failed to connect to real camera: {e}")
-                # Fallback to simulation
                 from simulation import SimulatedCamera
                 self.camera = SimulatedCamera(self)
                 self.camera.initialise()
                 self.logger.info("Reverted to simulated camera")
         else:
-            # Already using real hardware
             self.logger.info("Already connected to real camera")
 
     def logger_level(self, level):
@@ -337,16 +348,12 @@ class Interface:
         if not os.path.exists(os.path.join(self.calibrationDir, 'motor_recordings')):
             os.makedirs(os.path.join(self.calibrationDir, 'motor_recordings'))
 
-    def _generate_command_map(self):
-        '''Dynamically generate a command map from the instruments declared in __init__'''
-        instruments = [self.__getattribute__(attribute) for attribute in dir(self) if isinstance(self.__getattribute__(attribute), Instrument) or isinstance(self.__getattribute__(attribute), InstrumentBase)] # TODO: Eventually replace all Instrument with InstrumentBase
-
-        command_map = {
-            funct: (instrument, method)
-            for instrument in instruments
-            for funct, method in instrument.command_functions.items()
-        }
-        return command_map
+    # _generate_command_map retained for backwards compatibility (deprecated)
+    def _generate_command_map(self):  # pragma: no cover - legacy path
+        return build_command_map(
+            *[self.__getattribute__(attribute) for attribute in dir(self)
+              if isinstance(self.__getattribute__(attribute), (Instrument, InstrumentBase))]
+        )
     
     # def _format_motion_commands(self, command:str):
     #     pattern = re.compile(r'(?P<x>x-?\d+(\.\d+)?|X-?\d+(\.\d+)?|)?(?P<y>y-?\d+(\.\d+)?|Y-?\d+(\.\d+)?|)?(?P<z>z-?\d+(\.\d+)?|Z-?\d+(\.\d+)?|)?')
