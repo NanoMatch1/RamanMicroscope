@@ -974,7 +974,7 @@ class Microscope(Instrument):
             stage_positions = instrument_state.get('stage_positions', {})
             self.micro_log.info('Instrument state loaded from file')
         
-            # self.write_motor_positions(motor_dict=motor_positions) #PATCH: reenable and make check for motors being the same and selecting to write or not
+            self.write_motor_positions(motor_dict=motor_positions) #PATCH: reenable and make check for motors being the same and selecting to write or not
             self.stage_positions_microns = stage_positions
             
             self.get_all_current_wavelengths()
