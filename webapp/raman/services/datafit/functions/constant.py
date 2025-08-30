@@ -15,7 +15,7 @@ class constant(FitFunction):
 
     def get_params(self):
     	return [self.__height]
-
+    
     def build_function(self,x):
         x = np.array(x)
         y = np.zeros_like(x) + self.__height
