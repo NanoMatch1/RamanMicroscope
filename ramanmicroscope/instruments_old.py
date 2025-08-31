@@ -1751,7 +1751,14 @@ class Microscope(Instrument):
         if value < 0:
             print("Acquisition time must be positive.")
             return
-        
+        # Prefer new AcquisitionService when available
+        svc = getattr(self.interface, 'acquisition_service', None)
+        if svc:
+            try:
+                svc.set_exposure(value)
+                return True
+            except Exception:
+                pass  # fallback to legacy path
         self.interface.acq_ctrl.general_parameters['acquisition_time'] = value
         self.camera.set_exposure_time(str(value))
         return True
@@ -1769,14 +1776,30 @@ class Microscope(Instrument):
         except ValueError:
             self.micro_log.info("Invalid laser power {}. Must be a number.".format(value))
             return
-        
+        # Route via LaserService for validation if present
+        svc = getattr(self.interface, 'laser_service', None)
+        if svc:
+            setpoint = svc.set_power_safe(value)
+            if setpoint is None:
+                self.micro_log.warning(f"Rejected laser power setpoint {value}")
+                return None
+            self.interface.acq_ctrl.general_parameters['laser_power'] = setpoint
+            return setpoint
         self.interface.laser.set_power(value)
         self.interface.acq_ctrl.general_parameters['laser_power'] = value
+        return value
 
     @ui_callable
     def get_laser_power(self):
         '''Returns the current laser power.'''
-        power = self.interface.laser.get_power()
+        svc = getattr(self.interface, 'laser_service', None)
+        if svc:
+            try:
+                power = svc.snapshot().power
+            except Exception:
+                power = self.interface.laser.get_power()
+        else:
+            power = self.interface.laser.get_power()
         self.interface.acq_ctrl.general_parameters['laser_power'] = power
         return power
     
