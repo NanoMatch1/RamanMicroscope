@@ -2389,21 +2389,19 @@ class Microscope(Instrument):
         Returns:
         bool: True if successful, False otherwise
         """
-        # Validate the wavelength is within allowed range
         wavelength = string_to_float(wavelength)
+        svc = getattr(self.interface, 'grating_service', None)
+        if svc:
+            return svc.move_to_wavelength(wavelength)
+        # Fallback legacy path
         if self.check_grating_wavelength(wavelength) is False:
             return False
-        
-        # Get target positions from calibration service
-        target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
-        
-        moved = self.go_to_grating_steps(target_positions)
-
-        if moved is True:
+        targets = self.calibration_service.wl_to_steps(wavelength, self.action_groups['grating_wavelength'])
+        moved = self.go_to_grating_steps(targets)
+        if moved:
             self.micro_log.info("New grating wavelength: {}".format(self.report_grating_wavelength))
         else:
             self.micro_log.info("Grating motors already at target position - no motion initiated.")
-
         return True
 
     def check_grating_wavelength(self, wavelength):

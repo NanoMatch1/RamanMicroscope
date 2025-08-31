@@ -189,3 +189,25 @@ Risks & Mitigations:
 If calibration absent, service fallback path still used; logged errors on exceptions.
 Follow-ups:
 Add system-level `sysstatus` command; migrate grating/monochromator related commands similarly; introduce deprecation warnings for direct instrument calls.
+
+## [Step 12] Grating Command Migration + Lazy Controller Connect (2025-08-31)
+Goal:
+Route grating wavelength movement through new `GratingService` and ensure tests can run with `initialise_hardware=False` by lazily connecting controller on first command send.
+Summary:
+Added `GratingService` encapsulating wavelength→steps conversion via calibration action group. Updated `Microscope.go_to_grating_wavelength` to delegate to service when present. Fixed earlier indentation error in `Interface.__init__` that left service instantiation at class scope (causing NameError) and added lazy init guard in `controller.ArduinoMEGA.send_command` and `_send_command_to_UNO`. All tests pass (23).
+Key Changes:
+- New `subsystems/grating_service.py`.
+- `subsystems/__init__.py` export.
+- `interface.py` service instantiation block correctly indented.
+- `controller.py` lazy serial connect if absent.
+- New `tests/test_grating_service_migration.py`.
+Tests Added / Updated:
+- `test_grating_service_migration.py` (new) – validates service-routed wavelength move under simulation with deferred hardware init.
+Backward Compatibility Notes:
+Legacy method still available; service path is transparent. Lazy connect preserves existing behaviour when hardware initialised up-front.
+Risks & Mitigations:
+Potential unintended real hardware connection during tests if simulate flag mis-set; mitigated by passing `simulate=True` in tests. Future: add explicit flag to disable auto-connect.
+Follow-ups:
+- Add `sysstatus` CLI command.
+- Deprecation warnings for direct grating movement methods.
+- Edge-case tests: invalid wavelength range, no-op movement.

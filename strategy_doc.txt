@@ -1,0 +1,175 @@
+Strategy & Continuation Guide (RamanMicroscope v2.0 Refactor)
+
+Purpose
+Enable a fresh assistant session to resume the refactor using only this document plus REFACTOR_LOG.md, without rereading the whole codebase first.
+
+1. Core Objectives (ordered)
+1. Stabilize: Keep all existing tests green after every change.
+2. Decompose: Migrate legacy monolithic logic in instruments_old.py / interface.py into small, side‑effect–light service façades.
+3. Safety: Centralize validation (ranges, state checks) inside services before hardware IO.
+4. Observability: Provide structured snapshots and consistent logging.
+5. Backwards Compatibility: Preserve public command behavior until explicit deprecation phase.
+6. Test Coverage Growth: Add focused migration tests for each moved command (happy path + minimal edge).
+7. Incremental Replace: Phase out direct instrument mutations behind feature flags / deprecation warnings.
+8. Prepare Future Work: Enable queued/batched motion, richer acquisition workflows, and simulated environments.
+
+2. Current High-Level Architecture
+Layers (bottom → top):
+- Hardware Drivers (Controller, Spectrometer, Laser, Camera).
+- Legacy Aggregator (`Microscope` in instruments_old.py).
+- Calibration (`calibration.py`) feeding polynomial conversions.
+- Service Layer (`subsystems/*.py`): Motion, Laser, Spectrometer, Acquisition, Grating (all pure or near-pure façades).
+- Interface (interface.py): Orchestrator; instantiates hardware + services; command registry + CLI; snapshot aggregator.
+- Tests (tests): Unit + light integration, all running under simulation (camera + optionally controller).
+
+3. Service Responsibilities (Contracts)
+MotionService: Segment controller commands safely (threshold, delimiter checking).
+LaserService: Power validation (range clamp policy later), status snapshot.
+SpectrometerService: Wavelength ↔ steps conversion, movement helper, snapshot.
+AcquisitionService: Exposure getter/setter, averaged frame acquisition, snapshot.
+GratingService: Grating wavelength validation, conversion via calibration, movement idempotency.
+
+4. Migration Status Snapshot
+Already Routed via Services:
+- Laser power set/get
+- Acquisition time
+- Spectrometer wavelength
+- Grating wavelength
+Not Yet Migrated (candidates):
+- Monochromator wavelength (if distinct)
+- Laser wavelength (if tunable mechanism)
+- Polarization / filter wheel / shutter operations
+- Motor homing & grouped motion (could become MotionPlannerService)
+- System-wide “status” command (pending)
+- Any scan / sweep orchestration (future SequencerService)
+
+5. Operational Constraints / Principles
+- No mass edits: Small diffs; keep unrelated formatting untouched.
+- Always run full test suite after each logical step.
+- Add a migration test before or alongside each service routing.
+- If a service introduces stricter validation, preserve backward behavior with a fallback path and log a warning.
+- Simulation-first: All new tests should run with `simulate=True` and `initialise_hardware=False` where practical; rely on lazy-connect safeguards.
+- Logging: Use child loggers `<root>.<Component>`; info for lifecycle, debug for internal calculations, warning for soft validation failures.
+
+6. Working Cycle Template (repeat per migrated command)
+1. Identify legacy method in `Microscope` or `Interface`.
+2. Draft/extend service (if missing) with:
+   - Pure transformation logic
+   - Validation
+   - Optional snapshot dataclass (if stateful)
+3. Add unit test(s) for service core (if logic non-trivial).
+4. Add migration integration test (`tests/test_<component>_migration.py`) asserting old public entrypoint still works.
+5. Update legacy method to:
+   try service path → fallback to legacy implementation (log on exception).
+6. Run tests; fix; commit.
+7. Append new step to REFACTOR_LOG.md.
+8. Note follow-ups (range tests, edge cases) if deferred.
+
+7. Testing Strategy Expansion
+Test Types:
+- Service unit: Deterministic, no hardware side-effects.
+- Migration integration: Instantiate `Interface(simulate=True, initialise_hardware=False, debug_skip=['camera'])` unless hardware state required.
+- Snapshot tests: Ensure dict keys stable; when extending snapshot, add keys optionally (do not remove without deprecation notice).
+Edge Case Patterns to Cover Gradually:
+- Invalid wavelength (below/above calibrated range) returns False/not applied.
+- No-op moves (already at target) log and do not issue motor command.
+- Power set outside limits rejected.
+- Averaged acquisition with frame count=1 vs >1.
+Naming: `test_<service>_<behavior>.py` and `test_<domain>_migration.py`.
+
+8. Future Services / Enhancements (Backlog – prioritized)
+P1:
+- MonochromatorService (if distinct from grating logic).
+- SysStatusCommand: CLI command exposing `system_snapshot()`.
+- Deprecation warnings for direct legacy calls (single helper decorator).
+P2:
+- MotionPlannerService: queue + batch multi-motor moves; optional dry-run.
+- ScanService: Spectral scans with staged wavelength stepping + acquisition bundling.
+- ValidationPolicy: Central registry for ranges (pluggable).
+P3:
+- PersistenceService: Structured state save/load (JSON schema).
+- Telemetry hooks (optional structured event stream).
+P4:
+- Async/await adaptation of long-running operations.
+- CLI command autogen from registry + service metadata.
+
+9. Deprecation Path (Planned)
+Phase 1 (current): Transparent delegation; no user-visible changes.
+Phase 2: Emit `DeprecationWarning` when legacy method bypasses service (once parity verified).
+Phase 3: Remove fallback path; tests updated to assert service route only.
+Phase 4: Remove legacy method or convert to thin alias.
+
+10. Risk Register
+- Silent divergence calibration vs services → Mitigation: centralize all wl↔steps via calibration service only.
+- Test flakiness due to shared singletons → Mitigation: ensure teardown resets (camera already handled).
+- Lazy controller connect contacting real hardware in mixed environments → Add explicit `force_no_hw=True` safety flag if needed.
+- Gradual snapshot shape drift → Maintain additive-only rule; track via dedicated snapshot schema test.
+
+11. Coding Conventions (Refactor Layer)
+- No prints; only logger usage.
+- Service public methods: verbs (`move_to_wavelength`, `set_power_safe`).
+- Snapshot method name: `snapshot()`, returns simple dataclass or namedtuple; convert to dict only at aggregation layer.
+- Avoid direct attribute mutation of instruments inside services; call exposed methods.
+- Type hints: Favor Protocols for external dependencies.
+- Return booleans for success/fail primitive operations; raise only for programmer errors, not user-range errors.
+
+12. File Touch Policy
+Modify only:
+- `subsystems/*.py` (new / extended services)
+- instruments_old.py (migration shim updates)
+- interface.py (service wiring / new CLI commands)
+- `tests/*`
+- REFACTOR_LOG.md
+Introduce new service file rather than expanding legacy monolith further.
+
+13. Checklist Template For Each New Step
+[ ] Create/extend service
+[ ] Add/extend tests
+[ ] Migrate legacy method (fallback retained)
+[ ] Run full tests (expect all green)
+[ ] Update refactor log step (chronological)
+[ ] Note follow-ups (edge tests, deprecation)
+[ ] Commit
+
+14. Decision Heuristics
+- Prefer pure functions & deterministic conversions in services.
+- Short path first: implement minimal API needed for migration; extend later.
+- If logic spans > ~40 lines in a legacy method, extract now.
+- If a service starts collecting unrelated concerns → spawn a new specialized service.
+
+15. Minimal Onboarding Procedure (New Assistant Session)
+1. Read this document + most recent REFACTOR_LOG.md entry.
+2. List outstanding backlog (section 8) and pick highest P1 not yet implemented.
+3. Follow Working Cycle Template.
+4. Keep tests green; if a regression appears, revert last patch before proceeding.
+
+16. Immediate Next Actions (if resuming now)
+1. Implement SysStatus command (wrapper around `system_snapshot()`).
+2. Add wavelength invalid-range test for GratingService.
+3. Introduce MonochromatorService (if distinct calibration path exists).
+4. Start deprecation warning framework (simple decorator + registry).
+
+17. Glossary (Focused)
+Interface: Orchestrator object exposed to CLI/tests.
+Microscope: Legacy aggregation of motion + spectral logic.
+Service: Thin abstraction encapsulating one concern, side-effect safe to construct.
+Snapshot: Lightweight state summary (simple fields only).
+Migration Test: Test proving legacy public API still works post-service routing.
+
+18. Known Technical Debt
+- Large instruments_old.py file (needs systematic slicing).
+- Mixed naming (some camelCase vs snake_case) – defer.
+- No central validation policy object.
+- Inconsistent return conventions (some methods return lists, some bools).
+
+19. Guardrails
+Never:
+- Remove existing public methods before deprecation cycle.
+- Change snapshot key names in-place.
+- Introduce blocking sleeps in services (delegate to hardware layer).
+- Hardcode calibration constants inside services (always via calibration service).
+
+20. Escalation (When Blocked)
+If test requires hardware side-effect not simulated → add stub in simulation layer or inject protocol-based fake.
+
+End of Strategy Document.
