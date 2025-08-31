@@ -23,6 +23,12 @@ from .acquisitioncontrol.gui_services import GUIEmitterService
 # from PyQt5.QtWidgets import QApplication  # deferred import; only import inside gui()
 
 from .instruments.cameras.tucsencam import TucsenCamera
+from .subsystems import (
+    MotionService,
+    LaserService,
+    SpectrometerService,
+    AcquisitionService,
+)
 
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
 from .logging_utils import LoggerInterface
@@ -131,6 +137,13 @@ class Interface:
         else:
             # Provide no-op heartbeat until manual initialisation in tests
             self.heartbeat = lambda *a, **k: None
+        # --- Subsystem service layer instantiation (Phase 3 integration) ---
+        # These are thin façades; creation is side-effect free so we can always
+        # create them even if hardware not yet initialised (tests may init later).
+        self.motion_service = MotionService()
+        self.laser_service = LaserService(self.laser)
+        self.spectrometer_service = SpectrometerService.from_interface(self)
+        self.acquisition_service = AcquisitionService.from_interface(self)
 
         self._integrity_checker()
 
@@ -415,6 +428,32 @@ class Interface:
     def _integrity_checker(self):
         self.logger.info("Microscope integrity check passed")
         pass
+
+    # ---------------------- Aggregated status helpers ----------------------
+    def system_snapshot(self):
+        """Return a consolidated dictionary of subsystem snapshots.
+
+        Each entry is either the dataclass __dict__ from the service snapshot
+        or None if the underlying instrument/service is not ready. Errors are
+        swallowed to protect call-sites during incremental refactor.
+        """
+        snap = {}
+        # Laser
+        try:
+            snap['laser'] = self.laser_service.snapshot().__dict__
+        except Exception:
+            snap['laser'] = None
+        # Spectrometer
+        try:
+            snap['spectrometer'] = self.spectrometer_service.snapshot().__dict__
+        except Exception:
+            snap['spectrometer'] = None
+        # Acquisition / camera
+        try:
+            snap['acquisition'] = self.acquisition_service.snapshot().__dict__
+        except Exception:
+            snap['acquisition'] = None
+        return snap
 
 def main(startup_commands=[], simulate=False):
     # Create your CLI-backed controller
