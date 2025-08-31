@@ -11,7 +11,7 @@ ramanmicroscope/data_analysis_run_me.py
 ramanmicroscope/data_viewer_run_me.py
 ramanmicroscope/dataset_post_processing.py
 ramanmicroscope/instruments_old.py
-ramanmicroscope/interface_run_me.py
+ramanmicroscope/interface.py
 ramanmicroscope/logging_utils.py
 ramanmicroscope/recalibrate_function.py
 ramanmicroscope/simulation.py
@@ -40,6 +40,8 @@ ramanmicroscope/datafit/functions/gaussian.py
 ramanmicroscope/datafit/functions/lorentzian.py
 ramanmicroscope/datafit/functions/power.py
 ramanmicroscope/datafit/functions/voigt_pseudo.py
+ramanmicroscope/drivers/__init__.py
+ramanmicroscope/drivers/protocols.py
 ramanmicroscope/instruments/__init__.py
 ramanmicroscope/instruments/instrument_base.py
 ramanmicroscope/instruments/util_decorators.py
