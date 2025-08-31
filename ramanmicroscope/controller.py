@@ -76,6 +76,10 @@ class ArduinoMEGA:
 
         self.interface.logger.coms('>MEGA:{}'.format(command))
 
+        # Lazy-connect to support deferred hardware initialisation in tests
+        if not hasattr(self, 'serial'):
+            self.connect()
+
         self._send_command_to_UNO(command)
         response = self._read_from_serial_until()
 
@@ -165,6 +169,9 @@ class ArduinoMEGA:
 
     
     def _send_command_to_UNO(self, command):
+        # Ensure serial exists (lazy init safety)
+        if not hasattr(self, 'serial'):
+            self.connect()
         self.serial.write('{}\n'.format(command).encode())
         time.sleep(0.1)
 

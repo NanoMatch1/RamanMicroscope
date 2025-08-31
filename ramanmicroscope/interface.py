@@ -28,6 +28,7 @@ from .subsystems import (
     LaserService,
     SpectrometerService,
     AcquisitionService,
+    GratingService,
 )
 
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
@@ -137,6 +138,7 @@ class Interface:
         else:
             # Provide no-op heartbeat until manual initialisation in tests
             self.heartbeat = lambda *a, **k: None
+
         # --- Subsystem service layer instantiation (Phase 3 integration) ---
         # These are thin façades; creation is side-effect free so we can always
         # create them even if hardware not yet initialised (tests may init later).
@@ -144,7 +146,8 @@ class Interface:
         self.laser_service = LaserService(self.laser)
         self.spectrometer_service = SpectrometerService.from_interface(self)
         self.acquisition_service = AcquisitionService.from_interface(self)
-
+        # Grating service needs microscope for calibration + action groups
+        self.grating_service = GratingService(self.microscope)
         self._integrity_checker()
 
     def run_batch(self, commands):
