@@ -11,14 +11,21 @@ from ramanmicroscope.interface import Interface
 
 @pytest.fixture(scope="module")
 def sim_interface():
-    iface = Interface(simulate=True, com_port='nada', baud=9600, debug_skip=[], initialise_hardware=False)
+    # Skip camera here to avoid holding singleton across module fixtures; not needed for these commands
+    iface = Interface(simulate=True, com_port='nada', baud=9600, debug_skip=['camera'], initialise_hardware=False)
     # Initialise only minimal components needed for commands that rely on hardware init
     # For now call initialise on spectrometer/controller/laser (camera skipped intentionally)
     iface.spectrometer.initialise()
     iface.controller.initialise()
     iface.laser.initialise()
     iface.microscope.initialise()
-    return iface
+    yield iface
+    # Defensive cleanup if camera ever added later
+    if getattr(iface, 'camera', None):
+        try:
+            iface.camera.close_camera()
+        except Exception:
+            pass
 
 @pytest.mark.parametrize("command,expect", [
     ("wai", None),          # where_am_i prints status; return may be None

@@ -1,5 +1,6 @@
 import serial
 import time
+from .subsystems import MotionService
 
 class ArduinoMEGA:
 
@@ -10,6 +11,8 @@ class ArduinoMEGA:
         self.com_port = com_port
         self.baud = baud
         self.report = report
+        # MotionService: extracted segmentation logic (Phase 2B). Keep internal for now.
+        self._motion_service = MotionService()
 
         # if the firmware commands change, update this dictionary
         self.message_map = {
@@ -58,58 +61,15 @@ class ArduinoMEGA:
         self.serial = self._connect_to_UNO()
 
     def _format_command_length(self, command, threshold=56):
+        """Backward-compatible wrapper now delegating to MotionService.segment.
+
+        threshold parameter retained (currently MotionService threshold set at init).
+        If caller passes a different threshold we instantiate a throwaway service
+        to avoid mutating shared instance (edge-case; not currently used).
         """
-        Splits the command string into multiple commands if its length
-        exceeds the threshold. Assumes command delimiters (e.g., 'o' ... 'o')
-        that enclose space-separated tokens.
-        
-        Parameters:
-        command (str): The original command string.
-        threshold (int): Maximum allowed command length.
-        
-        Returns:
-        list: A list of command segments that are within the length limit.
-        """
-        if len(command) <= threshold:
-            return [command]
-        
-        if not command[0] == command[-1]:
-            raise ValueError("Command must start and end with the same delimiter.")
-            return []
-        
-        # Check if the command is properly delimited
-        if command[0] not in ['o', 'g', 'c', 's', 'm']:
-            raise ValueError("Command must start with 'o', 'g', 'c', 's', or 'm'.")
-        
-        delimiter = command[0]
-        
-        # Remove the starting and ending delimiters; adjust if using a different format.
-        inner = command[1:-1]
-        tokens = inner.split()
-        segments = []
-        current_tokens = []
-        
-        # Account for delimiters in the length calculation.
-        # The total length is: len(start_delim) + len(' '.join(tokens)) + len(end_delim)
-        # Here, delimiters are assumed to be a single character each.
-        for token in tokens:
-            # Check if adding the token would exceed the threshold.
-            # +1 for the space if current_tokens is non-empty.
-            projected = len(' '.join(current_tokens + [token]))
-            if projected + 2 > threshold:  # +2 for the two delimiters
-                # Save current segment and start a new one.
-                segment = delimiter + ' '.join(current_tokens) + delimiter
-                segments.append(segment)
-                current_tokens = [token]
-            else:
-                current_tokens.append(token)
-        
-        # Add the last segment if there are any tokens left.
-        if current_tokens:
-            segment = delimiter + ' '.join(current_tokens) + delimiter
-            segments.append(segment)
-        
-        return segments
+        if threshold != self._motion_service.threshold:
+            return MotionService(threshold=threshold).segment(command)
+        return self._motion_service.segment(command)
     
     def send_command(self, command):
         '''Simple command to send to the controller. Assumes command length is correct for buffer size'''

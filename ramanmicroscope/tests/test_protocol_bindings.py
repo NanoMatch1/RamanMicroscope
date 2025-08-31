@@ -14,16 +14,14 @@ from ramanmicroscope.drivers import (
 
 
 def test_interface_driver_bindings():
-    itf = None
+    itf = Interface(simulate=True, initialise_hardware=False)
     try:
-        itf = Interface(simulate=True, initialise_hardware=False)
         assert isinstance(itf.controller, ControllerProtocol)
         assert isinstance(itf.laser, LaserProtocol)
         assert isinstance(itf.spectrometer, SpectrometerProtocol)
         assert isinstance(itf.camera, CameraProtocol)
     finally:
-        if itf and getattr(itf, 'camera', None):
-            try:
-                itf.camera.close_camera()
-            except Exception:
-                pass
+        try:
+            itf.camera.close_camera()
+        except Exception:
+            pass
