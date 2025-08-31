@@ -1,6 +1,12 @@
 from ramanmicroscope.interface import Interface
+from ramanmicroscope.instruments.cameras.tucsencam import TucsenCamera
 
 def test_system_snapshot_dict_structure():
+    # Reset camera singleton guard pre-instantiation (defensive for sequential test runs)
+    try:
+        TucsenCamera._instance_active = False  # type: ignore[attr-defined]
+    except Exception:
+        pass
     itf = Interface(simulate=True, initialise_hardware=False, debug_skip=['camera'])
     try:
         # init only laser and spectrometer for snapshot (camera skipped)
