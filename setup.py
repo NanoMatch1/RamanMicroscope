@@ -4,7 +4,7 @@ with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='MULETA_Raman_Microscope',
+    name='ramanmicroscope',
     version='1.1.0',
     packages=find_packages(),
     install_requires=requirements
