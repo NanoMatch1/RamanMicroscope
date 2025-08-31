@@ -171,3 +171,21 @@ Migrate spectrometer movement commands next; add aggregated safety/status CLI co
 - Documentation: developer guide describing service layer contracts.
 
 (End of current log – future changes append below.)
+
+## [Step 11] Spectrometer Command Migration (2025-08-31)
+Goal:
+Route spectrometer wavelength command through `SpectrometerService` to centralize movement logic and prepare for future safety/range policies.
+Summary:
+Updated legacy `Microscope.go_to_spectrometer_wavelength` to prefer `spectrometer_service.go_to_wavelength`. Added new test ensuring command still succeeds. Adjusted singleton camera issue in `test_system_snapshot` by resetting TucsenCamera guard pre-instantiation.
+Key Changes:
+- Modified method in `instruments_old.py` (service delegation + error handling).
+- Added `tests/test_spectrometer_migration.py`.
+- Hardened `tests/test_system_snapshot.py` against camera singleton residue.
+Tests:
+- New test passes; full suite now 22 tests green.
+Backward Compatibility:
+Return value and side-effects unchanged; falls back to legacy instrument method if service absent.
+Risks & Mitigations:
+If calibration absent, service fallback path still used; logged errors on exceptions.
+Follow-ups:
+Add system-level `sysstatus` command; migrate grating/monochromator related commands similarly; introduce deprecation warnings for direct instrument calls.

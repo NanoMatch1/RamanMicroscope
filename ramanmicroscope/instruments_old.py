@@ -1996,8 +1996,16 @@ class Microscope(Instrument):
         wavelength = string_to_float(wavelength)
         if self.check_spectrometer_wavelength(wavelength) is False:
             return False
-        
-        self.interface.spectrometer.go_to_wavelength(wavelength)
+        # Prefer SpectrometerService for future centralised logic
+        svc = getattr(self.interface, 'spectrometer_service', None)
+        try:
+            if svc:
+                svc.go_to_wavelength(wavelength)
+            else:
+                self.interface.spectrometer.go_to_wavelength(wavelength)
+        except Exception as e:
+            self.micro_log.error(f"Failed spectrometer move via service: {e}")
+            return False
         self.generate_wavelength_axis()
         return True
 
