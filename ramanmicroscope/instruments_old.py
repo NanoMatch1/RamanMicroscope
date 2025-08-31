@@ -475,6 +475,7 @@ class MotionControl:
 
 
 
+
 class Microscope(Instrument):
 
     implementation_info = [
@@ -486,58 +487,57 @@ class Microscope(Instrument):
         
     ]
 
-    def __init__(self, interface, calibration_service=None, controller=None, camera=None, 
-                 spectrometer=None, simulate=False):
+    def __init__(self, interface, calibration_service=None, controller=None, camera=None, spectrometer=None, simulate=False):
         super().__init__()
         self.interface = interface
         self.logger = interface.logger
         self.micro_log = self.logger.getChild('Microscope')
-        self.micro_log
-        self.laser_detection = LaserDetection(interface=interface) # set up laser calibration capability
-        self.laser_wavelength_calibrated = None # this holds the true laser calibration when measured live.
+        self.laser_detection = LaserDetection(interface=interface)
+        self.laser_wavelength_calibrated = None
         self.cam_temp = None
 
+        # Paths / dirs
         self.scriptDir = interface.scriptDir
         self.dataDir = interface.dataDir
         self.autocalibrationDir = interface.autocalibrationDir
         self.acquisitionControlDir = os.path.join(self.scriptDir, 'acquisitioncontrol')
+
+        # Linked hardware components (legacy attributes retained)
         self.controller = controller or interface.controller
         self.camera = camera or interface.camera
         self.spectrometer = spectrometer or interface.spectrometer
         self.calibration_service = calibration_service
         self.simulate = simulate
-        self.apply_pseudocal = False  # Whether to apply pseudocalibration corrections
+
+        # Behaviour flags
+        self.apply_pseudocal = False
         self.apply_live_calibration = True
-        self.apply_debug_mode = True  # Whether to apply debug mode, which logs all commands and responses
+        self.apply_debug_mode = True
         self.laser_calibrated = False
 
+        # Instrument state
         self.microscope_mode = 'ramanmode'
         camera_roi = self.interface.camera.roi
         self.wavelength_axis = np.arange(camera_roi[0], camera_roi[2], 1)
         self.instrument_state = {}
         self.autosave = True
 
+        # Config
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
-        self.stage_positions_microns = {
-            'x': 0, 'y': 0, 'z': 0
-        }
+        # Stage positions
+        self.stage_positions_microns = {'x': 0, 'y': 0, 'z': 0}
 
-        # self.ldr_scan_dict = self.config.get("ldr_scan_dict", {})
-        # self.hard_limits = self.config.get("hard_limits", {})
-        # self.action_groups = self.config.get("action_groups", {})
-
-        # Create a flattened motor map for easy lookup of any motor ID by label
+        # Motor map flatten
         self.motor_map = {}
         for group in self.action_groups.values():
             self.motor_map.update(group)
 
-        # acquisition parameters
-
-        # Motion control
+        # Motion control wrapper
         self.motion_control = MotionControl(interface, self.motor_map, self.config)
 
+        # Command map (legacy)
         self.command_functions = {
             'nyi': self.not_yet_implemented,
             'threads': self.list_threads,
@@ -648,11 +648,8 @@ class Microscope(Instrument):
 
         self.current_shift = 0
         self.current_wavenumber = None
-
         self.detector_safety = False
-
         self.acquire_mode = 'spectrum'
-
         self._integrity_checker()  # Validate on init
 
 

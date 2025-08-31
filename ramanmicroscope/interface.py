@@ -1,9 +1,16 @@
 # TRIAX: ~ 700 nm at 131343 steps
+from __future__ import annotations
 import os
 import traceback
 import threading
 
 from .command.registry import build_command_map  # package-relative import
+from .drivers import (
+    ControllerProtocol,
+    LaserProtocol,
+    SpectrometerProtocol,
+    CameraProtocol,
+)
 
 from .instruments.util_decorators import heartbeat
 from .controller import ArduinoMEGA
@@ -76,19 +83,18 @@ class Interface:
         self._build_directories()
         self.calibration_service = Calibration(self)
 
-
-        # Create hardware instances
-        self.controller = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
-        self.camera = TucsenCamera(self, simulate=simulate)
-        self.spectrometer = Triax(self, simulate=simulate)
-        self.laser = MillenniaLaser(self, simulate=simulate)
+        # Create hardware instances (typed against Protocol contracts for refactor safety)
+        self.controller: ControllerProtocol = ArduinoMEGA(self, com_port=com_port, baud=baud, simulate=simulate, dtr=False)
+        self.camera: CameraProtocol = TucsenCamera(self, simulate=simulate)
+        self.spectrometer: SpectrometerProtocol = Triax(self, simulate=simulate)
+        self.laser: LaserProtocol = MillenniaLaser(self, simulate=simulate)
         self.microscope = Microscope(
-            interface=self, 
+            interface=self,
             calibration_service=self.calibration_service,
             controller=self.controller,
             camera=self.camera,
             spectrometer=self.spectrometer,
-            simulate=simulate
+            simulate=simulate,
         )
 
         self.acq_ctrl = AcquisitionControl(self)

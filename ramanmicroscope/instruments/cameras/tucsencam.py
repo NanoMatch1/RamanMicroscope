@@ -175,6 +175,20 @@ class TucsenCamera(QObject):
         self.hardware.close_stream()
         self.hardware.close_camera()
         self.logger.info("Camera connection closed and API uninitialized.")
+        # Release singleton flag so tests (and reinitialisations) can create a new instance
+        with TucsenCamera._instance_lock:
+            TucsenCamera._instance_active = False
+
+    def __del__(self):  # best-effort cleanup
+        try:
+            if self.is_running:
+                self.stop_continuous_acquisition()
+            self.hardware.close_stream()
+            self.hardware.close_camera()
+        except Exception:
+            pass
+        with TucsenCamera._instance_lock:
+            TucsenCamera._instance_active = False
 
     @synchronized
     def shutdown_api(self):
