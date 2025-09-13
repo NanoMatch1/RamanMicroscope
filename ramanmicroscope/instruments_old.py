@@ -6,6 +6,7 @@ import numpy as np
 import os
 import json
 from copy import copy
+import warnings
 
 import time
 import numpy as np
@@ -1688,7 +1689,7 @@ class Microscope(Instrument):
 
     @property
     def report_monochromator_wavelength(self):
-        return round(self.grating_wavelengths.get('g3', 'KeyError'), 2)
+        return round(self.monochromator_wavelengths.get('g3', 'KeyError'), 2)
 
     @property
     def report_spectrometer_wavelength(self):
@@ -2363,17 +2364,16 @@ class Microscope(Instrument):
         bool: True if successful, False otherwise
         """
         wavelength = string_to_float(wavelength)
-        # Validate the wavelength is within allowed range
+        svc = getattr(self.interface, 'monochromator_service', None)
+        if svc:
+            return svc.move_to_wavelength(wavelength)
+        # Fallback legacy path
         if self.check_monochromator_wavelength(wavelength) is False:
             return False
-
         target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['monochromator_wavelength'])
-        
-        # Move to target positions
         self.go_to_monochromator_steps(target_positions)
         self.micro_log.debug("Monochromator sent to {} nm".format(wavelength))
         self.micro_log.debug("Monochromator reading at {} nm".format(self.report_monochromator_wavelength))
-
         return True
     
     @ui_callable
