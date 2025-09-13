@@ -7,3 +7,4 @@ from .laser_service import LaserService  # noqa: F401
 from .spectrometer_service import SpectrometerService  # noqa: F401
 from .acquisition_service import AcquisitionService  # noqa: F401
 from .grating_service import GratingService  # noqa: F401
+from .monochromator_service import MonochromatorService  # noqa: F401

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import traceback
 import threading
+import json
 
 from .command.registry import build_command_map  # package-relative import
 from .drivers import (
@@ -29,6 +30,7 @@ from .subsystems import (
     SpectrometerService,
     AcquisitionService,
     GratingService,
+    MonochromatorService,
 )
 
 # from tucsen.tucsen_camera_wrapper import TucsenCamera
@@ -71,6 +73,7 @@ class Interface:
             'camera': self.connect_to_camera,
             'laser': self.connect_to_laser,
             'logger' : self.logger_level,
+            'sysstatus': self.sysstatus,
         }
 
         self.simulate = simulate
@@ -146,8 +149,9 @@ class Interface:
         self.laser_service = LaserService(self.laser)
         self.spectrometer_service = SpectrometerService.from_interface(self)
         self.acquisition_service = AcquisitionService.from_interface(self)
-        # Grating service needs microscope for calibration + action groups
+        # Grating/Monochromator services need microscope for calibration + action groups
         self.grating_service = GratingService(self.microscope)
+        self.monochromator_service = MonochromatorService(self.microscope)
         self._integrity_checker()
 
     def run_batch(self, commands):
@@ -457,6 +461,15 @@ class Interface:
         except Exception:
             snap['acquisition'] = None
         return snap
+
+    # ---------------------- CLI helpers ----------------------
+    def sysstatus(self):
+        """Return JSON string of system snapshot for CLI."""
+        try:
+            snap = self.system_snapshot()
+            return json.dumps(snap)
+        except Exception as e:
+            return f" > Error generating sysstatus: {e}"
 
 def main(startup_commands=[], simulate=False):
     # Create your CLI-backed controller
