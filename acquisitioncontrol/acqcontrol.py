@@ -142,7 +142,7 @@ class ScanSequenceGenerator:
 class CameraScanner:
 
 
-    def __init__(self, acq_ctrl, timeout=100000):
+    def __init__(self, acq_ctrl, timeout=50000):
         self.acq_ctrl = acq_ctrl
         self.interface = acq_ctrl.interface
         self.microscope = acq_ctrl.interface.microscope

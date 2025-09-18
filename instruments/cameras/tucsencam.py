@@ -95,7 +95,7 @@ class TucsenCamera(QObject):
             self.logger.info(f"{thread.name} (ID={thread.ident}, daemon={thread.daemon})")
 
     @synchronized
-    def grab_frame(self, timeout=100000):
+    def grab_frame(self, timeout=50000):
         return self.hardware.grab_frame(timeout=timeout)
 
     @synchronized
@@ -181,7 +181,7 @@ class TucsenCamera(QObject):
         self.logger.info("Uninitialising TUCAM library...")
         self.hardware.uninit_api()
 
-    def grab_frame_safe(self, target_temp=-15, timeout=100000):
+    def grab_frame_safe(self, target_temp=-15, timeout=50000):
         while True:
             temp = self.check_camera_temperature()
             if temp < target_temp:
