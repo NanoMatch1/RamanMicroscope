@@ -133,7 +133,7 @@ class RealHardware(CameraHardwareBase):
 
         self._stream_open = False
 
-    def grab_frame(self, timeout=100000):
+    def grab_frame(self, timeout=50000):
         breakpoint()
         ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame), timeout)
         if ret != TUCAMRET.TUCAMRET_SUCCESS:
