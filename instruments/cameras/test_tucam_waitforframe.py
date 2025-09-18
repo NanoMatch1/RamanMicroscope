@@ -24,12 +24,7 @@ import numpy as np
 
 from TUCam import *  # noqa
 
-# ---------------------------------------------------------------------------
-# Override restype so ctypes does NOT auto-convert to Enum (which was raising
-# ValueError for codes with the high bit set due to sign/unsigned mismatch)
-# We will manually map to TUCAMRET after masking to 32-bit unsigned.
-# ---------------------------------------------------------------------------
-try:  # protect against future SDK changes
+try:
     TUCAM_Buf_WaitForFrame.restype = ctypes.c_int32  # type: ignore[attr-defined]
 except Exception:
     pass
@@ -37,11 +32,19 @@ except Exception:
 LOG = logging.getLogger("tucam_waitforframe_test")
 
 
-def _mask32(code: int) -> int:
-    return ctypes.c_uint32(code).value  # normalize signed/unsigned
+def _mask32(code):
+    # Robust conversion: handle Enum, int, already-masked values
+    try:
+        if isinstance(code, TUCAMRET):
+            code = code.value
+        code = int(code)
+        return ctypes.c_uint32(code).value
+    except Exception as e:
+        LOG.debug(f"_mask32 conversion failure for {code!r}: {e}")
+        raise
 
 
-def decode_ret(code: int) -> str:
+def decode_ret(code):
     unsigned = _mask32(code)
     try:
         return f"{TUCAMRET(unsigned).name} (0x{unsigned:08X})"
@@ -49,9 +52,8 @@ def decode_ret(code: int) -> str:
         return f"UNKNOWN_RET (0x{unsigned:08X} raw_signed={code})"
 
 
-def is_success(code: int) -> bool:
-    unsigned = _mask32(code)
-    return unsigned == TUCAMRET.TUCAMRET_SUCCESS.value
+def is_success(code):
+    return _mask32(code) == TUCAMRET.TUCAMRET_SUCCESS.value
 
 
 def check(ret, msg, fatal=True):
@@ -147,10 +149,10 @@ def run(args):
     LOG.info(f"Opened camera handle: {hcam}")
 
     try:
-        if args.roi:
-            set_roi(hcam, tuple(args.roi))
-        if args.exposure is not None:
-            set_exposure(hcam, args.exposure)
+        # if args.roi:
+        #     set_roi(hcam, tuple(args.roi))
+        # if args.exposure is not None:
+        #     set_exposure(hcam, args.exposure)
 
         frame = TUCAM_FRAME()
         frame.pBuffer = 0

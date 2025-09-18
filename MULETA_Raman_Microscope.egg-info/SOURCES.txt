@@ -31,6 +31,7 @@ instruments/cameras/TUCam.py
 instruments/cameras/__init__.py
 instruments/cameras/base_camera.py
 instruments/cameras/camera_hardware.py
+instruments/cameras/minimal_test.py
 instruments/cameras/simulated_camera.py
 instruments/cameras/test_tucam_waitforframe.py
 instruments/cameras/tucsencam.py
