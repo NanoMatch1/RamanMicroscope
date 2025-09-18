@@ -59,6 +59,11 @@ class LoggerInterface:
 
         # 2) Configure your handlers just once
         logfile = os.path.join(os.path.dirname(__file__), 'logs', 'instrument_errors.log')
+        os.makedirs(os.path.dirname(logfile), exist_ok=True)
+        if not os.path.exists(logfile):
+            with open(logfile, 'w'):
+                pass
+        
         self.file_handler = logging.FileHandler(logfile)  # File handler
         self.file_handler.setLevel(logging.ERROR)
         self.file_handler.setFormatter(logging.Formatter(
