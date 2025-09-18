@@ -26,11 +26,13 @@ datafit/functions/voigt_pseudo.py
 instruments/__init__.py
 instruments/instrument_base.py
 instruments/util_decorators.py
+instruments/cameras/05_wait_frame.py
 instruments/cameras/TUCam.py
 instruments/cameras/__init__.py
 instruments/cameras/base_camera.py
 instruments/cameras/camera_hardware.py
 instruments/cameras/simulated_camera.py
+instruments/cameras/test_tucam_waitforframe.py
 instruments/cameras/tucsencam.py
 instruments/cameras/tucsencam_old.py
 instruments/lasers/__init__.py

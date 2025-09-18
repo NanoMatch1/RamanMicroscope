@@ -1,7 +1,7 @@
 <?TUXML version="1.0" encoding="UTF-8"?>
 <Cam_Dhyana400BSI Using="DftParameter">
     <ParameterSets Name="DftParameter">
-        <Resolution>1</Resolution>
+        <Resolution>0</Resolution>
         <PixelClock>0</PixelClock>
         <BitOfDepth>16</BitOfDepth>
         <GlobalGain>0</GlobalGain>
@@ -14,11 +14,11 @@
         <Sharpness>0</Sharpness>
         <DenoiseValue>0</DenoiseValue>
         <DenoisePermission>1</DenoisePermission>
-        <Temperature>30</Temperature>
-        <FanMode>3</FanMode>
+        <Temperature>40</Temperature>
+        <FanMode>0</FanMode>
         <ImageModeSelect>1</ImageModeSelect>
         <Enhance>0</Enhance>
-        <ImageProcessEnable>0</ImageProcessEnable>
+        <ImageProcessEnable>14</ImageProcessEnable>
         <DefectCorrectionValue>0</DefectCorrectionValue>
         <MultipleCameras>1</MultipleCameras>
         <Gamma>100</Gamma>
