@@ -447,6 +447,6 @@ if __name__ == '__main__':
     else:
         simulate = False
 
-    startup_commands = [
+    startup_commands = ['acquire'
     ]
     main(startup_commands=startup_commands, simulate=simulate)
