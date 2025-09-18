@@ -9,17 +9,17 @@ import ctypes
 from ctypes import *
 from enum import Enum
 import time
-from os import path
+import os
 
 #加载SDK动态库
 # 32bit
-# TUSDKdll = OleDLL(path.join(path.dirname(__file__), "lib/x86/TUCam.dll"))
+#TUSDKdll = OleDLL("./lib/x86/TUCam.dll")
 # 64bit
+# TUSDKdll = OleDLL("./lib/x64/TUCam.dll")
 
-dirname = path.dirname(__file__)
-libpath = path.join(dirname, "lib", "x64", "TUCam.dll")
+dirname = os.path.dirname(__file__)
+libpath = os.path.join(dirname, "lib", "x64", "TUCam.dll")
 TUSDKdll = OleDLL(libpath)
-
 
 #  class typedef enum TUCAM status:
 class TUCAMRET(Enum):
@@ -981,53 +981,3 @@ TUCAM_Cap_ClearBuffer.restype  = TUCAMRET
 #TUCAM_File_SaveFFCCoefficient    = TUSDKdll.TUCAM_File_SaveFFCCoefficient
 #TUCAM_File_SaveFFCCoefficient.argtypes = [c_void_p, c_void_p]
 #TUCAM_File_SaveFFCCoefficient.restype  = TUCAMRET
-
-def set_acquisition_time(camera_handle, exposure_time):
-    """
-    Set the acquisition time (exposure time) for the camera.
-    
-    :param camera_handle: Handle to the camera device.
-    :param exposure_time: Desired exposure time in milliseconds.
-    :return: TUCAMRET status code.
-    """
-    return TUCAM_Prop_SetValue(camera_handle, TUCAM_IDPROP.TUIDP_EXPOSURETM.value, exposure_time, 0)
-
-def set_camera_gain(camera_handle, gain_value):
-    """
-    Set the camera gain.
-    
-    :param camera_handle: Handle to the camera device.
-    :param gain_value: Desired gain value.
-    :return: TUCAMRET status code.
-    """
-    return TUCAM_Prop_SetValue(camera_handle, TUCAM_IDPROP.TUIDP_GLOBALGAIN.value, gain_value, 0)
-
-def get_camera_gain_attributes(camera_handle):
-    """
-    Get the attributes for the camera gain.
-    
-    :param camera_handle: Handle to the camera device.
-    :return: A dictionary with min, max, default, and step values.
-    """
-    attr = TUCAM_PROP_ATTR()
-    attr.idProp = TUCAM_IDPROP.TUIDP_GLOBALGAIN.value
-    status = TUCAM_Prop_GetAttr(camera_handle, byref(attr))
-    if status == TUCAMRET.TUCAMRET_SUCCESS:
-        return {
-            "min": attr.dbValMin,
-            "max": attr.dbValMax,
-            "default": attr.dbValDft,
-            "step": attr.dbValStep
-        }
-    else:
-        raise Exception(f"Failed to get camera gain attributes: {status}")
-
-# Example usage:
-# camera_handle = ...  # Obtain the camera handle from TUCAM_Dev_Open
-# gain_attributes = get_camera_gain_attributes(camera_handle)
-# print(gain_attributes)  # Output: {'min': ..., 'max': ..., 'default': ..., 'step': ...}
-
-# Example usage:
-# camera_handle = ...  # Obtain the camera handle from TUCAM_Dev_Open
-# set_acquisition_time(camera_handle, 100)  # Set exposure time to 100 ms
-# set_camera_gain(camera_handle, 10)  # Set gain to 10
