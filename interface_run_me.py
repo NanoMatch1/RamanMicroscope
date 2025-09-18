@@ -13,9 +13,8 @@ from acquisitioncontrol import AcquisitionControl, MainWindow
 from acquisitioncontrol.gui_services import GUIEmitterService
 from PyQt5.QtWidgets import QApplication
 
-from instruments.cameras.tucsencam import TucsenCamera
+from tucsenspec.tucsencam import TucsenCamera
 
-# from tucsen.tucsen_camera_wrapper import TucsenCamera
 from logging_utils import LoggerInterface
 
 def thread_locked(method):
@@ -104,7 +103,8 @@ class Interface:
                 self.laser.simulate = True
                 
             if 'camera' in debug_skip:
-                from instruments.cameras.simulated_camera import SimulatedCameraInterface
+                #TODO: change this to the correct simulated camera import. Also make single source of truth for simulated camera and single entry point
+                from tucsenspec.simulated_camera import SimulatedCameraInterface
                 self.camera.simulate = True
                     
         self.command_map = self._generate_command_map()
@@ -447,6 +447,6 @@ if __name__ == '__main__':
     else:
         simulate = False
 
-    startup_commands = ['acquire'
+    startup_commands = [
     ]
     main(startup_commands=startup_commands, simulate=simulate)

@@ -564,20 +564,19 @@ class AcquisitionControl(QObject):
     def load_config(self, filename="acquisition_config.json"):
 
         filepath = os.path.join(self.acquisitionControlDir, filename)
-        if not os.path.exists(filepath):
-            print(f"Configuration file {filepath} not found.")
-            return
 
         try:
             with open(filepath, 'r') as f:
                 config = json.load(f)
 
-        except FileNotFoundError:
-            print("Acquisition Control configuration file not found. Using default parameters.")
-        except json.JSONDecodeError:
-            print("Error decoding JSON from Acquisition Control configuration file. Using default parameters.")
         except Exception as e:
-            print(f"Unexpected error loading Acquisition Control configuration: {e}. Using default parameters.")
+            print(f"Error loading Acquisition Control configuration file: {e}. Using default parameters.")
+            config = {'general_parameters': self.general_parameters,
+                      'hidden_parameters': self.hidden_parameters,
+                      'motion_parameters': self.motion_parameters,
+                      'wavelength_parameters': self.wavelength_parameters,
+                      'polarization_parameters': self.polarization_parameters,
+                      }
 
         self.general_parameters.update(config.get('general_parameters', self.general_parameters))
         self.motion_parameters.update(config.get('motion_parameters', self.motion_parameters))
