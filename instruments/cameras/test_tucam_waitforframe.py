@@ -22,7 +22,7 @@ from ctypes import pointer, byref, cast, POINTER
 
 import numpy as np
 
-from TUCam import *  # noqa
+from camera_resources.TUCam import *  
 
 try:
     TUCAM_Buf_WaitForFrame.restype = ctypes.c_int32  # type: ignore[attr-defined]

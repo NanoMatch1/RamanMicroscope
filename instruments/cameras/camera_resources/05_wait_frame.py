@@ -7,12 +7,12 @@ Created on 2024-01-03
 
 import ctypes
 from ctypes import *
-from camera_resources.TUCam import *
+from TUCam import *
 from enum import Enum
 import time
 import os
 
-class Tucam(): 
+class Tucam():
     def __init__(self):
         self.Path  = os.path.dirname(os.path.abspath(__file__))
         self.TUCAMINIT = TUCAM_INIT(0, self.Path.encode('utf-8'))
