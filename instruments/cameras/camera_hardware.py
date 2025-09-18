@@ -95,7 +95,7 @@ class RealHardware(CameraHardwareBase):
         self.set_image_processing(0)
         self.set_resolution(1)
         self.set_image_and_gain(1, 0)
-        self.set_roi(self.camera.roi)
+        self.set_roi(self.camera.roi) # Stream gets reopened here - 
         self.set_target_temperature(-20)
         self.set_fan_speed(3)
 
@@ -104,7 +104,7 @@ class RealHardware(CameraHardwareBase):
 
     def open_stream(self):
         if self._stream_open:
-            self.camera.logger.debug(f"tucam.open_stream: Stream is already open.")
+            self.camera.logger.debug(f"WARNING: tucam.open_stream: Stream is already open. Safely ignore if booting up.")
             return
         ret_buff = TUCAM_Buf_Alloc(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame))
         if ret_buff != self.conflag:
@@ -134,6 +134,7 @@ class RealHardware(CameraHardwareBase):
         self._stream_open = False
 
     def grab_frame(self, timeout=100000):
+        breakpoint()
         ret = TUCAM_Buf_WaitForFrame(self.TUCAMOPEN.hIdxTUCam, pointer(self.data.m_frame), timeout)
         if ret != TUCAMRET.TUCAMRET_SUCCESS:
             self.camera.logger.warning(f"TUCAM: Frame acquisition timeout or error. Return code: {ret}")
@@ -255,7 +256,7 @@ class RealHardware(CameraHardwareBase):
         if ret != self.conflag:
             self.logger.error(f"TUCAM: Failed to set ROI: {ret}")
         
-        self.open_stream()
+        self.open_stream() #NOTE: resetting the ROI restarts the stream. This can cause issues if yu try to open later...
 
     def set_hardware_binning(self, binning_level=1):
         ret = TUCAM_Capa_SetValue(self.TUCAMOPEN.hIdxTUCam, TUCAM_IDCAPA.TUIDC_RESOLUTION.value, binning_level)
