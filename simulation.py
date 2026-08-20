@@ -28,7 +28,14 @@ class SimulatedArduinoSerial:
 
     MODULES = ('1','2','3','4')
     MOTORS  = ('A','X','Y','Z')
-    # RAMAN_MODE_STEPS = -100_000  # steps to move to Raman mode
+    # Steps to move motor 2A (beamsplitters) into Raman mode; image mode is
+    # the negation. Restored from a commented-out line — _raman_mode() and
+    # _image_mode() both reference it, so without it they raise
+    # AttributeError. NOTE: microscope_config.json uses mode: 100000 and
+    # Microscope.detect_microscope_mode() tests against +/-50000, so the
+    # magnitude here is not consistent with the rest of the system; only the
+    # sign (negative = Raman) is relied upon.
+    RAMAN_MODE_STEPS = -100_000
 
     def __init__(self, com_port=None, baud=None, report=True):
         # Initialize every motor to zero position
@@ -52,6 +59,18 @@ class SimulatedArduinoSerial:
         """Return the number of bytes in the buffer."""
         return len(self.buffer)
 
+
+    def send_command(self, cmd: str) -> str:
+        """
+        Send an envelope command (including its leading/trailing character)
+        and return exactly what the Arduino would have printed.
+
+        This is the synchronous convenience API described in the class
+        docstring. The runtime path uses write()/readline() instead, which
+        models the real serial buffer; this method is for direct testing
+        of the command protocol without the buffer round-trip.
+        """
+        return self._parse_command(cmd)
 
     def write(self, cmd: str) -> None:
         """Simulate sending a command to the Arduino."""

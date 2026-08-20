@@ -360,7 +360,10 @@ class Triax(Instrument):
         Handles the long wait required for the initialise command.
         '''
         if self.simulate:
-            return self.spectrometer.query(command)
+            # SimulatedTriaxSerial mirrors the pyserial write/read API, not
+            # the pyvisa query() API used by the old GPIB implementation.
+            self.spectrometer.write(command)
+            return self.spectrometer.read()
 
         full_command = (command + '\r').encode('ascii')
         self.spectrometer.reset_input_buffer()

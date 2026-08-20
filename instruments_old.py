@@ -1095,6 +1095,17 @@ class Microscope(Instrument):
         elif mode_steps == -50000:
             self.microscope_mode = 'ramanmode'
 
+        elif self.simulate:
+            # In simulation the mode motor starts at an arbitrary position, so
+            # the check above will never match. Prompting here would block any
+            # headless/automated run on stdin, so default instead.
+            self.microscope_mode = 'ramanmode'
+            self.micro_log.info(
+                'Microscope mode not recognised (simulated) — '
+                'defaulting to "ramanmode".'
+            )
+            self.motion_control.write_motor_positions({'mode': -50000})
+
         else:
             self.micro_log.info('Microscope mode not recognised. Please check state and enter "imagemode" or "ramanmode"')
             while True:
@@ -1366,7 +1377,7 @@ class Microscope(Instrument):
         if initialise is False:
             # recalculate all parameters
             all_motors = self.get_all_motor_positions()
-            self.microscope_mode = self.calibration_service.identify_microscope_mode({all_motors})
+            self.microscope_mode = self.calibration_service.identify_microscope_mode(all_motors)
 
             self.laser_steps = self.get_laser_motor_positions()
             self.grating_steps = self.get_grating_motor_positions()
@@ -1999,7 +2010,7 @@ class Microscope(Instrument):
     @ui_callable
     def camera_info(self):
         '''Prints the camera information.'''
-        self.camera.camera_info()
+        return self.camera.get_camera_info()
 
     @ui_callable
     def get_detector_temperature(self):
