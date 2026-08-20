@@ -518,9 +518,16 @@ class PIXISCamera(QObject):
         Close the stream and disconnect from the camera.
         Mirrors TucsenCamera.close_camera().
         Called by Interface.cli() on 'exit' and Microscope.close_camera().
+
+        Releases the singleton guard directly rather than relying on
+        __del__, since other references to this instance (e.g.
+        Microscope.camera) commonly outlive the call to close_camera()
+        and would otherwise delay garbage collection.
         """
         self.hardware.close_stream()
         self.hardware.close_camera()
+        with PIXISCamera._instance_lock:
+            PIXISCamera._instance_active = False
         self.logger.info("PIXISCamera: camera closed.")
 
     @synchronized

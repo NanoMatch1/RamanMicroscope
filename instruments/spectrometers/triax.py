@@ -335,20 +335,6 @@ class Triax(Instrument):
         self.triax_steps = int(response.strip()[1:])
         return self.triax_steps
         
-    def _flush_read_buffer(self, resource):
-        '''Drains any stale data from the VISA read buffer by attempting repeated reads
-        with a very short timeout until no more data is available.'''
-        original_timeout = resource.timeout
-        resource.timeout = 100  # ms — short enough to drain quickly
-        try:
-            while True:
-                stale = resource.read()
-                self.logger.info('Flushed stale buffer data: {!r}'.format(stale))
-        except pyvisa.errors.VisaIOError:
-            pass  # Timeout means the buffer is now empty
-        finally:
-            resource.timeout = original_timeout
-
     def _command_parser(self, command):
         '''Parses the command to ensure it is in the correct format for the spectrometer.'''
         com_set = command.split(' ')
