@@ -186,7 +186,7 @@ class Calibration:
         
         self.logger.info("Master calibrations successfully built.")
 
-    def generate_wavelength_axis(self, spectrometer_wavelength, array_length=2048):
+    def generate_wavelength_axis(self, spectrometer_wavelength, array_length=1024):
         pseudo_pixel = self.wl_to_pixel(spectrometer_wavelength)
         pseudo_pixel_axis = np.linspace(pseudo_pixel - 50, pseudo_pixel + array_length - 50, array_length)
         wavelength_axis = self.pixel_to_wl(pseudo_pixel_axis)

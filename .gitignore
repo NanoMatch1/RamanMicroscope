@@ -1,7 +1,6 @@
 data/
 __pycache__/
 *.py[cod]
-.venv/
 delme.py
 instrument_state.json
 acquisitioncontrol/acquisition_config.json
@@ -9,4 +8,4 @@ acquisitioncontrol/viewer_settings.json
 instrument_state.json
 logs/
 logs/instrument_errors.log
-acquisitioncontrol/viewer_settings.json
+

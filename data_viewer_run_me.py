@@ -1,3 +1,5 @@
+# data_viewer_run_me.py
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -5,97 +7,144 @@ import time
 import threading
 import tkinter as tk
 import traceback
-from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.widgets import RectangleSelector
 
 
 class LiveDataPlotter:
     def __init__(self, file_path, **kwargs):
         self.file_path = file_path
-        self.autoscale_enabled = True
-        self.updating = True
-        self.roi = None  # Region of Interest for autoscaling
-        self.y_center_entry = kwargs.get('bin_center', 70)
-        self.y_width_entry = kwargs.get('bin_width', 10)
+        self.autoscale_enabled       = True
+        self.updating                = True
+        self.roi                     = None
+        self.zoom_limits             = None
+        self.image_limits            = (None, None)
+        self.plot_limits             = (0, 70000)
 
-        self.data_mode = "Image"
-        self.data_mode = "Spectrum"
-        self.spectrum_roi = (50,1100)
+        self._y_center_default       = kwargs.get('bin_center', 50)
+        self._y_width_default        = kwargs.get('bin_width',  10)
 
-        self.image_limits = (None, None)
+        self.data_mode               = "Spectrum"
 
-        self.bin_height = kwargs.get("bin_height", 0)  # Default bin height
+        # ── CHANGED: spectrum_roi is now a Y-row range, not an X-pixel range ──
+        # Previously this was used inconsistently — sometimes as X pixels,
+        # sometimes as Y rows. It is now exclusively the Y-row range used by
+        # frame_to_spectrum(). The X range is always the full sensor width.
+        self.spectrum_roi            = (
+            self._y_center_default - self._y_width_default // 2,
+            self._y_center_default + self._y_width_default // 2,
+        )
+        # ── END CHANGE ────────────────────────────────────────────────────────
 
+        self.bin_height              = kwargs.get("bin_height", 0)
 
-        # Initialize Tkinter and Matplotlib
+        # Safe placeholder — shape matches PIXIS default ROI
+        self.data                    = np.zeros((100, 1024), dtype=np.uint16)
+
+        # ── CHANGED: flag used to pass new data from monitor thread to GUI ─────
+        # The monitor thread writes to self._pending_data and sets this flag.
+        # The GUI poll loop (running on the main thread via root.after) reads
+        # the flag, grabs the data, and redraws. This avoids all direct
+        # Tkinter/Matplotlib calls from the background thread.
+        self._new_data_available     = False
+        self._pending_data           = None
+        self._data_lock              = threading.Lock()
+        # ── END CHANGE ────────────────────────────────────────────────────────
+
+        # ── Tkinter / Matplotlib setup ─────────────────────────────────────────
         self.root = tk.Tk()
         self.root.title("Live Data Plotter")
 
-        # Create a Matplotlib figure embedded in Tkinter
-        self.fig, self.ax = plt.subplots()
-        self.line, = self.ax.plot([], [], 'r-')  # Initialize an empty plot
-        self.ax.vlines([50], 0, 70000)
-        
-        self.cursor_label = tk.Label(self.root, text="X: --, Y: --, Intensity: --")
+        self.cursor_label = tk.Label(
+            self.root, text="X: --, Y: --, Intensity: --"
+        )
         self.cursor_label.pack(side=tk.BOTTOM)
-        self.fig.canvas.mpl_connect("motion_notify_event", self.update_cursor)
 
-        self.fig.canvas.mpl_connect("scroll_event", self.zoom)
-        self.zoom_limits = None  # Store zoom range
-        # Set up a Tkinter canvas for Matplotlib
         self._build_canvas()
-
-        # Create control buttons and entry fields
         self.create_controls()
 
-        # Start a background thread to monitor the file and update the plot
-        self.monitor_thread = threading.Thread(target=self.monitor_file, daemon=True)
+        # Background file monitor thread
+        self.monitor_thread = threading.Thread(
+            target=self.monitor_file, daemon=True
+        )
         self.monitor_thread.start()
-        
-        
+
+        # ── CHANGED: start the GUI poll loop on the main thread ───────────────
+        # _poll_for_new_data() reschedules itself every 100 ms via root.after,
+        # keeping all Matplotlib/Tkinter calls on the main thread.
+        self.root.after(100, self._poll_for_new_data)
+        # ── END CHANGE ────────────────────────────────────────────────────────
+
         self.apply_y_roi()
 
+    # --------------------------------------------------------------------------
+    # GUI poll loop  ← NEW
+    # --------------------------------------------------------------------------
+
+    def _poll_for_new_data(self):
+        """
+        Called on the main thread every 100 ms via root.after().
+        Checks whether the monitor thread has deposited a new frame,
+        and if so redraws the plot.
+
+        This is the correct Tkinter pattern for updating a GUI from a
+        background thread — the thread never touches the GUI directly.
+        """
+        if self._new_data_available:
+            with self._data_lock:
+                frame = self._pending_data
+                self._new_data_available = False
+
+            if frame is not None:
+                self.data = frame
+                if self.data_mode == "Image":
+                    self.update_image(self.data)
+                else:
+                    self.update_plot(self.frame_to_spectrum())
+
+        # Reschedule on the main thread
+        self.root.after(100, self._poll_for_new_data)
+
+    # --------------------------------------------------------------------------
+    # Zoom and cursor
+    # --------------------------------------------------------------------------
+
     def zoom(self, event):
-        """ Zooms in/out using the mouse scroll wheel. """
+        """Zoom in/out using the mouse scroll wheel (image mode only)."""
         if event.inaxes is None or self.data_mode != "Image":
             return
 
-        scale_factor = 1.2 if event.step > 0 else 0.8  # Scroll up = zoom in, Scroll down = zoom out
+        scale_factor = 1.2 if event.step > 0 else 0.8
+        xlim         = self.ax.get_xlim()
+        ylim         = self.ax.get_ylim()
+        x_center     = (xlim[0] + xlim[1]) / 2
+        y_center     = (ylim[0] + ylim[1]) / 2
 
-        # Get current limits
-        xlim = self.ax.get_xlim()
-        ylim = self.ax.get_ylim()
-
-        # Zoom by scaling limits
-        x_center, y_center = (xlim[0] + xlim[1]) / 2, (ylim[0] + ylim[1]) / 2
         new_xlim = [x_center + (x - x_center) * scale_factor for x in xlim]
         new_ylim = [y_center + (y - y_center) * scale_factor for y in ylim]
 
-        # Apply new limits
         self.ax.set_xlim(new_xlim)
         self.ax.set_ylim(new_ylim)
-
-        # Save zoom state
         self.zoom_limits = (new_xlim, new_ylim)
         self.canvas.draw()
 
-
     def update_cursor(self, event):
-        """ Track mouse movement and update the cursor label. """
+        """Track mouse movement and update the cursor label (image mode only)."""
         if event.inaxes is None or self.data_mode != "Image":
             return
-
         x, y = int(event.xdata), int(event.ydata)
-        
         if 0 <= x < self.data.shape[1] and 0 <= y < self.data.shape[0]:
             intensity = self.data[y, x]
-            self.cursor_label.config(text=f"X: {x}, Y: {y}, Intensity: {intensity}")
+            self.cursor_label.config(
+                text=f"X: {x}, Y: {y}, Intensity: {intensity}"
+            )
 
-    
+    # --------------------------------------------------------------------------
+    # Canvas
+    # --------------------------------------------------------------------------
+
     def _build_canvas(self):
-        """ Rebuild the Matplotlib canvas and reinitialize the ROI selector. """
-        if hasattr(self, "canvas"):  # Destroy old canvas if it exists
+        """Rebuild the Matplotlib canvas."""
+        if hasattr(self, "canvas"):
             self.canvas.get_tk_widget().destroy()
 
         self.fig, self.ax = plt.subplots()
@@ -103,242 +152,322 @@ class LiveDataPlotter:
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
+        self.fig.canvas.mpl_connect("motion_notify_event", self.update_cursor)
+        self.fig.canvas.mpl_connect("scroll_event", self.zoom)
+
+    # --------------------------------------------------------------------------
+    # Data mode toggle
+    # --------------------------------------------------------------------------
 
     def toggle_data_mode(self):
-        """ Toggle between 1D spectrum and 2D image display """
+        """Toggle between 1D spectrum and 2D image display."""
         self.data_mode = "Spectrum" if self.data_mode == "Image" else "Image"
-
-        self._build_canvas()  # Rebuild the entire Matplotlib canvas
+        self._build_canvas()
 
         if self.data_mode == "Spectrum":
-            spectrum = self.frame_to_spectrum()
-            self.ax.plot(np.arange(len(spectrum)), spectrum, 'r-')  # Plot 1D spectrum
+            self.update_plot(self.frame_to_spectrum())
         else:
-            self.ax.imshow(self.data, cmap='plasma')  # Plot 2D image
-        
-        self.ax.set_title(self.data_mode)
-        self.canvas.draw()
+            self.update_image(self.data)
 
-        # Update button text
         self.data_mode_button.config(text=self.data_mode)
 
+    # --------------------------------------------------------------------------
+    # Controls
+    # --------------------------------------------------------------------------
+
     def create_controls(self):
-        # Create a frame for buttons
         button_frame = tk.Frame(self.root)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # Autoscale toggle button
-        autoscale_button = tk.Button(button_frame, text="Toggle Autoscale", command=self.toggle_autoscale)
-        autoscale_button.pack(side=tk.LEFT, padx=5, pady=5)
+        tk.Button(
+            button_frame, text="Toggle Autoscale",
+            command=self.toggle_autoscale
+        ).pack(side=tk.LEFT, padx=5, pady=5)
 
-        # Start/Stop button for updating
-        self.update_button = tk.Button(button_frame, text="Start/Stop Update", command=self.toggle_update)
+        self.update_button = tk.Button(
+            button_frame, text="Start/Stop Update",
+            command=self.toggle_update
+        )
         self.update_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        # ROI selection for autoscale
         tk.Label(button_frame, text="ROI Start:").pack(side=tk.LEFT)
         self.roi_start = tk.Entry(button_frame, width=5)
         self.roi_start.pack(side=tk.LEFT)
+
         tk.Label(button_frame, text="ROI End:").pack(side=tk.LEFT)
         self.roi_end = tk.Entry(button_frame, width=5)
         self.roi_end.pack(side=tk.LEFT)
-        
-        # ROI Set button
-        roi_button = tk.Button(button_frame, text="Set ROI", command=self.set_roi)
-        roi_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        # Reset Autoscale button
-        reset_button = tk.Button(button_frame, text="Reset Autoscale", command=self.reset_autoscale)
-        reset_button.pack(side=tk.LEFT, padx=5, pady=5)
-        # data mode button
+        tk.Button(
+            button_frame, text="Set ROI",
+            command=self.set_roi
+        ).pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.data_mode_button = tk.Button(button_frame, text="{}".format(self.data_mode), command=self.toggle_data_mode)
+        tk.Button(
+            button_frame, text="Reset Autoscale",
+            command=self.reset_autoscale
+        ).pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.data_mode_button = tk.Button(
+            button_frame, text=self.data_mode,
+            command=self.toggle_data_mode
+        )
         self.data_mode_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        # Image Autoscale Button
-        self.image_autoscale_enabled = True  # Default to enabled
-        self.image_autoscale_button = tk.Button(button_frame, text="Image Autoscale: ON", command=self.toggle_image_autoscale)
+        self.image_autoscale_enabled = True
+        self.image_autoscale_button  = tk.Button(
+            button_frame, text="Image Autoscale: ON",
+            command=self.toggle_image_autoscale
+        )
         self.image_autoscale_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         tk.Label(button_frame, text="Y Center:").pack(side=tk.LEFT)
         self.y_center_entry = tk.Entry(button_frame, width=5)
+        self.y_center_entry.insert(0, str(self._y_center_default))
         self.y_center_entry.pack(side=tk.LEFT)
+
         tk.Label(button_frame, text="Y Width:").pack(side=tk.LEFT)
         self.y_width_entry = tk.Entry(button_frame, width=5)
+        self.y_width_entry.insert(0, str(self._y_width_default))
         self.y_width_entry.pack(side=tk.LEFT)
 
+        tk.Button(
+            button_frame, text="Apply Y ROI",
+            command=self.apply_y_roi
+        ).pack(side=tk.LEFT, padx=5, pady=5)
 
-        apply_roi_button = tk.Button(button_frame, text="Apply Y ROI", command=self.apply_y_roi)
-        apply_roi_button.pack(side=tk.LEFT, padx=5, pady=5)
+        self.sensor_label = tk.Label(
+            button_frame, text="Frame: -- × --", fg="grey"
+        )
+        self.sensor_label.pack(side=tk.LEFT, padx=10)
+
+        # ── CHANGED: added update rate label ──────────────────────────────────
+        # Shows how frequently the file is being reloaded, so you can confirm
+        # the viewer is actually receiving new frames.
+        self.rate_label = tk.Label(
+            button_frame, text="Rate: -- fps", fg="grey"
+        )
+        self.rate_label.pack(side=tk.LEFT, padx=10)
+        self._last_update_time = time.time()
+        # ── END CHANGE ────────────────────────────────────────────────────────
+
+    # --------------------------------------------------------------------------
+    # Y ROI
+    # --------------------------------------------------------------------------
 
     def apply_y_roi(self):
-        """ Set Y ROI from center and width, update spectrum view. """
+        """Set Y ROI from center and width entries, then refresh the plot."""
         try:
             center = int(self.y_center_entry.get())
-            width = int(self.y_width_entry.get())
+            width  = int(self.y_width_entry.get())
+        except (ValueError, AttributeError):
+            center = self._y_center_default
+            width  = self._y_width_default
 
-            half_width = int(round(width // 2))
-            y_start = center - half_width
-            y_end = center + half_width
+        half_width = width // 2
+        y_start    = max(0, center - half_width)
+        y_end      = min(self.data.shape[0], center + half_width)
 
-            # Clamp to valid range
-            y_start = max(0, y_start)
-            y_end = min(self.data.shape[0], y_end)
+        if y_end > y_start:
+            self.spectrum_roi = (y_start, y_end)
+            print(f"Updated Spectrum ROI: {self.spectrum_roi}")
+            if self.data_mode == "Spectrum":
+                self.update_plot(self.frame_to_spectrum())
+        else:
+            print("Invalid ROI: width too small or center out of bounds.")
 
-            if y_end > y_start:
-                self.spectrum_roi = (y_start, y_end)
-                print(f"Updated Spectrum ROI: {self.spectrum_roi}")
-                if self.data_mode == "Spectrum":
-                    spectrum = self.frame_to_spectrum()
-                    self.update_plot(spectrum)
-            else:
-                print("Invalid ROI: width too small or center out of bounds")
-
-        except ValueError:
-            print("Invalid input for ROI center or width")
-
-
+    # --------------------------------------------------------------------------
+    # Autoscale / update toggles
+    # --------------------------------------------------------------------------
 
     def toggle_image_autoscale(self):
-        """ Enable or disable autoscaling for the image colormap """
         self.image_autoscale_enabled = not self.image_autoscale_enabled
-        self.image_autoscale_button.config(text="Image Autoscale: ON" if self.image_autoscale_enabled else "Image Autoscale: OFF")
-        
+        label = "ON" if self.image_autoscale_enabled else "OFF"
+        self.image_autoscale_button.config(text=f"Image Autoscale: {label}")
         if self.data_mode == "Image":
-            self.update_image(self.data)  # Refresh image with the new setting
+            self.update_image(self.data)
 
     def toggle_autoscale(self):
         self.autoscale_enabled = not self.autoscale_enabled
 
     def toggle_update(self):
         self.updating = not self.updating
-        if self.updating:
-            # change button colour to green
-            self.update_button.config(bg='green')
-        else:
-            # change button colour to red
-            self.update_button.config(bg='red')
+        self.update_button.config(bg='green' if self.updating else 'red')
 
     def set_roi(self):
         try:
-            min_x = int(self.roi_start.get())
-            max_x = int(self.roi_end.get())
-            self.roi = (min_x, max_x)
+            self.roi = (int(self.roi_start.get()), int(self.roi_end.get()))
         except ValueError:
-            print("Invalid ROI values")
+            print("Invalid ROI values.")
 
     def reset_autoscale(self):
         self.roi = None
         self.ax.relim()
         self.ax.autoscale_view()
 
+    # --------------------------------------------------------------------------
+    # Plot update  (main thread only)
+    # --------------------------------------------------------------------------
+
     def update_plot(self, data):
-        """ Updates the spectrum plot and ensures it redraws correctly. """
-        self.ax.clear()  # Ensure old plot is removed
-        x_values = np.arange(len(data))
+        """Update the spectrum plot. Must be called from the main thread."""
+        self.ax.clear()
+        self.ax.plot(np.arange(len(data)), data, 'r-')
+        self.ax.vlines([50], 0, 70000, colors='blue', linestyles='dashed',
+                       alpha=0.5)
+        self.ax.set_xlabel("Pixel")
+        self.ax.set_ylabel("Intensity (counts)")
+        self.ax.set_title(
+            f"Spectrum  |  Y rows {self.spectrum_roi[0]}–{self.spectrum_roi[1]}"
+        )
 
-        self.ax.plot(x_values, data, 'r-')  # Replot with new data
-        self.ax.vlines([50], 0, 70000)
+        if self.autoscale_enabled and self.roi:
+            min_x, max_x = self.roi
+            roi_data = data[min_x:max_x]
+            if roi_data.size > 0:
+                self.plot_limits = (float(np.min(roi_data)),
+                                    float(np.max(roi_data)))
+        self.ax.set_ylim(*self.plot_limits)
 
-        # Autoscale handling
-        if self.autoscale_enabled:
-            if self.roi:  # Use ROI for Y-scaling
-                min_x, max_x = self.roi
-                roi_data = data[min_x:max_x]
-                if roi_data.size > 0:
-                    self.plot_limits = np.min(roi_data), np.max(roi_data)
-                    self.ax.set_ylim(*self.plot_limits)
-        else:
-            self.ax.set_ylim(*self.plot_limits)
-
-
-
-        self.canvas.draw()  # Force Matplotlib to redraw
+        self._update_rate_label()
+        self.sensor_label.config(
+            text=f"Frame: {self.data.shape[1]} × {self.data.shape[0]}",
+            fg="black"
+        )
+        self.canvas.draw()
 
     def update_image(self, data):
-        """ Update the displayed image while keeping zoom settings. """
+        """Update the image plot. Must be called from the main thread."""
         self.ax.clear()
 
-        # Set colormap limits based on ROI autoscaling
         vmin, vmax = self.image_limits
-
         if self.image_autoscale_enabled and self.roi:
-            min_x, max_x = self.roi
-            min_x = max(0, min_x)
-            max_x = min(data.shape[1], max_x)
+            min_x = max(0, self.roi[0])
+            max_x = min(data.shape[1], self.roi[1])
             roi_data = data[:, min_x:max_x]
-
             if roi_data.size > 0:
-                vmin, vmax = np.min(roi_data), np.max(roi_data)
+                vmin, vmax = float(np.min(roi_data)), float(np.max(roi_data))
                 self.image_limits = (vmin, vmax)
 
-        # Plot image
-        self.ax.imshow(data, cmap='plasma', vmin=vmin, vmax=vmax)
+        self.ax.imshow(data, cmap='plasma', vmin=vmin, vmax=vmax,
+                       aspect='auto')
+        self.ax.set_title("Image")
 
-        # Restore zoom limits if they exist
         if self.zoom_limits:
             self.ax.set_xlim(self.zoom_limits[0])
             self.ax.set_ylim(self.zoom_limits[1])
 
+        self._update_rate_label()
+        self.sensor_label.config(
+            text=f"Frame: {data.shape[1]} × {data.shape[0]}",
+            fg="black"
+        )
         self.canvas.draw()
 
+    def _update_rate_label(self):
+        """Update the fps label based on time since last redraw."""
+        now      = time.time()
+        elapsed  = now - self._last_update_time
+        if elapsed > 0:
+            fps = 1.0 / elapsed
+            self.rate_label.config(
+                text=f"Rate: {fps:.1f} fps", fg="black"
+            )
+        self._last_update_time = now
+
+    # --------------------------------------------------------------------------
+    # Spectrum extraction
+    # --------------------------------------------------------------------------
 
     def frame_to_spectrum(self):
-        """ Calculate spectrum by averaging the selected ROI in the image. """
-
+        """Average the selected Y-row ROI to produce a 1D spectrum."""
         if self.spectrum_roi is None:
-            y_start, y_end = 0, self.data.shape[0]  # Default to full height
+            y_start, y_end = 0, self.data.shape[0]
         else:
-            y_start, y_end = self.spectrum_roi
-            y_start = max(0, min(self.data.shape[0], y_start))
-            y_end = max(0, min(self.data.shape[0], y_end))
+            y_start = max(0, min(self.data.shape[0], self.spectrum_roi[0]))
+            y_end   = max(0, min(self.data.shape[0], self.spectrum_roi[1]))
 
         if y_end <= y_start:
-            print("Invalid ROI: end must be greater than start")
             y_end = y_start + 1
 
-        data_array = self.data[y_start:y_end, :]
-        spectrum_data = np.mean(data_array, axis=0)
+        return np.mean(self.data[y_start:y_end, :], axis=0)
 
-        return spectrum_data
+    # --------------------------------------------------------------------------
+    # File monitor  (background thread — never touches GUI)
+    # --------------------------------------------------------------------------
 
     def monitor_file(self):
+        """
+        Background thread: reload the .npy file whenever it changes.
+
+        This method NEVER calls any Tkinter or Matplotlib function directly.
+        Instead it deposits the new frame into self._pending_data and sets
+        self._new_data_available = True. The main-thread poll loop
+        (_poll_for_new_data) picks it up and redraws safely.
+        """
+        last_mtime = None
+
         while True:
             if self.updating:
                 try:
                     if os.path.exists(self.file_path):
-                        # Load data from the file
+
+                        # ── CHANGED: only reload when the file has changed ─────
+                        # Previously the file was reloaded every 100 ms
+                        # regardless of whether it had been updated, causing
+                        # redundant redraws and masking the static-frame bug.
+                        # Now we check the file modification time first.
+                        mtime = os.path.getmtime(self.file_path)
+                        if mtime == last_mtime:
+                            time.sleep(0.05)
+                            continue
+                        last_mtime = mtime
+                        # ── END CHANGE ────────────────────────────────────────
+
                         try:
-                            self.data = np.load(self.file_path)
-                            if len(self.data.shape) == 3:
-                                self.data = self.data[:, :, 0]
+                            raw = np.load(self.file_path)
+                            if raw.ndim == 3:
+                                raw = raw[:, :, 0]
+                            if raw.ndim != 2:
+                                print(
+                                    f"Unexpected array shape {raw.shape} "
+                                    f"— skipping."
+                                )
+                                time.sleep(0.1)
+                                continue
                         except Exception as e:
-                            print(f"Error loading data from file {self.file_path}: {e}")
+                            print(f"Error loading {self.file_path}: {e}")
                             time.sleep(1)
                             continue
 
-                        if self.data_mode == "Image":
-                            self.update_image(self.data)
-                        else:
-                            spectrum = self.frame_to_spectrum()
-                            self.update_plot(spectrum)
-                except PermissionError:
-                    print(f"Permission denied to access file {self.file_path}.")
-                except Exception as e:
-                    print(f"Error processing file:\n{traceback.format_exc()}")
-            time.sleep(0.1)  # Wait before checking again
+                        # Deposit frame for the main thread to pick up
+                        with self._data_lock:
+                            self._pending_data       = raw
+                            self._new_data_available = True
 
+                except PermissionError:
+                    print(f"Permission denied: {self.file_path}")
+                except Exception:
+                    print(f"monitor_file error:\n{traceback.format_exc()}")
+
+            time.sleep(0.05)
+
+    # --------------------------------------------------------------------------
+    # Entry point
+    # --------------------------------------------------------------------------
 
     def start(self):
-        # Start the Tkinter event loop
         self.root.mainloop()
 
-# Run the GUI
+
+# ------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    # Replace with your actual file path
-    scriptDir = os.path.dirname(__file__)
-    file_path = os.path.join(scriptDir, 'data', 'transient_data', 'transient_data.npy')
-
-    plotter = LiveDataPlotter(file_path, bin_centre=70, bin_width=10)
+    script_dir = os.path.dirname(__file__)
+    file_path  = os.path.join(
+        script_dir, 'data', 'transient_data', 'transient_data.npy'
+    )
+    plotter = LiveDataPlotter(file_path, bin_center=50, bin_width=10)
     plotter.start()
-

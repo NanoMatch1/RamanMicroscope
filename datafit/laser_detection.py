@@ -190,6 +190,16 @@ class LaserDetection(QObject):
         dataY = self.image_to_spectrum(image, laser_position)
         dataY = self.baseline_data(dataY, show_plot=show_plot, subtract_median=True)
         dataX = wavelength_axis
+
+        # ── CHANGED: guard against length mismatch ───────────────────────────
+        if len(dataX) != len(dataY):
+            self.logger.warning(
+                f"wavelength_axis length ({len(dataX)}) != spectrum length "
+                f"({len(dataY)}). Trimming/interpolating to match."
+            )
+            dataX = np.linspace(dataX[0], dataX[-1], len(dataY))
+        # ── END CHANGE ────────────────────────────────────────────────────────
+
         fitter = AutoPeakFitter(dataX, dataY, show_plot=show_plot)
         peak = fitter.run(initial_index=laser_position[0])
 
@@ -237,13 +247,13 @@ class LaserDetection(QObject):
 
         return self.dataY
     
-    def generate_laser_signal(self, width=2048, height=148, 
+    def generate_laser_signal(self, width=1024, height=148, 
                               laser_position=None, wavelength_axis=None, laser_width=5, y_centre=85, y_spread=20):
         """Generates a synthetic laser signal for testing purposes."""
         pass
 
 
-    def generate_test_image(self, width=2048, height=148, 
+    def generate_test_image(self, width=1024, height=148, 
                             laser_position=None, wavelength_axis=None, laser_width=5, 
                             background_level=4000, noise_level=150, 
                             y_center=85, y_spread=20, show_plot=False):
@@ -315,7 +325,7 @@ class LaserDetection(QObject):
         '''Searches for a laser peak in the image by integrating along the X-axis and applying a threshold based on robust statistics.Returns a tuple (is_laser_present, (x_max, y_max)) where is_laser_present is True if a peak is found, and (x_max, y_max) are the coordinates of the peak.'''
         
         # Step 1: Collapse in Y to get intensity along X
-        profile_x = np.median(image[50:90, :], axis=0)  # shape = (X,)
+        profile_x = np.median(image[500:700, :], axis=0)  # shape = (X,)
         
         # Step 2: Estimate background using robust statistics
         med = np.median(profile_x)
@@ -351,6 +361,6 @@ if __name__ == "__main__":
     from datafit.baseline import baseline_als
 
     laser_detector = LaserDetection(logger_level='INFO')
-    test_image = laser_detector.generate_test_image(laser_width=5, laser_position=785, wavelength_axis=np.arange(2048), background_level=4000, noise_level=150)
+    test_image = laser_detector.generate_test_image(laser_width=5, laser_position=785, wavelength_axis=np.arange(1024), background_level=4000, noise_level=150)
     laser_detector.detect_laser(test_image, np.arange(test_image.shape[1]))  # Assuming 
     
