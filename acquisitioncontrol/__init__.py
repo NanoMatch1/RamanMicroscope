@@ -1,3 +1,4 @@
 from acquisitioncontrol.acqcontrol import AcquisitionControl
+from acquisitioncontrol.acqgui import AcquisitionGUI
 from acquisitioncontrol.pyqtGUI import MainWindow
 # from simulation import DummyMicroscope

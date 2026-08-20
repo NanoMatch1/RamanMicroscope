@@ -1,17 +1,5 @@
 {
   "ldr_scan_dict": {
-    "l1": {
-      "range": 500,
-      "resolution": 10
-    },
-    "l2": {
-      "range": 250,
-      "resolution": 25
-    },
-    "l3": {
-      "range": 10000,
-      "resolution": 1000
-    },
     "g1": {
       "range": 100,
       "resolution": 5
@@ -80,11 +68,7 @@
     "mode": 100000
   },
   "action_groups": {
-    "laser_wavelength": {
-      "l1": "1X",
-      "l2": "1Y",
-      "l3": "1Z"
-    },
+    "laser_wavelength": {},
     "grating_wavelength": {
       "g1": "3Z",
       "g2": "3A",

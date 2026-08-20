@@ -1,0 +1,224 @@
+import serial
+import time
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+COM_PORT = 'COM17'
+BAUD_RATE = 9600
+
+# ============================================================
+# PROBE FUNCTIONS
+# ============================================================
+
+def probe_command(ser, command, description, wait=1.0):
+    """
+    Send a command and collect all bytes received within the wait window.
+    Returns raw bytes for analysis.
+    """
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+
+    raw_command = command.encode('ascii')
+    ser.write(raw_command)
+
+    received_bytes = b''
+    timeout = time.time() + wait
+
+    while time.time() < timeout:
+        if ser.in_waiting > 0:
+            received_bytes += ser.read(ser.in_waiting)
+        time.sleep(0.01)
+
+    # Filter out status update noise
+    # Status updates are periodic — wait 1.5s and check if same bytes repeat
+    # A unique response to our command will appear only once
+    result = {
+        'command'     : command,
+        'description' : description,
+        'raw'         : received_bytes,
+        'hex'         : received_bytes.hex(),
+        'printable'   : ''.join(
+            chr(b) if 32 <= b <= 126 else f'[{hex(b)}]'
+            for b in received_bytes
+        ),
+        'ack'         : b'\x06' in received_bytes,
+        'nak'         : b'\x15' in received_bytes,
+    }
+
+    return result
+
+
+def print_result(result):
+    """Print a probe result in a readable format."""
+    print(f'\nCommand     : {result["command"]}')
+    print(f'Description : {result["description"]}')
+    print(f'ACK         : {result["ack"]}')
+    print(f'NAK         : {result["nak"]}')
+    print(f'Hex         : {result["hex"]}')
+    print(f'Printable   : {result["printable"]}')
+    print('-' * 60)
+
+
+# ============================================================
+# COMMAND PROBE LIST
+# ============================================================
+
+def build_probe_list():
+    """
+    Build list of candidate query commands to try.
+    Based on common RS-232 conventions for embedded controllers.
+    """
+    probes = []
+
+    # --------------------------------------------------------
+    # Group 1 — Status and power queries
+    # Following the *M1!XXnnnnnn# pattern from test report
+    # --------------------------------------------------------
+    probes += [
+        ('*M1!ST000000#',   'Status query — ST convention'),
+        ('*M1!RD000000#',   'Read query — RD convention'),
+        ('*M1!GT000000#',   'Get query — GT convention'),
+        ('*M1!QR000000#',   'Query — QR convention'),
+        ('*M1!GS000000#',   'Get status — GS convention'),
+        ('*M1!RS000000#',   'Read status — RS convention'),
+        ('*M1!GP000000#',   'Get position — GP convention'),
+        ('*M1!RP000000#',   'Read position — RP convention'),
+    ]
+
+    # --------------------------------------------------------
+    # Group 2 — Power specific queries
+    # --------------------------------------------------------
+    probes += [
+        ('*M1!PW000000#',   'Power query — PW convention'),
+        ('*M1!GW000000#',   'Get watts — GW convention'),
+        ('*M1!RW000000#',   'Read watts — RW convention'),
+        ('*M1!PO000000#',   'Power on/off status — PO convention'),
+        ('*M1!LD000000#',   'Laser diode status — LD convention'),
+        ('*M1!EM000000#',   'Emission status — EM convention'),
+    ]
+
+    # --------------------------------------------------------
+    # Group 3 — Current queries
+    # --------------------------------------------------------
+    probes += [
+        ('*M1!GI000000#',   'Get current — GI convention'),
+        ('*M1!RI000000#',   'Read current — RI convention'),
+        ('*M1!IC000000#',   'Current query — IC convention'),
+        ('*M1!DC000000#',   'Diode current — DC convention'),
+    ]
+
+    # --------------------------------------------------------
+    # Group 4 — Temperature queries
+    # --------------------------------------------------------
+    probes += [
+        ('*M1!GT000000#',   'Get temperature — GT convention'),
+        ('*M1!RT000000#',   'Read temperature — RT convention'),
+        ('*M1!TM000000#',   'Temperature query — TM convention'),
+    ]
+
+    # --------------------------------------------------------
+    # Group 5 — Generic single character probes
+    # Some embedded controllers respond to minimal input
+    # --------------------------------------------------------
+    probes += [
+        ('?',               'Single question mark'),
+        ('?\r\n',           'Question mark with line ending'),
+        ('*?\r\n',          'Asterisk question mark'),
+        ('*ST#',            'Short status command'),
+        ('*GS#',            'Short get status'),
+        ('*ID#',            'Identity query'),
+        ('*VR#',            'Version query'),
+        ('*HE#',            'Help query'),
+        ('*HELP#',          'Full help query'),
+    ]
+
+    # --------------------------------------------------------
+    # Group 6 — Alternate motor target
+    # Test report uses M1 — try M0 and M2
+    # --------------------------------------------------------
+    probes += [
+        ('*M0!ST000000#',   'Status query motor 0'),
+        ('*M2!ST000000#',   'Status query motor 2'),
+        ('*M0!GS000000#',   'Get status motor 0'),
+    ]
+
+    return probes
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    print(f'\nConnecting to {COM_PORT} at {BAUD_RATE} baud...')
+
+    try:
+        ser = serial.Serial(
+            port=COM_PORT,
+            baudrate=BAUD_RATE,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=2
+        )
+        print(f'Connected on {COM_PORT}')
+
+    except serial.SerialException as e:
+        print(f'Failed to connect: {e}')
+        return
+
+    probes = build_probe_list()
+    interesting_results = []
+
+    print(f'\nRunning {len(probes)} probe commands...')
+    print('Commands returning only NAK will be summarised at the end')
+    print('=' * 60)
+
+    try:
+        for command, description in probes:
+
+            result = probe_command(ser, command, description)
+
+            # Flag anything that is not a plain NAK as interesting
+            is_interesting = (
+                result['ack'] or
+                (not result['nak'] and len(result['raw']) > 0) or
+                len(result['raw']) > 2
+            )
+
+            if is_interesting:
+                print('\n*** INTERESTING RESPONSE ***')
+                print_result(result)
+                interesting_results.append(result)
+            else:
+                # Just print a dot for plain NAK responses
+                print(f'NAK — {command}')
+
+            # Wait between commands to avoid flooding
+            time.sleep(1.5)
+
+    finally:
+        ser.close()
+        print('\nConnection closed')
+
+    # --------------------------------------------------------
+    # Summary of interesting results
+    # --------------------------------------------------------
+    print('\n' + '=' * 60)
+    print(f'SUMMARY — {len(interesting_results)} interesting responses found')
+    print('=' * 60)
+
+    if interesting_results:
+        for result in interesting_results:
+            print_result(result)
+    else:
+        print('No commands returned anything beyond NAK')
+        print('Recommendations:')
+        print('  1 — Check firmware version supports query commands')
+        print('  2 — Contact Lumentum with firmware version 3.22 build 107')
+        print('  3 — Request full RS-232 command reference for this firmware')
+
+
+if __name__ == '__main__':
+    main()

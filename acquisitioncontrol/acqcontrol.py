@@ -142,7 +142,7 @@ class ScanSequenceGenerator:
 class CameraScanner:
 
 
-    def __init__(self, acq_ctrl, timeout=100000):
+    def __init__(self, acq_ctrl, timeout=50000):
         self.acq_ctrl = acq_ctrl
         self.interface = acq_ctrl.interface
         self.microscope = acq_ctrl.interface.microscope
@@ -341,7 +341,11 @@ class AcquisitionControl(QObject):
         ]
 
         self.general_parameters = {
-            'acquisition_time': 1000.0,
+            # ── CHANGED: acquisition_time is now stored in SECONDS to match
+            # the camera layer convention (PIXISCamera, TucsenCamera both
+            # expect seconds). Previously stored in milliseconds (1000.0)
+            # which caused a 1000× overrun when passed to set_exposure_time.
+            'acquisition_time': 1.0,   # seconds
             'filename': 'default',
             'raman_shift': 0.0,
             'laser_power': 4.5,
@@ -481,10 +485,12 @@ class AcquisitionControl(QObject):
 
 
     def estimate_scan_duration(self):
-        '''Estimates the duration of the scan in seconds. This is a rough estimate based on the number of steps in the scan and the acquisition time.'''
-
-        frames = self.general_parameters['n_frames']
-        acq_time = self.general_parameters['acquisition_time']
+        """
+        Estimate scan duration in seconds.
+        acquisition_time is in seconds, so no conversion needed.
+        """
+        frames   = self.general_parameters['n_frames']
+        acq_time = self.general_parameters['acquisition_time']  # seconds
         return self.scan_size * acq_time * frames * 1.2
     
     def update_scan_estimate(self):
@@ -564,20 +570,19 @@ class AcquisitionControl(QObject):
     def load_config(self, filename="acquisition_config.json"):
 
         filepath = os.path.join(self.acquisitionControlDir, filename)
-        if not os.path.exists(filepath):
-            print(f"Configuration file {filepath} not found.")
-            return
 
         try:
             with open(filepath, 'r') as f:
                 config = json.load(f)
 
-        except FileNotFoundError:
-            print("Acquisition Control configuration file not found. Using default parameters.")
-        except json.JSONDecodeError:
-            print("Error decoding JSON from Acquisition Control configuration file. Using default parameters.")
         except Exception as e:
-            print(f"Unexpected error loading Acquisition Control configuration: {e}. Using default parameters.")
+            print(f"Error loading Acquisition Control configuration file: {e}. Using default parameters.")
+            config = {'general_parameters': self.general_parameters,
+                      'hidden_parameters': self.hidden_parameters,
+                      'motion_parameters': self.motion_parameters,
+                      'wavelength_parameters': self.wavelength_parameters,
+                      'polarization_parameters': self.polarization_parameters,
+                      }
 
         self.general_parameters.update(config.get('general_parameters', self.general_parameters))
         self.motion_parameters.update(config.get('motion_parameters', self.motion_parameters))
@@ -717,8 +722,16 @@ class AcquisitionControl(QObject):
 
 
     def prepare_acquisition_params(self):
-        self.interface.microscope.set_acquisition_time(self.general_parameters['acquisition_time'])  # ensures acqtime is set correctly at camera level
-        self.interface.microscope.set_laser_power(self.general_parameters['laser_power'])  # ensures laser power is set correctly at camera level
+        """
+        Push current general_parameters down to hardware before any acquisition.
+        acquisition_time is in SECONDS throughout this codebase.
+        """
+        self.interface.microscope.set_acquisition_time(
+            self.general_parameters['acquisition_time']
+        )
+        self.interface.microscope.set_laser_power(
+            self.general_parameters['laser_power']
+        )
 
 
     def build_scan_sequence(self):

@@ -1,5 +1,5 @@
 import time
-import pyvisa
+import serial
 from instruments.instrument_base import Instrument
 from instruments.util_decorators import ui_callable
 from .simulated_triax import SimulatedTriaxSerial
@@ -13,11 +13,22 @@ class Triax(Instrument):
         self.simulate = simulate or interface.simulate
         self.calibration_service = interface.calibration_service
         self.enterance_slit_width = 0
+        self.port = 'COM16'
+        self.serial_config = {
+            'baudrate': 4800,
+            'bytesize': serial.EIGHTBITS,
+            'parity':   serial.PARITY_NONE,
+            'stopbits': serial.STOPBITS_ONE,
+            'timeout':  2,
+        }
+
+
 
         self.command_functions = {
             'get_spectrometer_position': self.get_spectrometer_position,
             'rg': self.get_spectrometer_position,
             'go_to_position': self.go_to_position,
+            'sg': self.go_to_position,
             'ren': self.read_enterance_slit,
             'rex': self.read_exit_slit,
             'men': self.move_enterance_slit,
@@ -76,7 +87,8 @@ class Triax(Instrument):
     
     def initialise(self):
         '''Connect and establish primary attributes.'''
-        self.connect()
+        # self.connect()
+        self.auto_connect()
         self.get_spectrometer_position()
         # self.generate_wavelength_axis()
         self.interface.microscope.generate_wavelength_axis() # TODO: move from microscope to spectrometer. Use @property to generate wavelength axis on the fly
@@ -143,7 +155,7 @@ class Triax(Instrument):
         response = self.send_command('mg {}'.format(position))
         return response
     
-    def go_to_wavelength(self, wavelength, steps_correction=200):
+    def go_to_wavelength(self, wavelength, steps_correction=1910):
         '''Moves the spectrometer to the specified wavelength. Steps correction is an artificial adjustment to push the laser closer to 100 to prevent the laser from being too far to the left. #TODO recalibrate for pixel 100, not 50'''
         try:
             wavelength = float(wavelength)
@@ -209,25 +221,113 @@ class Triax(Instrument):
         return response
 
     def connect(self):
-        # Open a connection to the instrument
+    # Open a serial connection to the TRIAX on COM16.
         if self.simulate:
             self.spectrometer = SimulatedTriaxSerial()
             self.state = True
             return self.spectrometer, self.state
-        
-        self.logger.info("Connecting to TRIAX spectrometer...")
-        rm = pyvisa.ResourceManager()
-        rm.list_resources()
-        self.spectrometer = rm.open_resource('GPIB0::1::INSTR')  # Replace with the actual VISA address of your instrument
 
-        self.spectrometer.write('WHERE AM I')
-        time.sleep(0.0001)
-        self.state = self.spectrometer.read()
-        self.logger.info(self.state)
+        self.logger.info('Connecting to TRIAX on {}...'.format(self.port))
 
-        self.logger.info('Connected to TRIAX spectrometer.')
+        try:
+            self.spectrometer = serial.Serial(
+                port=self.port,
+                **self.serial_config
+            )
+        except serial.SerialException as error:
+            self.logger.info('Failed to open {}: {}'.format(self.port, error))
+            raise
 
+        self._enter_intelligent_mode()
+        self.state = True
+        self.logger.info('Connected to TRIAX on {}'.format(self.port))
         return self.spectrometer, self.state
+
+
+    def auto_connect(self):
+        '''Connect to the TRIAX on COM16.'''
+        if self.simulate:
+            self.spectrometer = SimulatedTriaxSerial()
+            self.state = True
+            return self.spectrometer, self.state
+
+        return self.connect()
+
+    def _enter_intelligent_mode(self):
+        '''Send byte 248 to switch to intelligent communications mode.'''
+        self.logger.info('Entering intelligent mode...')
+        self.spectrometer.write(bytes([248]))
+        time.sleep(0.2)
+
+        if not self._is_initialised(self.spectrometer):
+            self.logger.info('Spectrometer not initialised — running init')
+            self._run_initialisation()
+        else:
+            self.logger.info('Spectrometer already initialised — skipping init')
+
+    def _is_initialised(self, ser):
+        '''Send H0 to test if the spectrometer is already initialised.'''
+        ser.reset_input_buffer()
+        ser.write(b'H0\r')
+        response = self._read_response(ser, wait=0.5)
+
+        has_digits = any(char.isdigit() for char in response)
+
+        if 'o' in response and has_digits:
+            self.logger.info('H0 check passed — already initialised')
+            return True
+        else:
+            self.logger.info(
+                'H0 check failed — not initialised. Response: {!r}'.format(response)
+            )
+            return False
+
+    def _run_initialisation(self):
+        '''Trigger autobaud and full spectrometer initialisation
+        by sending a space.'''
+        self.logger.info('Sending space to trigger initialisation...')
+        self.spectrometer.write(b' ')
+
+        self.logger.info('Waiting for initialisation to complete...')
+        last_data_time = time.time()
+        while True:
+            if self.spectrometer.in_waiting > 0:
+                data = self.spectrometer.read(self.spectrometer.in_waiting)
+                self.logger.info('Init: {!r}'.format(
+                    data.decode('ascii', errors='replace')
+                ))
+                last_data_time = time.time()
+
+            if time.time() - last_data_time > 5:
+                self.logger.info('Initialisation complete')
+                break
+
+            time.sleep(0.1)
+
+        self.logger.info('Re-entering intelligent mode after init...')
+        self.spectrometer.write(bytes([248]))
+        time.sleep(0.2)
+
+        self.spectrometer.write(b' ')
+        response = self._read_response(self.spectrometer, wait=0.5)
+        if 'F' in response:
+            self.logger.info('Intelligent mode confirmed after init')
+        else:
+            self.logger.info(
+            'Unexpected response after init: {!r}'.format(response)
+            )
+
+    def _read_response(self, ser, wait=0.3):
+        '''Read all available bytes from the serial port.'''
+        time.sleep(wait)
+        response = b''
+        while ser.in_waiting > 0:
+            response += ser.read(ser.in_waiting)
+            time.sleep(0.05)
+        decoded = response.decode('ascii', errors='replace')
+        self.logger.info('Response: {!r}'.format(decoded))
+        return decoded
+
 
     def get_triax_steps(self):
         '''Polls the spectrometer for position and returns the current position in steps.'''
@@ -235,6 +335,20 @@ class Triax(Instrument):
         self.triax_steps = int(response.strip()[1:])
         return self.triax_steps
         
+    def _flush_read_buffer(self, resource):
+        '''Drains any stale data from the VISA read buffer by attempting repeated reads
+        with a very short timeout until no more data is available.'''
+        original_timeout = resource.timeout
+        resource.timeout = 100  # ms — short enough to drain quickly
+        try:
+            while True:
+                stale = resource.read()
+                self.logger.info('Flushed stale buffer data: {!r}'.format(stale))
+        except pyvisa.errors.VisaIOError:
+            pass  # Timeout means the buffer is now empty
+        finally:
+            resource.timeout = original_timeout
+
     def _command_parser(self, command):
         '''Parses the command to ensure it is in the correct format for the spectrometer.'''
         com_set = command.split(' ')
@@ -255,15 +369,21 @@ class Triax(Instrument):
         return response
     
     def _send_command_to_spectrometer(self, command, report=True):
-        self.spectrometer.write(command)
-        time.sleep(0.0001)
+        '''
+        Send a command string terminated by CR and return the response.
+        Handles the long wait required for the initialise command.
+        '''
+        if self.simulate:
+            return self.spectrometer.query(command)
 
+        full_command = (command + '\r').encode('ascii')
+        self.spectrometer.reset_input_buffer()
+        self.spectrometer.write(full_command)
+
+        # Initialise command takes up to 2 minutes
         if command == 'A':
-            count = 100
-            while count > 0:
-                self.logger.info('Initialising: Sleeping for {} seconds'.format(count))
-                time.sleep(1)
-                count -= 1
-        
-        response = self.spectrometer.read()
-        return response
+            self.logger.info('Initialising spectrometer — waiting up to 120s...')
+            time.sleep(120)
+
+        return self._read_response(self.spectrometer, wait=0.5)
+

@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from functools import wraps
 
 from datafit.laser_detection import LaserDetection
-from instruments.instrument_base import Instrument
 
 def enforce_response(func, expected_response=True, callback=None):
     """
@@ -80,20 +79,53 @@ def apply_pseudocal_backwards(func):
 
 def live_laser_calibration(func):
     """
-    Decorator to automatically calculate the laser wavelength when using go_to_laser_wavelength.
-    Needs the triax to be connected to correctly identify wavelength.
+    Decorator to automatically calculate the laser wavelength when using
+    go_to_laser_wavelength. Needs the triax to be connected to correctly
+    identify wavelength.
     """
     @wraps(func)
     def wrapper(self, *args, **kwargs):
+        func_name = f"{func.__module__}.{func.__name__}"
+        print(f"{func_name}: CALLED")
         response = True
-        # Call the original function first, catch the 
         func(self, *args, **kwargs)
-        # Then run the live calibration
         if self.apply_live_calibration is True:
             response = self.live_calibration_laser()
 
-        return response  # Indicate success
+            # ── CHANGED: print centre-pixel wavelength after live cal ─────────
+            try:
+                cal       = self.interface.calibration_service
+                triax_wl  = self.report_spectrometer_wavelength
+                centre_wl = cal.pixel_to_wl(512)
+                laser_wl  = self.interface.laser.get_estimated_wavelength()
+                cal_wl    = self.laser_wavelength_calibrated
+
+                # ── pixel position of the fitted laser peak ───────────────────
+                if cal_wl is not None:
+                    peak_pixel = cal.wl_to_pixel(cal_wl)
+                    pixel_str  = f"{peak_pixel:.1f}"
+                else:
+                    pixel_str  = "not calibrated"
+                # ── END ───────────────────────────────────────────────────────
+
+                self.micro_log.info(
+                    f"[POST-FIT] "
+                    f"TRIAX reported: {triax_wl:.3f} nm | "
+                    f"Centre pixel (512) λ: {centre_wl:.3f} nm | "
+                    f"Tiger est. λ: {laser_wl:.3f} nm | "
+                    f"Live-cal λ: {cal_wl:.3f} nm | "
+                    f"Peak pixel: {pixel_str}"
+                )
+            except Exception as e:
+                self.micro_log.warning(
+                    f"[POST-FIT] Could not report wavelengths: {e}"
+                )
+            # ── END CHANGE ────────────────────────────────────────────────────
+
+
+        return response
     return wrapper
+
 
 def ui_callable(func):
     """
@@ -290,14 +322,18 @@ class MotionControl:
             return False
         
     def get_motor_positions(self, motor_dict, report=True):
-        '''Get the current positions of the motors. Takes a dictionary of motor_labels:hardware_names and returns a list of positions. Motor dict contains the mapping of motor label to motor ID.'''
+        '''Get the current positions of the motors.'''
+        # ── CHANGED: return empty dict immediately if no motors requested ─────────
+        if not motor_dict:
+            return {}
+        # ── END CHANGE ────────────────────────────────────────────────────────────
 
-        motors = [motor_dict[i] for i in motor_dict.keys()]
-        response = self.controller.get_motor_positions(motors)
-        pos_dict = self._parse_motor_positions(response)
+        motors        = [motor_dict[i] for i in motor_dict.keys()]
+        response      = self.controller.get_motor_positions(motors)
+        pos_dict      = self._parse_motor_positions(response)
         labelled_dict = self._return_labelled_positions(pos_dict, motor_dict)
-        
         return labelled_dict
+
     
     def write_motor_positions(self, motor_dict):
         '''Writes the motor positions as defined in motor_dict. Takes a dictionary of motor names and their positions. Returns the response from the controller.'''
@@ -317,12 +353,24 @@ class MotionControl:
 
     def _parse_motor_positions(self, response):
         '''Parses the motor positions from the response string.'''
-        comstring = response[0].strip(' ')
+        if not response or not response[0].strip():
+            self.logger.warning(
+                "_parse_motor_positions: empty response from controller."
+            )
+            return {}
+
+        comstring = response[0].strip()
         positions = comstring.split(' ')
-        pos_dict = {}
+        pos_dict  = {}
         for position in positions:
-            motor, val = position.split(':')
-            pos_dict[motor] = int(val)
+            if ':' not in position:
+                self.logger.warning(
+                    f"_parse_motor_positions: skipping malformed token "
+                    f"{position!r}"
+                )
+                continue
+            motor, val        = position.split(':')
+            pos_dict[motor]   = int(val)
         return pos_dict
 
         
@@ -472,6 +520,51 @@ class MotionControl:
         self._laser_steps = value
 
 
+
+
+
+class Instrument(ABC):
+    def __init__(self):
+        self.command_functions = {}
+
+    def _integrity_checker(self):
+        """
+        Checks that every UI-callable method is in command_functions
+        and that every command_functions entry is actually UI-callable.
+        """
+
+        # 1) Gather all methods (bound or unbound) decorated with @ui_callable
+        ui_callable_methods = set()
+        # Because we want bound methods for the instance, we use `inspect.ismethod`.
+        # That ensures we get `self.run_scan_spectrum` bound to `self`, etc.
+        for _, method in inspect.getmembers(self, predicate=inspect.ismethod):
+            if getattr(method, 'is_ui_process_callable', False):
+                ui_callable_methods.add(method)
+
+        # 2) Gather all methods that appear in your command_functions dict
+        cmd_methods = set(self.command_functions.values())
+
+        # 3) Compare them
+        if ui_callable_methods != cmd_methods:
+            # This means at least one UI-callable method is missing
+            # from self.command_functions or vice versa.
+            missing_in_dict = ui_callable_methods - cmd_methods
+            missing_in_ui = cmd_methods - ui_callable_methods
+
+            message = []
+            if missing_in_dict:
+                message.append(
+                    f"These @ui_callable methods are not in command_functions: "
+                    f"{[m.__name__ for m in missing_in_dict]}"
+                )
+            if missing_in_ui:
+                message.append(
+                    f"These methods in command_functions are not decorated with @ui_callable: "
+                    f"{[m.__name__ for m in missing_in_ui]}"
+                )
+            raise ValueError("\n".join(message))
+
+        print(f"{self.__class__} integrity check passed")
 
 
 
@@ -700,7 +793,7 @@ class Microscope(Instrument):
     def set_calibrated_laser_wavelength(self, calibrated_wavelength):
         '''Sets the calibrated wavelength attribute, and updates the acqctrl dictionary with the calibrated wavelength'''
         self.interface.acq_ctrl._current_parameters['laser_wavelength'] = calibrated_wavelength
-        self.interface.acq_ctrl._current_parameters['laser_wavelength_uncalibrated'] = self.laser_wavelengths.get('l1', None) # for legacy support and calibrations
+        self.interface.acq_ctrl._current_parameters['laser_wavelength_uncalibrated'] = self.interface.laser.get_estimated_wavelength() # for legacy support and calibrations
         self.laser_calibrated = True
         self.laser_wavelength_calibrated = round(calibrated_wavelength, 3)
 
@@ -724,19 +817,19 @@ class Microscope(Instrument):
             # return None
 
 
-        estimated_wavelength = self.laser_wavelengths.get('l1')
+        estimated_wavelength = self.interface.laser.get_estimated_wavelength()
         
         original_slit_width = self.report_enterance_slit_width
         original_acqtime = copy(self.interface.acq_ctrl.general_parameters['acquisition_time'])
         original_motor_positions = self.motion_control.get_motor_positions(self.motion_control.generate_motor_dict(self.action_groups['grating_wavelength'])) # grab the original motor positions for the grating motors to restore later
         original_spec_wl = self.report_spectrometer_wavelength
         calibrated_wavelength = None
-        current_laser_wavelength = self.laser_wavelengths.get('l1') #TODO change to self.laser_wavelengh when static reporting is implemented
+        current_laser_wavelength = self.interface.laser.get_estimated_wavelength() #TODO change to self.laser_wavelengh when static reporting is implemented
         
         self.set_acquisition_time(0.2)  # Set acquisition time to 0.2s for laser detection
         self.go_to_grating_wavelength(estimated_wavelength)
         self.go_to_spectrometer_wavelength(estimated_wavelength)  # Move spectrometer to laser wavelength
-        self.set_spectrometer_enter_slit(5)
+        self.set_spectrometer_enter_slit(7)
         self.go_to_monochromator_wavelength(current_laser_wavelength - 10) # moves the laser line past the intermediate slit (spatial filter) in the double monochromator so that a strong laser signal can be passed to the spectrometer
 
         attempts = 0
@@ -1673,13 +1766,20 @@ class Microscope(Instrument):
    
     @property
     def current_laser_wavenumber(self):
-        '''Takes the current laser wavelength and calculates the absolute wavenumbers.'''
-        wavelength_sample = next(iter(self.laser_wavelengths.values()))
-        return 10_000_000/wavelength_sample
+        '''
+        Laser wavenumber calculation disabled — Ti:Sapphire laser is tuned
+        via piezomotor. Returns 0.0 for compatibility with callers.
+        '''
+        return 0.0
 
     @property
     def report_laser_wavelength(self):
-        return round(self.laser_wavelengths.get('l1', 'KeyError'), 2)
+        '''
+        Laser wavelength reporting disabled — Ti:Sapphire laser is tuned
+        via piezomotor. Returns 0.0 for compatibility with callers.
+        '''
+        return 0.0
+
 
     @property
     def report_calibrated_laser_wavelength(self):
@@ -1712,9 +1812,12 @@ class Microscope(Instrument):
     
     @property
     def current_monochromator_wavenumber(self):
-        '''Takes the current grating wavelength and calculates the absolute wavenumbers.'''
-        wavelength_sample = next(iter(self.monochromator_wavelengths.values()))
-        return 10_000_000/wavelength_sample
+        '''
+        Monochromator wavenumber calculation disabled — Ti:Sapphire laser
+        is tuned via piezomotor. Returns 0.0 for compatibility with callers.
+        '''
+        return 0.0
+
 
 
     @ui_callable
@@ -1930,6 +2033,7 @@ class Microscope(Instrument):
         return self.motion_control.get_motor_positions(self.action_groups['monochromator_wavelength'])
         
     @ui_callable
+    @live_laser_calibration
     def go_to_wavelength_all(self, wavelength, shift=True):
         """
         Move all components (laser, monochromator, and spectrometer) to the specified wavelength.
@@ -2235,6 +2339,20 @@ class Microscope(Instrument):
         
         return True
 
+    def calculate_laser_wavelength(self, current_pos=None):
+        """
+        Laser wavelength calculation disabled — the Ti:Sapphire laser
+        (Tiger) is tuned via piezomotor and does not use stepper motors.
+        Wavelength is tracked by TigerLaser.get_estimated_wavelength().
+
+        Returns an empty dict for compatibility with callers that iterate
+        over the result.
+        """
+        self.laser_steps       = {}
+        self.laser_wavelengths = {}
+        return {}
+
+
     def calculate_laser_steps_to_wavelength(self, target_wavelength):
         '''
         Calculates the target steps and move steps needed for laser motors to reach target wavelength.
@@ -2279,47 +2397,42 @@ class Microscope(Instrument):
     
     @ui_callable
     @live_laser_calibration
-    @apply_pseudocal_forwards
     def go_to_laser_wavelength(self, wavelength):
         """
-        Move the laser to the specified wavelength.
-        
+        Move the Tiger Ti:Sapphire laser to the specified wavelength
+        via the piezomotor calibration.
+
         Parameters:
         wavelength (float): Target wavelength in nm
-        
+
         Returns:
         bool: True if successful, False otherwise
         """
         wavelength = string_to_float(wavelength)
-        # Validate the wavelength is within allowed range
+
         if self.check_laser_wavelength(wavelength) is False:
             return False
 
         if not self.camera.stop_flag.is_set():
-            self.stop_continuous_acquisition() # Stop camera if running to avoid conflicts during calibration
+            self.stop_continuous_acquisition()
             self.micro_log.debug("NOTE: Live camera was running. Stopped")
-        # Safety: close shutter during movement
-        # self.close_mono_shutter()
-        
-        # Get target positions from calibration service
-        # Assumes the calibration service has a wl_to_steps method that returns a dictionary
-        target_positions = self.calibration_service.wl_to_steps(wavelength, self.action_groups['laser_wavelength'])
-        
-        # Move to target positions
-        moved = self.go_to_laser_steps(target_positions)
-              
-        # Safety checks and reopen shutter
-        # self.laser_safety_check()
-        # self.open_mono_shutter()
-        
-        # Report primary wavelength
-        if moved:
-            self.laser_calibrated = False # for tracking live calibration status
+
+        success = self.interface.laser.go_to_wavelength(wavelength)
+
+        if success:
+            self.laser_calibrated          = False
             self.laser_wavelength_calibrated = None
-            self.micro_log.debug("Laser no longer calibrated...")
+            self.micro_log.info(
+                f"Laser moved to {wavelength:.3f} nm  |  "
+                f"est. wl: "
+                f"{self.interface.laser.get_estimated_wavelength():.3f} nm"
+            )
         else:
-            self.micro_log.info("Laser motors already at target position - no motion initiated.")
-        return True
+            self.micro_log.warning(
+                f"go_to_laser_wavelength: move to {wavelength:.3f} nm failed."
+            )
+
+        return success
 
 
     @ui_callable
@@ -2634,26 +2747,32 @@ class Microscope(Instrument):
         return 
     
     # @apply_pseudocal_backwards
-    def calculate_laser_wavelength(self, current_pos=None):
+    def calculate_grating_wavelength(self, current_pos=None):
         """
-        Calculate laser wavelength from motor positions.
-        
-        Parameters:
-        current_pos (dict, optional): Current motor positions. If None, gets current positions.
-        
-        Returns:
-        dict: Dictionary of motor names to calculated wavelengths {'l1': 800.0, 'l2': 800.5}
+        Calculate grating wavelength from motor positions.
+        Returns empty dict if no grating motors are responding.
         """
         if current_pos is None:
-            current_pos = self.get_laser_motor_positions()
+            try:
+                current_pos = self.get_grating_motor_positions()
+            except Exception as e:
+                self.micro_log.warning(
+                    f"calculate_grating_wavelength: could not get motor "
+                    f"positions ({e}) — returning empty dict."
+                )
+                self.grating_steps      = {}
+                self.grating_wavelengths = {}
+                return {}
 
-        self.laser_steps = current_pos
-        
-               
-        # Calculate wavelengths for each motor using calibration functions
-        self.laser_wavelengths = self.calibration_service.steps_to_wl(current_pos)
+        if not current_pos:
+            self.grating_steps       = {}
+            self.grating_wavelengths = {}
+            return {}
 
-        return self.laser_wavelengths
+        self.grating_steps       = current_pos
+        self.grating_wavelengths = self.calibration_service.steps_to_wl(current_pos)
+        return self.grating_wavelengths
+
     
     def calculate_polarization_angles(self):
         pass
@@ -2694,3 +2813,62 @@ class Microscope(Instrument):
         self.current_shift = wavenumber
         self.micro_log.info(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
+
+class Camera(Instrument):
+    def __init__(self, interface, simulate=False):
+        super().__init__()
+        self.interface = interface
+        self.simulate = simulate
+        self.command_functions = {
+        }
+
+        self._integrity_checker()
+
+    def __str__(self):
+        return "Camera"
+
+    def __call__(self, command: str, *args, **kwargs):
+        if command not in self.command_functions:
+            raise ValueError(f"Unknown camera command: '{command}'")
+        return self.command_functions[command](*args, **kwargs)
+    
+    def initialise(self):
+        self.connect()
+    
+    def connect(self):
+        print("Connecting to the camera.")
+        self.serial = self.connect_to_camera()
+
+    def connect_to_camera(self):
+        return serial.Serial
+
+
+class Spectrometer(Instrument):
+    def __init__(self, interface, simulate=False):
+        super().__init__()
+        self.interface = interface
+        self.simulate = simulate
+        self.command_functions = {
+            'get_spectrometer_position': self.get_spectrometer_position,
+            'go_to_position': self.go_to_position
+        }
+
+        self._integrity_checker()
+
+    def __str__(self):
+        return "Spectrometer"
+
+    def __call__(self, command: str, *args, **kwargs):
+        if command not in self.command_functions:
+            raise ValueError(f"Unknown spectrometer command: '{command}'")
+        return self.command_functions[command](*args, **kwargs)
+
+    @abstractmethod
+    @ui_callable
+    def get_spectrometer_position(self):
+        print("Getting the current position of the spectrometer.")
+
+    @abstractmethod
+    @ui_callable
+    def go_to_position(self, position):
+        print("Going to the position: {}".format(position))
