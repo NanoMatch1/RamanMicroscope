@@ -4,6 +4,95 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## Simulation repair and test harness (2026-08-20)
+
+Follow-up to the migration commits below. Simulate mode did not start at
+all; fixed that and added the missing test coverage. All fixes verified by
+reinstating each bug and confirming the corresponding test fails.
+
+### Fixed
+
+- `instruments/spectrometers/triax.py`: the simulate branch of
+  `_send_command_to_spectrometer()` called `self.spectrometer.query()` —
+  the **pyvisa** API left behind by the GPIB implementation.
+  `SimulatedTriaxSerial` mirrors **pyserial** (`write`/`read`), so every
+  simulated read raised `AttributeError`. Because `Triax.initialise()`
+  reads the position, this aborted startup entirely: simulate mode was
+  completely unusable. Same root cause as the dead `_flush_read_buffer`
+  removed in `19e68df`.
+- `instruments_old.py` `report_status()`: passed `{all_motors}` — a set
+  literal wrapping the motor dict — to `identify_microscope_mode()`,
+  raising `TypeError: unhashable type: 'dict'` on every `report` command
+  that recalculated state.
+- `instruments_old.py` `camera_info()`: called `self.camera.camera_info()`,
+  which no camera class has ever implemented (the retired Tucsen class
+  lacked it too, so `caminfo` was already broken before the migration).
+  Now calls `get_camera_info()`, which `PIXISCamera` does provide.
+- `instruments_old.py` `detect_microscope_mode()`: prompted via `input()`
+  when the mode motor was not at exactly ±50000. In simulation the motor
+  starts elsewhere, so this always prompted — during `initialise()`,
+  making any headless or automated run hang on stdin. Now defaults to
+  `ramanmode` when simulating; real-hardware behaviour is unchanged, since
+  there the prompt is correct (the software genuinely cannot know the
+  mode).
+- `simulation.py`: `RAMAN_MODE_STEPS` was commented out but still
+  referenced by `_raman_mode()`/`_image_mode()`, so both raised
+  `AttributeError`. Restored. **Note:** its magnitude (100000) disagrees
+  with `microscope_config.json` (`mode: 100000`) versus
+  `detect_microscope_mode()`'s ±50000 test — only the sign is currently
+  relied upon. Worth reconciling against the firmware.
+- `simulation.py`: added the public `send_command()` that
+  `SimulatedArduinoSerial`'s own docstring already documented but which
+  did not exist, so tests no longer reach into `_parse_command()`.
+
+### Testing
+
+- **`test_headless_simulation.py` (new, 20 tests).** Full-workflow test
+  driving the application through `Interface._command_handler` exactly as
+  a CLI user would — startup, command registry, laser tuning and homing,
+  spectrometer reads/moves, camera acquisition, microscope orchestration.
+  Runs standalone (`python test_headless_simulation.py`) or under pytest.
+  It replaces stdin with an empty stream so any prompt reached during an
+  automated run fails fast instead of hanging. Includes explicit
+  regression guards for each bug above. It snapshots and restores
+  `tiger_step_position.json` so running the suite does not leave the
+  laser's persisted position holding a simulated value.
+- **`test_controller_simulated.py` (repaired, 9 tests).** Was importing
+  `simulated_controller`, a module that does not exist, so the suite had
+  been uncollectable — these failures predate the Tiger work. Repointed
+  at `simulation.SimulatedArduinoSerial` (the class actually used at
+  runtime), corrected the expected line ending to the protocol's CRLF,
+  and fixed the `m...m` envelope spacing (`'m gsh on m'` → `'mgsh onm'`;
+  the parser partitions on the first space, so the padded form yielded an
+  empty command token). Mode-switch test now asserts a round trip rather
+  than a magic step count.
+- Total: **29 passing** (9 unit + 20 workflow).
+
+### Known issues added
+
+10. **`calibration/tiger_step_position.json` is tracked in git but is
+    per-machine runtime hardware state**, exactly analogous to
+    `instrument_state.json`, which is already gitignored. Pulling a
+    committed value onto the lab machine would tell `TigerLaser` the
+    piezomotor is somewhere it physically is not, making the next
+    relative move wrong. Recommend `git rm --cached` + gitignore in the
+    cleanup pass; the lab machine would keep its local copy.
+11. **`interface_run_me.py` has `simulate = True` hard-coded** at the
+    bottom, overriding the platform detection above it. Deliberately
+    added for local testing and left uncommitted, but it must not reach
+    the lab machine: it would run the microscope fully simulated with no
+    hardware moving. A `--simulate` command-line flag would be a safer
+    mechanism.
+12. **`simulation.py:SimulatedArduinoController` is dead code.** The
+    runtime path uses `SimulatedArduinoSerial`; this second class is
+    unused, implements an older non-envelope protocol, and its
+    `__init__` never creates the `laser_motors`/`monochromator_motors`
+    attributes its own methods reference. Deletion candidate.
+13. **`Triax.go_to_position()` is misleadingly named** — it sends `F0`,
+    a *relative* grating move, so `sg 105500` shifts by 105500 steps
+    rather than moving to that position. The simulator faithfully
+    reproduces this. Pre-existing, but worth renaming.
+
 ## [Unreleased] — Tsunami → Tiger laser migration (2026-08-20)
 
 Untracked working-tree edits made in the Melbourne lab to connect a new
