@@ -92,11 +92,16 @@ def test_homing(sim):
 
 def test_raman_and_image_mode(sim):
     """
-    Mode switching moves motor 2A (beamsplitters) by +/-6000 steps.
+    The firmware's bare 'ramanmode'/'imagemode' commands move motor 2A by
+    +/-6000 steps. Asserted against the firmware, which is ground truth:
+    arduino_mega_develop.ino ramanMode() does stepperA2.move(6000) and
+    imageMode() does stepperA2.move(-6000).
 
-    The magnitude is asserted explicitly against the firmware, which is the
-    ground truth: arduino_mega_develop.ino ramanMode() does
-    stepperA2.move(6000) and imageMode() does stepperA2.move(-6000).
+    NOTE: this is a LEGACY firmware path -- the firmware itself labels it
+    "// Legacy mode commands". The application never sends these strings;
+    Microscope.raman_mode() moves 2A by +/-100000 via the o...o envelope
+    instead. This test covers the protocol as the firmware implements it,
+    not the path the microscope actually uses. See MODERNIZATION.md 2.3.
     """
     # ramanmode adds +6000 to 2A
     resp_raman = sim.send_command('ramanmode')
