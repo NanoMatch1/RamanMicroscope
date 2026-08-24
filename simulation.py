@@ -29,13 +29,22 @@ class SimulatedArduinoSerial:
     MODULES = ('1','2','3','4')
     MOTORS  = ('A','X','Y','Z')
     # Steps to move motor 2A (beamsplitters) into Raman mode; image mode is
-    # the negation. Restored from a commented-out line — _raman_mode() and
-    # _image_mode() both reference it, so without it they raise
-    # AttributeError. NOTE: microscope_config.json uses mode: 100000 and
-    # Microscope.detect_microscope_mode() tests against +/-50000, so the
-    # magnitude here is not consistent with the rest of the system; only the
-    # sign (negative = Raman) is relied upon.
-    RAMAN_MODE_STEPS = -100_000
+    # the negation. Value taken from the firmware, which is the ground
+    # truth: arduino_mega_develop.ino ramanMode() does stepperA2.move(6000)
+    # and imageMode() does stepperA2.move(-6000).
+    #
+    # This was previously a commented-out '-100_000', which is neither the
+    # right sign nor the right magnitude -- that number is the homing
+    # slow-approach move elsewhere in the same firmware file, evidently
+    # copied across by mistake.
+    #
+    # NOTE: Microscope.raman_mode() does NOT use this path. It moves the
+    # mode motor by microscope_config.json's mode: 100000 directly, rather
+    # than sending the firmware's 'ramanmode' command, so the two disagree.
+    # Separately, detect_microscope_mode() tests position against +/-50000,
+    # which is a software sentinel rather than a physical step count. See
+    # MODERNIZATION.md 2.3.
+    RAMAN_MODE_STEPS = 6000
 
     def __init__(self, com_port=None, baud=None, report=True):
         # Initialize every motor to zero position
@@ -226,104 +235,6 @@ class SimulatedArduinoSerial:
         # module 2, motor A  → -6000 steps
         self._move('2', 'A', -self.RAMAN_MODE_STEPS)
         return "Moving to Image Mode..."
-
-
-
-class SimulatedArduinoController:
-    """Simulated Arduino controller for stepper motors"""
-    
-    def __init__(self, interface=None, com_port=None, baud=None, report=True):
-        self.motor_running = False
-        self.shutter_status = "off"
-        self.report = report
-    
-    def connect(self):
-        """Simulate connection to Arduino"""
-        print("Connected to simulated Arduino")
-        return serial.Serial  # Return mock object
-    
-    def send_command(self, command):
-        """Process commands sent to Arduino and return simulated responses"""
-        if self.report:
-            print(f'>UNO:{command}')
-            
-        cmd_parts = command.split(' ')
-        cmd = cmd_parts[0].lower()
-        
-        # Handle different command types
-        if cmd in ['apos', 'get_laser_positions']:
-            positions = ','.join([f"X{self.laser_motors[0]}", 
-                                 f"Y{self.laser_motors[1]}", 
-                                 f"Z{self.laser_motors[2]}", 
-                                 f"A{self.laser_motors[3]}"])
-            return [f'S0:<P>{positions}</P>', '#CF']
-        
-        elif cmd in ['bpos', 'get_monochromator_positions']:
-            positions = ','.join([f"X{self.monochromator_motors[0]}", 
-                                 f"Y{self.monochromator_motors[1]}", 
-                                 f"Z{self.monochromator_motors[2]}", 
-                                 f"A{self.monochromator_motors[3]}"])
-            return [f'S0:<P>{positions}</P>', '#CF']
-        
-        elif cmd == 'aisrun' or cmd == 'bisrun':
-            return ['S0:Not running', '#CF']
-            
-        elif cmd == 'ld0':  # Light sensor
-            return [f'S0:{randint(1000, 5000)}', '#CF']
-            
-        elif cmd == 'gsh':  # Shutter
-            if len(cmd_parts) > 1:
-                self.shutter_status = "on" if "on" in cmd_parts[1].lower() else "off"
-            return [f'S0:Shutter {self.shutter_status}', '#CF']
-            
-        elif cmd in ['setposa', 'setposb']:
-            # Set absolute position of motors
-            if len(cmd_parts) > 1:
-                try:
-                    positions = cmd_parts[1].split(',')
-                    motors = self.laser_motors if cmd == 'setposa' else self.monochromator_motors
-                    
-                    for i, pos in enumerate(positions[:4]):
-                        if pos.strip():
-                            motors[i] = int(pos)
-                    
-                    return ['S0:Position set', '#CF']
-                except ValueError:
-                    return ['F0:Invalid position values', '#CF']
-            return ['F0:Missing position values', '#CF']
-            
-        # Motor movement commands (l1, l2, g1, g2, etc.)
-        elif cmd in ['l1', 'l2', 'l3', 'l4', 'g1', 'g2', 'g3', 'g4']:
-            if len(cmd_parts) > 1:
-                try:
-                    steps = int(cmd_parts[1])
-                    motor_type = 'A' if cmd.startswith('l') else 'B'  # laser or monochromator
-                    motor_index = int(cmd[1]) - 1  # Convert to 0-based index
-                    
-                    if motor_type == 'A':
-                        self.laser_motors[motor_index] += steps
-                    else:
-                        self.monochromator_motors[motor_index] += steps
-                        
-                    return ['S0:Success', '#CF']
-                except (ValueError, IndexError):
-                    return ['F0:Invalid command', '#CF']
-
-        # Default for unrecognized commands
-        return ['F0:Unknown command', '#CF']
-    
-    def get_laser_motor_positions(self):
-        """Return simulated laser motor positions"""
-        return self.laser_motors
-    
-    def get_monochromator_motor_positions(self):
-        """Return simulated monochromator motor positions"""
-        return self.monochromator_motors
-    
-    def initialise(self):
-        """Initialize the simulated Arduino"""
-        self.connect()
-        print("Simulated Arduino initialized")
 
 
 class SimulatedCamera:

@@ -92,21 +92,21 @@ def test_homing(sim):
 
 def test_raman_and_image_mode(sim):
     """
-    Mode switching moves motor 2A (beamsplitters) by RAMAN_MODE_STEPS and
-    back. Asserted as a round trip rather than against a fixed magnitude,
-    because the step count is a physical constant that differs between
-    simulation.py, microscope_config.json and
-    Microscope.detect_microscope_mode() and is not yet reconciled.
-    """
-    start = sim.current['2']['A']
+    Mode switching moves motor 2A (beamsplitters) by +/-6000 steps.
 
+    The magnitude is asserted explicitly against the firmware, which is the
+    ground truth: arduino_mega_develop.ino ramanMode() does
+    stepperA2.move(6000) and imageMode() does stepperA2.move(-6000).
+    """
+    # ramanmode adds +6000 to 2A
     resp_raman = sim.send_command('ramanmode')
     assert resp_raman == 'Moving to Raman Mode...' + CRLF
-    assert sim.current['2']['A'] == start + sim.RAMAN_MODE_STEPS
+    assert sim.current['2']['A'] == 6000
 
+    # imagemode subtracts 6000 from 2A
     resp_image = sim.send_command('imagemode')
     assert resp_image == 'Moving to Image Mode...' + CRLF
-    assert sim.current['2']['A'] == start  # back where it started
+    assert sim.current['2']['A'] == 0  # back where it started
 
 
 def test_unrecognized_command(sim):

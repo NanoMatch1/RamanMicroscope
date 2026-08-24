@@ -1,11 +1,27 @@
-data/
+# ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-delme.py
+*.egg-info/
+.venv/
+venv/
+
+# ── Editors / IDEs ────────────────────────────────────────────────────────
+.vs/
+.idea/
+
+# ── Acquired data ─────────────────────────────────────────────────────────
+data/
+logs/
+
+# ── Per-machine runtime state ─────────────────────────────────────────────
+# These record where the hardware physically is, or this machine's UI
+# preferences. They must NOT be shared between machines: committing a value
+# from one rig tells another that its hardware is somewhere it is not.
+# tiger_step_position.json is the only record of the Tiger piezomotor's
+# position, so a stale committed value makes the next relative move wrong.
 instrument_state.json
+calibration/tiger_step_position.json
 acquisitioncontrol/acquisition_config.json
 acquisitioncontrol/viewer_settings.json
-instrument_state.json
-logs/
-logs/instrument_errors.log
-
+viewer_settings.json
+instrument_errors.log

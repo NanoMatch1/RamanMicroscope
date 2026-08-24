@@ -3,17 +3,28 @@
 ## Running Commands
 - Run the interface: `python interface_run_me.py`
 - Run the data viewer: `python data_viewer_run_me.py`
-- Run the camera tester: `python camera_tester_v3_run_me.py`
 - Calibration: `python calibration.py`, `python calibration_manual.py`, or `python calibration_auto.py`
+
+## Testing
+Both suites must pass before a change is considered complete.
+- Unit (Arduino protocol): `python -m pytest test_controller_simulated.py -q`
+- Full headless workflow: `python -m pytest test_headless_simulation.py -q`
+  (also runs standalone without pytest: `python test_headless_simulation.py`)
+- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py -q`
+
+The headless suite drives the whole application in simulate mode through
+the real command handler, with stdin replaced by an empty stream so any
+interactive prompt fails fast instead of hanging. Never add a bare
+`input()` to library code — see MODERNIZATION.md 2.1.
 
 ## Code Style Guidelines
 - **Language**: Python 3.x
 - **Formatting**: 4-space indentation, max line length 100 characters
 - **Imports**: Group standard library, third-party, and local imports in that order
 - **Naming**:
-  - Classes: PascalCase (e.g., `TucamCamera`, `Microscope`)
+  - Classes: PascalCase (e.g., `PIXISCamera`, `TigerLaser`, `Microscope`)
   - Functions/variables: snake_case (e.g., `get_laser_motor_positions`)
-  - Constants: UPPERCASE (e.g., `TUCAMRET`, `TUFRM_FORMATS`)
+  - Constants: UPPERCASE (e.g., `RAMAN_MODE_STEPS`, `STEP_MAX`)
 - **Documentation**: Use docstrings for all functions and classes
 - **Error Handling**: Use try/except blocks for hardware interactions, log errors
 - **Types**: Consider adding type hints to function signatures
@@ -21,8 +32,20 @@
 
 ## Repository Structure
 - Root contains main modules and entry points
-- `/tucsen/` contains camera interface code
-- `/calibrations/` stores calibration data files
+- `microscope.py` holds the `Microscope` orchestration class — the functional
+  core of the system. (Was `instruments_old.py`; renamed because the name
+  wrongly implied it was legacy.)
+- `/instruments/` hardware classes: `lasers/` (Tiger), `spectrometers/` (TRIAX)
+- `/pixisspec/` Princeton Instruments PIXIS camera interface (replaced the
+  Tucsen camera and its `/instruments/cameras/` tree)
+- `/acquisitioncontrol/` acquisition orchestration and the PyQt5 GUI
+- `/calibration/` stores calibration data files
+- `/tools/` standalone diagnostic and calibration scripts, not imported by
+  the application — see `tools/README.md`
+- `/arduino_mega_develop/` controller firmware — the ground truth for the
+  motor command protocol
+- `MODERNIZATION.md` tracks known technical debt and standards work
+- `CHANGELOG.md` tracks functionally significant changes
 
 ## Arduino Communication Architecture
 - **Motor Label Translation**:

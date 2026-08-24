@@ -5,7 +5,7 @@ import threading
 
 from instruments.util_decorators import heartbeat
 from controller import ArduinoMEGA
-from instruments_old import Instrument, Microscope
+from microscope import Instrument, Microscope
 from instruments.instrument_base import Instrument as InstrumentBase
 from instruments import Triax
 from instruments.lasers.tiger_laser import TigerLaser
