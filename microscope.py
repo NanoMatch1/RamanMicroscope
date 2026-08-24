@@ -1,6 +1,5 @@
 
 import inspect
-import serial
 import time
 import numpy as np
 import os
@@ -12,7 +11,7 @@ import numpy as np
 import os
 import threading
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 from functools import wraps
 
@@ -2824,62 +2823,3 @@ class Microscope(Instrument):
         self.current_shift = wavenumber
         self.micro_log.info(f'Set Raman shift to {wavenumber} cm^-1 for {laser_wavelength} nm excitation')
         return True
-
-class Camera(Instrument):
-    def __init__(self, interface, simulate=False):
-        super().__init__()
-        self.interface = interface
-        self.simulate = simulate
-        self.command_functions = {
-        }
-
-        self._integrity_checker()
-
-    def __str__(self):
-        return "Camera"
-
-    def __call__(self, command: str, *args, **kwargs):
-        if command not in self.command_functions:
-            raise ValueError(f"Unknown camera command: '{command}'")
-        return self.command_functions[command](*args, **kwargs)
-    
-    def initialise(self):
-        self.connect()
-    
-    def connect(self):
-        print("Connecting to the camera.")
-        self.serial = self.connect_to_camera()
-
-    def connect_to_camera(self):
-        return serial.Serial
-
-
-class Spectrometer(Instrument):
-    def __init__(self, interface, simulate=False):
-        super().__init__()
-        self.interface = interface
-        self.simulate = simulate
-        self.command_functions = {
-            'get_spectrometer_position': self.get_spectrometer_position,
-            'go_to_position': self.go_to_position
-        }
-
-        self._integrity_checker()
-
-    def __str__(self):
-        return "Spectrometer"
-
-    def __call__(self, command: str, *args, **kwargs):
-        if command not in self.command_functions:
-            raise ValueError(f"Unknown spectrometer command: '{command}'")
-        return self.command_functions[command](*args, **kwargs)
-
-    @abstractmethod
-    @ui_callable
-    def get_spectrometer_position(self):
-        print("Getting the current position of the spectrometer.")
-
-    @abstractmethod
-    @ui_callable
-    def go_to_position(self, position):
-        print("Going to the position: {}".format(position))
