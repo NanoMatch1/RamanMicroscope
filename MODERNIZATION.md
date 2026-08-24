@@ -173,21 +173,55 @@ elsewhere in the same firmware file (`:335`), evidently copied across by
 mistake. Corrected to `6000`, and `test_controller_simulated.py` now
 asserts the firmware value explicitly rather than a round trip.
 
-**A genuine disagreement remains, and it is a behavioural one:**
+#### TODO — resolve mode switching (needs hardware check with the student)
 
-- The firmware's own `ramanmode` / `imagemode` commands move motor 2A by
-  **±6000** steps.
-- `Microscope.raman_mode()` (`microscope.py:1146`) does **not** send those
-  commands. It calls `move_motors({'mode': -self.mode_steps})` using
-  `microscope_config.json`'s `"mode": 100000`, i.e. **±100000** steps.
-- `detect_microscope_mode()` (`microscope.py:1092-1095`) then tests
-  position against **±50000**, which is a software sentinel it writes
-  itself, not a physical step count.
+Traced end to end. **The ±6000 firmware path is dead code as far as the
+application is concerned**, so the disagreement is less alarming than it
+first looked — but it should still be cleaned up, and there may be a
+better mechanism available now.
 
-So there are two independent mode-switching paths that move the same motor
-by different amounts. Someone needs to determine on the hardware which is
-correct and collapse them to one. Until then, do not assume the mode motor
-position means the same thing to both.
+What actually happens:
+
+| Path | Steps | Reached by |
+|---|---|---|
+| `Microscope.raman_mode()` / `image_mode()` (`microscope.py:1146,1160`) | **±100000** | **This is the live path.** Sends the envelope `o2A±100000o`, then polls `c2Ac`. Verified on the wire. |
+| Firmware `ramanMode()` / `imageMode()` (`.ino:246-254`) | ±6000 | **Nothing in the application.** Only by typing the bare word `ramanmode` at the Arduino serial console. |
+| `detect_microscope_mode()` (`microscope.py:1092-1095`) | ±50000 | A **software sentinel it writes itself** — not a physical position at all. |
+
+Evidence the ±6000 path is vestigial:
+
+- `ramanmode` / `imagemode` are registered as *Microscope* commands
+  (`microscope.py:655-656`), so typing them in the CLI calls the Python
+  methods and never falls through to `controller.send_command()`.
+- Nothing anywhere sends those strings to the controller — the only
+  callers are `test_controller_simulated.py`.
+- The firmware itself brackets them with the comment
+  `// Legacy mode commands` (`.ino:564`).
+
+Samuel's recollection matches the live path: **100000 steps** were needed
+to move between Raman and image mode; the ±6000 in the firmware was a
+workaround from an early input-only test and was never updated.
+
+**To resolve:**
+
+1. **Confirm with the student** whether a limit switch has since been
+   fitted to the mode motor (2A). If so, mode switching should home
+   against it rather than open-loop stepping a magic number — which is
+   the real fix, since an open-loop ±100000 silently mis-positions if a
+   step is ever lost.
+2. Note the firmware currently has only **one shared** limit input,
+   `homingLimitPin = 13` (`.ino:82`, active-low `INPUT_PULLUP`), used by
+   `homeMotor()` for whichever motor is being homed — there are no
+   per-motor endstops. Leveraging a switch for mode position therefore
+   needs either a dedicated pin for 2A, or that shared pin wired to 2A
+   only (which would preclude homing the other axes). The `h2A` command
+   already exists and would work if 2A is the wired axis.
+3. Once decided: delete the dead firmware `ramanMode()`/`imageMode()` and
+   the simulator's `_raman_mode()`/`_image_mode()` mirror of them, or
+   make them agree with the live path. Do not leave three different
+   numbers describing one motor.
+4. Replace the ±50000 sentinel with a real position query, or state
+   plainly in the code that it is a flag, not a measurement.
 
 Others:
 

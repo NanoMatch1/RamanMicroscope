@@ -38,12 +38,15 @@ class SimulatedArduinoSerial:
     # slow-approach move elsewhere in the same firmware file, evidently
     # copied across by mistake.
     #
-    # NOTE: Microscope.raman_mode() does NOT use this path. It moves the
-    # mode motor by microscope_config.json's mode: 100000 directly, rather
-    # than sending the firmware's 'ramanmode' command, so the two disagree.
-    # Separately, detect_microscope_mode() tests position against +/-50000,
-    # which is a software sentinel rather than a physical step count. See
-    # MODERNIZATION.md 2.3.
+    # NOTE: this mirrors a LEGACY firmware path that the application never
+    # exercises. The firmware brackets these commands with
+    # "// Legacy mode commands", and nothing in the codebase sends the bare
+    # 'ramanmode'/'imagemode' strings -- Microscope.raman_mode() moves the
+    # mode motor by microscope_config.json's mode: 100000 through the o...o
+    # envelope instead. detect_microscope_mode() then tests position against
+    # +/-50000, which is a sentinel it writes itself, not a measurement.
+    # Three numbers, one motor. See MODERNIZATION.md 2.3 -- pending a
+    # hardware check on whether a limit switch is now fitted to motor 2A.
     RAMAN_MODE_STEPS = 6000
 
     def __init__(self, com_port=None, baud=None, report=True):
