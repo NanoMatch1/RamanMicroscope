@@ -1,0 +1,10 @@
+# Development and CI dependencies.
+#
+# requirements.txt is pinned exactly, because it records the versions this
+# instrument is known to run on and an accidental upgrade there can change
+# how hardware behaves. Test tooling carries no such risk, so it is pinned
+# loosely — a newer pytest that still speaks the same API is fine.
+
+-r requirements.txt
+
+pytest>=8.0,<10.0
