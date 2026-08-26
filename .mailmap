@@ -1,0 +1,58 @@
+# Author identity map
+#
+# This project accumulated eight git identities across four machines and two
+# institutions, three of which used strings that are not real email addresses
+# ("match@Raman", "sjbrooke@matchbook", "Martin"). Git and GitHub key an author
+# on their email, so those commits render as unlinked strangers.
+#
+# This file is the non-destructive fix: it rewrites how authors are DISPLAYED
+# by `git shortlog`, `git log`, `git blame` and most tooling, without touching
+# a single commit. Nothing here changes history or invalidates a hash.
+#
+# What it does NOT fix: GitHub's contribution graph, which reads the raw commit
+# email and ignores .mailmap. Repairing that needs a real history rewrite
+# (`git filter-repo --mailmap .mailmap`), which changes every commit hash and
+# forces everyone to re-clone. See MODERNIZATION.md.
+#
+# Format:  Canonical Name <canonical@email>  Commit Name <commit@email>
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Samuel Brooke — one person, six identities.
+#
+# Canonical address is the personal one rather than the University of Melbourne
+# address, deliberately: the institutional account will not outlive the work,
+# and the goal is that these commits stay attributable indefinitely.
+# ─────────────────────────────────────────────────────────────────────────────
+Samuel Brooke <sjbrooke1993@gmail.com> NanoMatch <sjbrooke1993@gmail.com>
+Samuel Brooke <sjbrooke1993@gmail.com> Sam <sjbrooke1993@gmail.com>
+Samuel Brooke <sjbrooke1993@gmail.com> NanoMatch1 <40452389+NanoMatch1@users.noreply.github.com>
+Samuel Brooke <sjbrooke1993@gmail.com> MelMatch <sam.brooke@unimelb.edu.au>
+Samuel Brooke <sjbrooke1993@gmail.com> nanomatch <sjbrooke@matchbook>
+Samuel Brooke <sjbrooke1993@gmail.com> samuel@imdea <samuel.brooke@imdea.org>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚠ "match@raman <match@Raman>" is a MACHINE account, not a person.
+#
+# It is the default identity of the lab PC in Melbourne, and it has been used
+# by more than one human:
+#
+#   2025-03-31 .. 2025-09-18   136 commits   Samuel Brooke, working at the rig
+#   2026-08-26 ..                1 commit    whoever is now at the rig
+#
+# .mailmap cannot split an identity by date, so the mapping below credits all
+# of them to Samuel. That is correct for 136 of 137 commits today, and it
+# becomes WRONG the moment anyone else commits from that machine.
+#
+# Therefore: anyone working on the lab PC must set their own git identity
+# before committing. See docs/git_workflow.md. If this mapping ever starts
+# absorbing someone else's work, delete this line rather than leaving it —
+# a misattributed contributor is worse than an unlinked one.
+# ─────────────────────────────────────────────────────────────────────────────
+Samuel Brooke <sjbrooke1993@gmail.com> match@raman <match@Raman>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Other contributors
+# ─────────────────────────────────────────────────────────────────────────────
+# Web-app prototype on feature/webapp (2025-08-29), written during a paired
+# session. Committed with no email set.
+Martin <veronmain@gmail.com> Martin <Martin>
