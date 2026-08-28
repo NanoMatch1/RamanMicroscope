@@ -7,7 +7,7 @@
 #
 # This file is the non-destructive fix: it rewrites how authors are DISPLAYED
 # by `git shortlog`, `git log`, `git blame` and most tooling, without touching
-# a single commit. Nothing here changes history or invalidates a hash.
+# commits.
 #
 # What it does NOT fix: GitHub's contribution graph, which reads the raw commit
 # email and ignores .mailmap. Repairing that needs a real history rewrite
@@ -34,15 +34,13 @@ Samuel Brooke <sjbrooke1993@gmail.com> match@matchpi <sjbrooke1993@gmail.com>
 # ─────────────────────────────────────────────────────────────────────────────
 # ⚠ "match@raman <match@Raman>" is a MACHINE account, not a person.
 #
-# It is the default identity of the lab PC in Melbourne, and it has been used
-# by more than one human:
+# It is the default identity of the lab PC in Melbourne. Every commit under it
+# so far is Samuel's (137 commits, 2025-03-31 .. 2026-08-26, confirmed), so the
+# mapping below is correct today.
 #
-#   2025-03-31 .. 2025-09-18   136 commits   Samuel Brooke, working at the rig
-#   2026-08-26 ..                1 commit    whoever is now at the rig
-#
-# .mailmap cannot split an identity by date, so the mapping below credits all
-# of them to Samuel. That is correct for 136 of 137 commits today, and it
-# becomes WRONG the moment anyone else commits from that machine.
+# It will stop being correct as soon as anyone else commits from that machine,
+# and .mailmap cannot split one identity by date. There is no way to tell from
+# the commit itself which human was sitting at the rig.
 #
 # Therefore: anyone working on the lab PC must set their own git identity
 # before committing. See docs/git_workflow.md. If this mapping ever starts
