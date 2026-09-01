@@ -95,18 +95,19 @@ def run_command(command):
     Send one command through the real CLI command handler, exactly as
     Interface.cli() does, with the chatty logging suppressed.
 
-    Raises AssertionError if the handler reports an error, so that a
-    swallowed exception surfaces as a test failure rather than passing
-    silently — the handler catches everything and returns an error string.
+    Returns the command's value. Raises AssertionError if the handler
+    reports a failure, so that a caught exception surfaces as a test
+    failure rather than passing silently.
     """
-    with contextlib.redirect_stdout(io.StringIO()):
-        result = get_interface()._command_handler(command)
+    result = run_command_raw(command)
+    assert result.ok, f"command {command!r} failed:\n{result.text}"
+    return result.value
 
-    text = str(result)
-    assert 'Error' not in text and 'Traceback' not in text, (
-        f"command {command!r} reported an error:\n{text}"
-    )
-    return result
+
+def run_command_raw(command):
+    """Send one command and return the full CommandResult, pass or fail."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        return get_interface()._command_handler(command)
 
 
 # ----------------------------------------------------------------------------
@@ -154,6 +155,41 @@ def test_integrity_checker_agrees_with_registry():
                        interface.microscope]:
         with contextlib.redirect_stdout(io.StringIO()):
             instrument._integrity_checker()
+
+
+# ----------------------------------------------------------------------------
+# Command results
+# ----------------------------------------------------------------------------
+
+def test_failed_command_returns_structured_failure():
+    """
+    A command that raises must come back as ok=False with the error and a
+    traceback, not as a formatted string and not as a raised exception.
+    Callers (CLI, GUI, remote clients) rely on the flag, never on text.
+    """
+    # A missing required argument raises TypeError before any method body
+    # runs, so this does not depend on how one instrument validates input.
+    result = run_command_raw('gotowavelength')
+    assert result.ok is False
+    assert result.value is None
+    assert 'TypeError' in result.error
+    assert result.traceback and 'Traceback' in result.traceback
+    assert result.command == 'gotowavelength'
+
+
+def test_empty_command_is_a_successful_no_op():
+    """An empty line must not be forwarded to the Arduino as a raw command."""
+    result = run_command_raw('')
+    assert result.ok is True
+    assert result.value is None
+
+
+def test_successful_command_carries_its_value():
+    """The value a method returns is the value on the result, untouched."""
+    result = run_command_raw('rg')
+    assert result.ok is True
+    assert isinstance(result.value, int)
+    assert result.error is None and result.traceback is None
 
 
 # ----------------------------------------------------------------------------

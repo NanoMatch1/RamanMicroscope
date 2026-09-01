@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import QApplication
 from pixisspec.pixiscam import PIXISCamera
 
 from logging_utils import LoggerInterface
+from command_result import CommandResult
 
 def thread_locked(method):
     """
@@ -145,8 +146,19 @@ class Interface:
         for command in commands:
             self.logger.info(f"Running command: {command}")
             result = self._command_handler(command)
-            self.logger.info(result)
+            self._log_result(result)
             self.save_state()
+
+    def _log_result(self, result: CommandResult):
+        """
+        Log the outcome of a command the way the CLI always has.
+
+        Failures are already written to the error log by the handler, so
+        only successes are echoed here; an empty return still gets an
+        acknowledgement so the operator knows the command completed.
+        """
+        if result.ok:
+            self.logger.info(f"[RES] {result.text or 'ok'}")
 
     def _laser_cal_check(self):
         """Temporary diagnostic — prints laser calibration values."""
@@ -220,7 +232,7 @@ class Interface:
                     continue
 
                 result = self._command_handler(command)
-                self.logger.info(f"[RES] {result}")
+                self._log_result(result)
                 self.save_state()
 
             except Exception as e:
@@ -254,13 +266,11 @@ class Interface:
     # GUI command bridge
     # --------------------------------------------------------------------------
 
-    def process_gui_command(self, command: str):
+    def process_gui_command(self, command: str) -> CommandResult:
         """Process a command from the GUI, mirroring CLI behaviour."""
-        cmd    = command.strip()
-        result = self._command_handler(cmd)
-        if result not in [None, '', True, False]:
-            result = str(result).strip()
-            self.logger.info(f"[GUI RES] {result}")
+        result = self._command_handler(command.strip())
+        if result.ok and result.text:
+            self.logger.info(f"[GUI RES] {result.text}")
         self.save_state()
         return result
 
@@ -439,44 +449,42 @@ class Interface:
     # --------------------------------------------------------------------------
 
     @heartbeat
-    def _command_handler(self, command: str):
-        """Handle the command and arguments passed to the Interface."""
+    def _command_handler(self, command: str) -> CommandResult:
+        """
+        Dispatch one command line and return a ``CommandResult``.
+
+        Resolution order is unchanged from the original string-returning
+        version: Interface's own commands, then the instrument registry, then
+        a bare motor label with a step count, and finally raw passthrough to
+        the Arduino controller. Exceptions are caught, written to the error
+        log, and returned as ``ok=False`` so no caller has to string-match.
+        """
         funct, arguments = self._command_parser(command)
+        if funct is None:
+            return CommandResult.success(command)
 
-        if funct in self.interface_commands:
-            try:
-                result = self.interface_commands[funct](*(arguments or []))
-            except Exception as e:
-                error_details = traceback.format_exc()
-                result = f" > Error: {e}\n{error_details}"
+        try:
+            if funct in self.interface_commands:
+                value = self.interface_commands[funct](*arguments)
+
+            elif funct in self.command_map:
+                _, method = self.command_map[funct]
+                value = method(*arguments)
+
+            elif funct in self.microscope.motor_map:
+                motor_id = self.microscope.motor_map[funct]
+                steps = int(arguments[0])
+                value = self.controller.send_command(f'o{motor_id}{steps}o')
+
+            else:
+                value = self.controller.send_command(command)
+
+        except Exception as exc:
+            result = CommandResult.failure(command, exc)
+            self.logger.error(f"Command {command!r} failed: {result.text}")
             return result
 
-        elif funct in self.command_map:
-            _, method = self.command_map[funct]
-            try:
-                result = method(*(arguments or []))
-            except Exception as e:
-                error_details = traceback.format_exc()
-                result = f" > Error: {e}\n{error_details}"
-            return result
-
-        elif funct in self.microscope.motor_map.keys():
-            try:
-                motor_id      = self.microscope.motor_map[funct]
-                steps         = int(arguments[0])
-                motion_command = 'o{}{}o'.format(motor_id, steps)
-                self.controller.send_command(motion_command)
-            except Exception as e:
-                error_details = traceback.format_exc()
-                result = f" > Error: {e}\n{error_details}"
-
-        else:
-            try:
-                result = self.controller.send_command(command)
-            except Exception as e:
-                error_details = traceback.format_exc()
-                result = f" > Error: {e}\n{error_details}"
-            return result
+        return CommandResult.success(command, value)
 
     # --------------------------------------------------------------------------
     # Command parser
