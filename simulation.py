@@ -6,6 +6,7 @@ physical instruments. Each simulated class implements the same interface as its
 real hardware counterpart, but returns simulated data.
 """
 
+import logging
 import time
 import numpy as np
 import serial
@@ -14,6 +15,11 @@ import threading
 
 from random import randint
 from typing import List, Tuple, Dict, Any, Optional, Union
+
+# Simulated devices report through the application logger like real ones,
+# so simulate-mode output reaches every console and never bypasses it via
+# stdout. Child of 'interface', so it shares that logger's handlers.
+_module_logger = logging.getLogger('interface.Simulation')
 
 
 
@@ -64,7 +70,7 @@ class SimulatedArduinoSerial:
         self.buffer = []
         # self.in_waiting = len(self.buffer)  # Simulate serial input buffer
 
-        print("Simulated Arduino initialized")
+        _module_logger.info("Simulated Arduino initialized")
 
     @property
     def in_waiting(self) -> int:
@@ -262,17 +268,17 @@ class SimulatedCamera:
     
     def initialise(self):
         """Initialize the simulated camera"""
-        print("Simulated camera initialized")
+        _module_logger.info("Simulated camera initialized")
         return "Simulated camera initialized"
     
     def refresh(self):
         """Refresh the simulated camera"""
-        print("Refreshing simulated camera")
+        _module_logger.info("Refreshing simulated camera")
         return "Camera refreshed"
     
     def close_camera(self):
         """Close the simulated camera"""
-        print("Simulated camera closed")
+        _module_logger.info("Simulated camera closed")
     
     def _generate_simulated_image(self, width=2048, height=148):
         """Generate a simulated spectral image with Gaussian peak"""
@@ -323,10 +329,10 @@ class SimulatedCamera:
         self.temperature += np.random.normal(0, 0.2)
         
         if self.temperature < target_temp:
-            print(f"Temperature stable ({self.temperature:.1f}°C). Acquiring frame...")
+            _module_logger.debug(f"Temperature stable ({self.temperature:.1f}°C). Acquiring frame...")
             return self.acquire_one_frame(**kwargs)
         else:
-            print(f"Camera too hot ({self.temperature:.1f}°C). Waiting...")
+            _module_logger.warning(f"Camera too hot ({self.temperature:.1f}°C). Waiting...")
             # Cool down in simulation
             self.temperature -= 1.0
             time.sleep(0.5)  # Shorter wait for simulation
@@ -339,7 +345,7 @@ class SimulatedCamera:
     def start_continuous_acquisition(self):
         """Start continuous acquisition in a separate thread"""
         if self.is_running:
-            print("Camera is already running continuous acquisition!")
+            _module_logger.info("Camera is already running continuous acquisition!")
             return
         
         def continuous_task():
@@ -354,18 +360,18 @@ class SimulatedCamera:
                     self.export_data(data, 'transient_data', save_dir=self.transient_dir, overwrite=True)
                     time.sleep(0.1)  # Simulate frame rate
                 except Exception as e:
-                    print(f"Acquisition error: {e}")
+                    _module_logger.warning(f"Acquisition error: {e}")
                     break
         
         acq_thread = threading.Thread(target=continuous_task, daemon=True)
         acq_thread.start()
         
         self.is_running = True
-        print("Started continuous acquisition.")
+        _module_logger.info("Started continuous acquisition.")
     
     def stop_continuous_acquisition(self):
         """Stop the continuous acquisition thread"""
-        print("Stopping continuous acquisition.")
+        _module_logger.info("Stopping continuous acquisition.")
         self.stop_flag.set()
         self.is_running = False
     
@@ -376,37 +382,37 @@ class SimulatedCamera:
         elif isinstance(roi_tuple, (list, tuple)) and len(roi_tuple) == 4:
             self.roi = tuple(int(x) if isinstance(x, (int, float, str)) else x for x in roi_tuple)
         else:
-            print("Invalid ROI format")
+            _module_logger.warning("Invalid ROI format")
         
-        print(f"ROI set to {self.roi}")
+        _module_logger.info(f"ROI set to {self.roi}")
         return self.roi
     
     def set_acqtime(self, value):
         """Set the acquisition/exposure time"""
         try:
             self.exposure = float(value)
-            print(f"Set exposure to {self.exposure}")
+            _module_logger.info(f"Set exposure to {self.exposure}")
         except ValueError:
-            print("Invalid exposure value")
+            _module_logger.warning("Invalid exposure value")
     
     def set_hardware_binning(self, binning_level=1):
         """Set hardware binning level"""
         try:
             self.binning = int(binning_level)
-            print(f"Hardware binning set to level {self.binning}")
+            _module_logger.info(f"Hardware binning set to level {self.binning}")
         except ValueError:
-            print("Invalid binning level")
+            _module_logger.warning("Invalid binning level")
     
     def set_image_and_gain(self, img_mode=1, gain_level=0):
         """Set image mode and gain settings"""
         self.img_mode = img_mode
         self.gain = gain_level
-        print(f"Set image mode to {img_mode} and gain to {gain_level}")
+        _module_logger.info(f"Set image mode to {img_mode} and gain to {gain_level}")
     
     def set_fan_speed(self, speed=3):
         """Set the fan speed"""
         self.fan_speed = speed
-        print(f"Fan speed set to {speed}")
+        _module_logger.info(f"Fan speed set to {speed}")
     
     def check_camera_temperature(self, report=True):
         """Check the simulated camera temperature"""
@@ -414,8 +420,7 @@ class SimulatedCamera:
         self.temperature += np.random.normal(0, 0.1)
         
         if report:
-            print(f"Camera Temperature: {self.temperature:.2f}°C")
-        
+            _module_logger.debug(f"Camera Temperature: {self.temperature:.2f}°C")
         return self.temperature
     
     def export_data(self, data, filename='default', save_dir=None, overwrite=False):
@@ -437,18 +442,18 @@ class SimulatedCamera:
         
         np.save(filepath, data)
         if 'transient' not in save_dir:
-            print(f'Data saved to {filepath}')
+            _module_logger.info(f'Data saved to {filepath}')
     
     def camera_info(self):
         """Print information about the simulated camera"""
-        print("\nSimulated Camera Parameters:")
-        print(f"  ROI: {self.roi}")
-        print(f"  Exposure: {self.exposure} ms")
-        print(f"  Temperature: {self.temperature:.2f}°C")
-        print(f"  Binning Level: {self.binning}")
-        print(f"  Image Mode: {self.img_mode}")
-        print(f"  Gain: {self.gain}")
-        print(f"  Fan Speed: {self.fan_speed}")
+        _module_logger.info("\nSimulated Camera Parameters:")
+        _module_logger.info(f"  ROI: {self.roi}")
+        _module_logger.info(f"  Exposure: {self.exposure} ms")
+        _module_logger.info(f"  Temperature: {self.temperature:.2f}°C")
+        _module_logger.info(f"  Binning Level: {self.binning}")
+        _module_logger.info(f"  Image Mode: {self.img_mode}")
+        _module_logger.info(f"  Gain: {self.gain}")
+        _module_logger.info(f"  Fan Speed: {self.fan_speed}")
 
 
 class SimulatedTriax:
@@ -459,7 +464,7 @@ class SimulatedTriax:
     
     def initialise(self):
         """Initialize the simulated spectrometer"""
-        print("Simulated TRIAX spectrometer initialized")
+        _module_logger.info("Simulated TRIAX spectrometer initialized")
         return self.spectrometer_position
     
     def get_spectrometer_position(self):
@@ -477,20 +482,20 @@ class SimulatedTriax:
             # Simple linear relationship between wavelength and steps for simulation
             # In reality this would use a calibration function
             self.spectrometer_position = int(380000 + (wavelength - 700) * 100)
-            print(f"Simulated TRIAX moved to {wavelength} nm (position: {self.spectrometer_position})")
+            _module_logger.info(f"Simulated TRIAX moved to {wavelength} nm (position: {self.spectrometer_position})")
             return "S0"
         except ValueError:
-            print("Invalid wavelength value")
+            _module_logger.warning("Invalid wavelength value")
             return "F0"
     
     def go_to_position(self, position):
         """Move the simulated spectrometer to a specific position"""
         try:
             self.spectrometer_position = int(position)
-            print(f"Moved to position {self.spectrometer_position}")
+            _module_logger.info(f"Moved to position {self.spectrometer_position}")
             return "OK"
         except ValueError:
-            print("Invalid position value")
+            _module_logger.warning("Invalid position value")
             return "Error"
     
     def send_command(self, command):
@@ -524,7 +529,7 @@ class SimulatedInstrument:
         
     def initialise(self):
         """Initialize the simulated instrument"""
-        print(f"Initialized simulated {self.__class__.__name__}")
+        _module_logger.info(f"Initialized simulated {self.__class__.__name__}")
         return f"Simulated {self.__class__.__name__} initialized"
 
 
@@ -546,15 +551,15 @@ class SimulatedMonochromator(SimulatedInstrument):
         """Set the monochromator to a specific wavelength"""
         try:
             self.wavelength = float(wavelength)
-            print(f"Monochromator set to {self.wavelength} nm (simulated)")
+            _module_logger.info(f"Monochromator set to {self.wavelength} nm (simulated)")
             return f"Wavelength set to {self.wavelength} nm"
         except Exception as e:
-            print(f"Error setting wavelength: {e}")
+            _module_logger.warning(f"Error setting wavelength: {e}")
             return "Error setting wavelength"
     
     def get_wavelength(self):
         """Get the current wavelength of the monochromator"""
-        print(f"Current monochromator wavelength: {self.wavelength} nm (simulated)")
+        _module_logger.info(f"Current monochromator wavelength: {self.wavelength} nm (simulated)")
         return self.wavelength
 
 
@@ -577,7 +582,7 @@ class SimulatedLaser(SimulatedInstrument):
     
     def initialise(self):
         """Initialize the laser"""
-        print("Simulated laser initialized")
+        _module_logger.info("Simulated laser initialized")
         self.is_on = False
         self.power = 50.0
         return "Simulated laser initialized"
@@ -591,27 +596,27 @@ class SimulatedLaser(SimulatedInstrument):
             elif self.power > 100:
                 self.power = 100
                 
-            print(f"Laser power set to {self.power}% (simulated)")
+            _module_logger.info(f"Laser power set to {self.power}% (simulated)")
             return f"Power set to {self.power}%"
         except Exception as e:
-            print(f"Error setting power: {e}")
+            _module_logger.warning(f"Error setting power: {e}")
             return "Error setting power"
     
     def get_power(self):
         """Get the current laser power"""
-        print(f"Current laser power: {self.power}% (simulated)")
+        _module_logger.info(f"Current laser power: {self.power}% (simulated)")
         return self.power
     
     def turn_on(self):
         """Turn the laser on"""
         self.is_on = True
-        print("Laser turned on (simulated)")
+        _module_logger.info("Laser turned on (simulated)")
         return "Laser turned on"
     
     def turn_off(self):
         """Turn the laser off"""
         self.is_on = False
-        print("Laser turned off (simulated)")
+        _module_logger.info("Laser turned off (simulated)")
         return "Laser turned off"
 
 
@@ -633,7 +638,7 @@ class SimulatedStageControl(SimulatedInstrument):
     def move_stage(self, axis=None, distance=None):
         """Move the stage by a specified distance"""
         if axis is None or distance is None:
-            print("Missing axis or distance parameters")
+            _module_logger.warning("Missing axis or distance parameters")
             return "Error: Missing parameters"
             
         try:
@@ -641,17 +646,17 @@ class SimulatedStageControl(SimulatedInstrument):
             distance = float(distance)
             
             if axis not in self.position:
-                print(f"Unknown axis: {axis}")
+                _module_logger.warning(f"Unknown axis: {axis}")
                 return f"Error: Unknown axis {axis}"
                 
             # Simulate movement time
             time.sleep(abs(distance) / self.speed)
             
             self.position[axis] += distance
-            print(f"Moved {axis}-axis by {distance} mm to {self.position[axis]} mm (simulated)")
+            _module_logger.info(f"Moved {axis}-axis by {distance} mm to {self.position[axis]} mm (simulated)")
             return f"Moved to {self.position[axis]} mm"
         except Exception as e:
-            print(f"Movement error: {e}")
+            _module_logger.warning(f"Movement error: {e}")
             return f"Error: {e}"
     
     def home_stage(self, axis=None):
@@ -660,39 +665,39 @@ class SimulatedStageControl(SimulatedInstrument):
             # Home all axes
             time.sleep(sum(abs(pos) for pos in self.position.values()) / self.speed)
             self.position = {"x": 0.0, "y": 0.0, "z": 0.0}
-            print("All axes homed (simulated)")
+            _module_logger.info("All axes homed (simulated)")
             return "All axes homed"
         else:
             # Home specific axis
             try:
                 axis = axis.lower()
                 if axis not in self.position:
-                    print(f"Unknown axis: {axis}")
+                    _module_logger.warning(f"Unknown axis: {axis}")
                     return f"Error: Unknown axis {axis}"
                 
                 time.sleep(abs(self.position[axis]) / self.speed)
                 self.position[axis] = 0.0
-                print(f"{axis}-axis homed (simulated)")
+                _module_logger.info(f"{axis}-axis homed (simulated)")
                 return f"{axis}-axis homed"
             except Exception as e:
-                print(f"Homing error: {e}")
+                _module_logger.warning(f"Homing error: {e}")
                 return f"Error: {e}"
     
     def get_position(self, axis=None):
         """Get the current position of the stage"""
         if axis is None:
             # Return all positions
-            print(f"Current position: X={self.position['x']}, Y={self.position['y']}, Z={self.position['z']} mm (simulated)")
+            _module_logger.info(f"Current position: X={self.position['x']}, Y={self.position['y']}, Z={self.position['z']} mm (simulated)")
             return self.position
         else:
             # Return specific axis position
             try:
                 axis = axis.lower()
                 if axis not in self.position:
-                    print(f"Unknown axis: {axis}")
+                    _module_logger.warning(f"Unknown axis: {axis}")
                     return None
                     
-                print(f"Current {axis}-axis position: {self.position[axis]} mm (simulated)")
+                _module_logger.info(f"Current {axis}-axis position: {self.position[axis]} mm (simulated)")
                 return self.position[axis]
             except Exception:
                 return None
@@ -745,5 +750,5 @@ def inject_simulated_hardware(microscope_instance):
     # Mark as simulated
     microscope_instance.simulate = True
     
-    print("Hardware components replaced with simulated versions")
+    _module_logger.info("Hardware components replaced with simulated versions")
     return microscope_instance

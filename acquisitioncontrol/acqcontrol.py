@@ -7,11 +7,14 @@ import tkinter as tk
 import numpy as np
 import math
 
+import logging
 import traceback
 
 from PyQt5.QtCore import QObject, pyqtSignal
 # from ..instruments.instrument_base import heartbeat
 from instruments.util_decorators import heartbeat
+
+_module_logger = logging.getLogger('interface.Acquisition')
 
 class ScanSequenceGenerator:
 
@@ -32,7 +35,7 @@ class ScanSequenceGenerator:
         try:
             return np.arange(start, end, step).tolist()
         except Exception as e:
-            print(f"Error generating array from {start} to {end} step {step}: {e}")
+            self.acq_ctrl.logger.warning(f"Error generating array from {start} to {end} step {step}: {e}")
             return [start]
 
     def generate_map_sequence(self):
@@ -166,7 +169,7 @@ class CameraScanner:
                     new_frame = self._retry_frame(self.timeout, 2)
 
                 if new_frame is None:
-                    print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
+                    self.logger.warning(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                     return None
 
                 image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
@@ -256,7 +259,7 @@ class CameraScanner:
                 new_frame = self._retry_frame(timeout, retries)
 
             if new_frame is None:
-                print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
+                self.logger.warning(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                 return False, None
 
             image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
@@ -269,7 +272,7 @@ class CameraScanner:
         Retry grab_frame up to `retries` times. Returns first non-None frame or None.
         """
         for attempt in range(1, retries + 1):
-            print(f"Retry {attempt}/{retries} for image data...")
+            self.logger.info(f"Retry {attempt}/{retries} for image data...")
             frame = self.camera.grab_frame_safe(timeout=timeout)
             if frame is not None:
                 return frame
@@ -295,7 +298,7 @@ class CameraScanner:
                         new_frame = self._retry_frame(self.timeout, 2)
 
                     if new_frame is None:
-                        print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
+                        self.logger.warning(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                         return None
 
                     image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
@@ -402,11 +405,11 @@ class AcquisitionControl(QObject):
         self.all_parameters = {dict_name: getattr(self, dict_name) for dict_name in self.__dict__.keys() if dict_name.endswith('_parameters')}
         self.load_config()
 
-        print("Acquisition Control initialized.")
+        self.logger.info("Acquisition Control initialized.")
 
     def toggle_scan_mode(self):
         self.scan_mode = 'linescan' if self.scan_mode == 'map' else 'map'
-        print("Set scan mode to {}".format(self.scan_mode))
+        self.logger.info("Set scan mode to {}".format(self.scan_mode))
 
     @property
     def scan_mode(self):
@@ -516,7 +519,7 @@ class AcquisitionControl(QObject):
             self.estimated_scan_time = scan_time
             return scan_time
         except Exception as e:
-            print(f"Error estimating scan time: {e}")
+            self.logger.warning(f"Error estimating scan time: {e}")
         
 
     def prompt_for_cli_parameters(self):
@@ -576,7 +579,7 @@ class AcquisitionControl(QObject):
                 config = json.load(f)
 
         except Exception as e:
-            print(f"Error loading Acquisition Control configuration file: {e}. Using default parameters.")
+            self.logger.warning(f"Error loading Acquisition Control configuration file: {e}. Using default parameters.")
             config = {'general_parameters': self.general_parameters,
                       'hidden_parameters': self.hidden_parameters,
                       'motion_parameters': self.motion_parameters,
@@ -589,7 +592,7 @@ class AcquisitionControl(QObject):
         self.wavelength_parameters.update(config.get('wavelength_parameters', self.wavelength_parameters))
         self.polarization_parameters.update(config.get('polarization_parameters', self.polarization_parameters))
 
-        print("Acquisition Control configuration loaded successfully.")
+        self.logger.info("Acquisition Control configuration loaded successfully.")
 
     def calculate_relative_motion(self, current_positions, target_positions):
 
@@ -605,7 +608,7 @@ class AcquisitionControl(QObject):
             try:
                 return np.arange(start, end, resolution).tolist()
             except Exception as e:
-                print(f"Error generating array: {e}")
+                self.logger.warning(f"Error generating array: {e}")
                 return [start]
 
         sequence = []
@@ -660,7 +663,7 @@ class AcquisitionControl(QObject):
             try:
                 return abs((end - start)) / resolution
             except Exception as e:
-                print(f"Error generating array: {e}")
+                self.logger.warning(f"Error generating array: {e}")
                 return 1
             
         wavelength_list = get_size(
@@ -714,7 +717,7 @@ class AcquisitionControl(QObject):
         motor_dict = self.interface.microscope.calibration_service.microns_to_steps(micron_dict)
         # self.interface.microscope.move_motors(motor_dict)  # Uncomment this line to actually move the stage
         self.interface.microscope.motion_control.move_motors(motor_dict, backlash=False)
-        print("Sent Command {}".format(motor_dict))
+        self.logger.info("Sent Command {}".format(motor_dict))
         self.logger.info("Stage moved to ({})".format(", ".join([f"{value:.2f}" for value in new_coordinates])))
 
         self.interface.microscope.update_stage_positions(micron_dict)
@@ -765,7 +768,7 @@ class AcquisitionControl(QObject):
             
         image_data = self._acquire_one_frame()
         if image_data is None:
-            print("Error: image data is None. Aborting acquisition.")
+            self.logger.warning("Error: image data is None. Aborting acquisition.")
             return None, None
         return image_data, self.wavelength_axis
         
@@ -803,8 +806,8 @@ class AcquisitionControl(QObject):
 
         self.acquire_scan(
             CancelEvent(),
-            lambda msg: print(msg),
-            lambda percentage: print(f"Progress: {percentage}%")
+            lambda msg: self.logger.info(msg),
+            lambda percentage: self.logger.info(f"Progress: {percentage}%")
         )
         self.logger.info("Scan complete.")
 
@@ -823,9 +826,9 @@ class AcquisitionControl(QObject):
                 os.makedirs(status_dir)
             with open(os.path.join(status_dir, 'failed_steps.json'), 'w') as f:
                 json.dump(failed_steps, f, indent=2)
-            print(f"Failed steps recorded in {os.path.join(status_dir, 'failed_steps.json')}")
+            self.logger.warning(f"Failed steps recorded in {os.path.join(status_dir, 'failed_steps.json')}")
         else:
-            print("All steps completed successfully.")
+            self.logger.info("All steps completed successfully.")
         status_callback("Scan complete.")
         
     def acquire_custom_scan(self):
