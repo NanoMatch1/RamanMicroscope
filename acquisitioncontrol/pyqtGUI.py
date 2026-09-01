@@ -411,9 +411,9 @@ class MainWindow(QMainWindow):
     @run_in_thread_and_refresh
     def send_cli_command(self, cmd):
         self.logger.coms(f"{cmd}")
-        result = self.interface.process_gui_command(cmd)
-        if result is not None:
-            self.logger.info(result)
+        # process_gui_command logs the outcome itself (successes as
+        # "[GUI RES]", failures to the error log), so nothing to echo here.
+        self.interface.process_gui_command(cmd)
 
     def confirm_scan(self, scan_sequence):
         '''Create a popup window to confirm the scan sequence.'''
