@@ -193,6 +193,38 @@ def test_successful_command_carries_its_value():
 
 
 # ----------------------------------------------------------------------------
+# Reporting channel
+# ----------------------------------------------------------------------------
+
+# Commands whose output an operator reads. Every one used to print() to the
+# terminal, which no console but the launching terminal could see.
+REPORTING_COMMANDS = [
+    'wai', 'report', 'stagepos', 'allmotors', 'laserpos', 'monopos',
+    'rg', 'ren', 'wavelength', 'temp', 'caminfo',
+    'x 10', 'x -10', 'stepup 10', 'stepdown 10',
+    'acqtime 0.5', 'nframe 1', 'filename headless_test',
+    'acqtime notanumber', 'nframe notanumber',   # the warning paths too
+]
+
+
+def test_commands_report_through_the_logger_not_stdout():
+    """
+    Nothing a command says may go to stdout. The logger is the one
+    reporting channel every client shares (CLI, Qt console, remote
+    clients); print() reaches only the terminal the process was started
+    from, so anything printed is invisible to everyone else.
+    """
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        for command in REPORTING_COMMANDS:
+            get_interface()._command_handler(command)
+
+    assert captured.getvalue() == '', (
+        "commands wrote to stdout instead of the logger:\n" + captured.getvalue()
+    )
+
+
+# ----------------------------------------------------------------------------
 # Tiger laser
 # ----------------------------------------------------------------------------
 

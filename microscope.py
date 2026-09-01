@@ -1,5 +1,6 @@
 
 import inspect
+import logging
 import time
 import numpy as np
 import os
@@ -16,6 +17,10 @@ from dataclasses import dataclass
 from functools import wraps
 
 from datafit.laser_detection import LaserDetection
+
+# Module-level functions and decorators have no instance logger to use.
+# This is a child of the 'interface' logger, so it shares its handlers.
+_module_logger = logging.getLogger('interface.Microscope')
 
 def enforce_response(func, expected_response=True, callback=None):
     """
@@ -85,7 +90,7 @@ def live_laser_calibration(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         func_name = f"{func.__module__}.{func.__name__}"
-        print(f"{func_name}: CALLED")
+        _module_logger.debug(f"{func_name}: CALLED")
         response = True
         func(self, *args, **kwargs)
         if self.apply_live_calibration is True:
@@ -139,7 +144,7 @@ def string_to_float(value, message=''):
     try:
         return float(value)
     except ValueError:
-        print('Invalid value {}- use a number'.format(message))
+        _module_logger.warning('Invalid value {}- use a number'.format(message))
 
 @dataclass
 class MotorPositions:
@@ -191,13 +196,13 @@ class MotionControl:
         """
         motor_id = self.motor_map.get(motor_label)
         command = f'h{motor_id}'
-        print(f"Homing motor {motor_label}...")
+        self.logger.info(f"Homing motor {motor_label}...")
         response = self.controller.send_command(command)
-        print(response[0])
+        self.logger.info(response[0])
         home_pos = int(response[0].split(' ')[-1])
         expected_home = self.home_positions.get(motor_id, None)
         self.write_motor_positions({motor_label: expected_home})  # Write the expected motor position to the controller (set home position)
-        print("Moving to zero position to release from limit switch...")
+        self.logger.info("Moving to zero position to release from limit switch...")
         self.move_motors({motor_label: -expected_home}, backlash=False) # Move to zero to release from limit switch
 
         return home_pos
@@ -263,7 +268,7 @@ class MotionControl:
             raise ValueError(f"Failed to parse motor status: {', '.join(errors)}")
         elif errors:
             # If we have some errors but still have valid statuses, print warnings
-            print(f"Warning: Some motor status parsing errors: {', '.join(errors)}")
+            self.logger.warning(f"Warning: Some motor status parsing errors: {', '.join(errors)}")
             
         return status
 
@@ -337,10 +342,10 @@ class MotionControl:
     def write_motor_positions(self, motor_dict):
         '''Writes the motor positions as defined in motor_dict. Takes a dictionary of motor names and their positions. Returns the response from the controller.'''
         motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items()}
-        print("Writing motor positions {}".format(motor_id_dict))
+        self.logger.info("Writing motor positions {}".format(motor_id_dict))
         response = self.controller.write_motor_positions(motor_id_dict)
 
-        print("Motor positions written: {}".format(response))
+        self.logger.info("Motor positions written: {}".format(response))
 
 
     def _return_labelled_positions(self, pos_dict, motor_dict):
@@ -480,14 +485,14 @@ class MotionControl:
     def get_laser_motor_positions(self, *args):
         '''Get the current positions of the laser motors.'''
         self.laser_steps = self.get_motor_positions(self.action_groups['laser_wavelength'])
-        print('Current laser pos: {}'.format(self.laser_steps))
+        self.logger.info('Current laser pos: {}'.format(self.laser_steps))
         return self.laser_steps
     
     @ui_callable
     def get_monochromator_motor_positions(self, *args):
         '''Get the current positions of the monochromator motors.'''
         self.monochromator_steps = self.get_motor_positions(self.action_groups['monochromator_wavelength'])
-        print('Current monochromator pos: {}'.format(self.monochromator_steps))
+        self.logger.info('Current monochromator pos: {}'.format(self.monochromator_steps))
         return self.monochromator_steps
 
     @property
@@ -505,7 +510,7 @@ class MotionControl:
     @monochromator_steps.setter
     def monochromator_steps(self, value):
         if len(value) != 4 or not all(isinstance(x, int) for x in value):
-            print('Invalid grating steps')
+            self.logger.warning('Invalid grating steps')
         self._monochromator_steps = value
 
     @property
@@ -515,7 +520,7 @@ class MotionControl:
     @laser_steps.setter
     def laser_steps(self, value):
         if len(value) != 4 or not all(isinstance(x, int) for x in value):
-            print('Invalid laser steps')
+            self.logger.warning('Invalid laser steps')
         self._laser_steps = value
 
 
@@ -563,7 +568,7 @@ class Instrument(ABC):
                 )
             raise ValueError("\n".join(message))
 
-        print(f"{self.__class__} integrity check passed")
+        _module_logger.info(f"{self.__class__} integrity check passed")
 
 
 
@@ -1005,7 +1010,7 @@ class Microscope(Instrument):
     def get_stage_positions_microns(self):
         '''Get the current stage positions in microns. Returns a dictionary of stage positions.'''
         stage = " ".join([f"{axis}{pos}" for axis, pos in self.stage_positions_microns.items()])
-        print("Current stage positions: {}".format(stage))
+        self.micro_log.info("Current stage positions: {}".format(stage))
         return
     
     @ui_callable
@@ -1114,7 +1119,7 @@ class Microscope(Instrument):
                     self.motion_control.write_motor_positions({'mode': -50000 if newmode == 'ramanmode' else 50000})
                     break
                 else:
-                    print("Invalid mode. Please enter 'imagemode' or 'ramanmode'.")
+                    self.micro_log.warning("Invalid mode. Please enter 'imagemode' or 'ramanmode'.")
 
         self.micro_log.info("Microscope mode detected: {}".format(self.microscope_mode))
         return self.microscope_mode
@@ -1313,7 +1318,7 @@ class Microscope(Instrument):
 
                     motor_dict[name] = int(position)
             except ValueError:
-                print('Invalid motor positions format. Use "name:position" delimited by space " " between motors')
+                self.micro_log.warning('Invalid motor positions format. Use "name:position" delimited by space " " between motors')
                 return
             
         motor_id_dict = {self.motor_map[motor]: steps for motor, steps in motor_dict.items() if motor in self.motor_map}
@@ -1342,7 +1347,7 @@ class Microscope(Instrument):
         except FileNotFoundError:
             current_data = {}
         except Exception as e:
-            print('recmot Error:', e)
+            self.micro_log.warning('recmot Error: %s', e)
             current_data = {}
 
 
@@ -1433,10 +1438,10 @@ class Microscope(Instrument):
     @ui_callable
     def go_to_polarization_out(self, angle):
         '''Moves the polarizer to the specified angle.'''
-        print("Not implemented yet")
+        self.micro_log.warning("Not implemented yet")
         return
         self.motion_control.move_motors({'p_out': angle})
-        print('Output polarization set to {} degrees'.format(angle))
+        self.micro_log.info('Output polarization set to {} degrees'.format(angle))
 
     def _parse_stage_motion_command(self, command):
         """
@@ -1452,7 +1457,7 @@ class Microscope(Instrument):
         # If command is a string
         if isinstance(command, str):
             result = {}
-            print(" Need to inplement calibration first. Retrurnign")
+            self.micro_log.warning(" Need to inplement calibration first. Retrurnign")
             return
             # Split string by whitespace and iterate through each component
             for part in command.split():
@@ -1550,7 +1555,7 @@ class Microscope(Instrument):
     @ui_callable
     def enter_focus_mode(self):
         '''Enters the mode for incrementally adjusting the microscope focus at the sample.'''
-        print("Entering focus mode.\nType focus steps in microns.\nType 'exit' to exit focus mode.")
+        self.micro_log.info("Entering focus mode.\nType focus steps in microns.\nType 'exit' to exit focus mode.")
         
         while True:
             command = input()
@@ -1560,7 +1565,7 @@ class Microscope(Instrument):
                 command = float(command)
                 self.move_z(command)
             except ValueError:
-                print("Invalid command. Type 'exit' to exit focus mode.")
+                self.micro_log.warning("Invalid command. Type 'exit' to exit focus mode.")
                 continue
 
 
@@ -1572,7 +1577,7 @@ class Microscope(Instrument):
             imagemode = int(imagemode)
             gain = int(gain)
         except ValueError:
-            print("Values for image mode and gain must be integers")
+            self.micro_log.warning("Values for image mode and gain must be integers")
             return
 
         self.camera.set_image_and_gain(imagemode, gain)
@@ -1590,14 +1595,14 @@ class Microscope(Instrument):
         '''Reads the light-dependent resistor value from the microscope. Used to detect laser light in autocalibrations.'''
         response = self.controller.read_ldr0()
         ldr_value = int(response[0][1:])
-        print("LDR0:", ldr_value)
+        self.micro_log.info('LDR0: %s', ldr_value)
         return ldr_value
     
     @ui_callable
     def run_calibration(self, motor:str, wavelength_range=(750, 850), resolution=5, safety=False):
        
         if motor.lower() not in self.ldr_scan_dict.keys():
-            print("Invalid motor. Must be one of: ", self.ldr_scan_dict.keys())
+            self.micro_log.warning('Invalid motor. Must be one of: %s', self.ldr_scan_dict.keys())
             return
 
 
@@ -1613,7 +1618,7 @@ class Microscope(Instrument):
         initial_laser = copy(self.laser_steps)
 
         wavelengths = np.arange(*wavelength_range, resolution)
-        print(f"Running {motor} calibration for wavelengths: ", wavelengths)
+        self.micro_log.info(f"Running {motor} calibration for wavelengths: {wavelengths}")
         condition = input("Continue? (y/n): ")
         if condition.lower() == 'n':
             return
@@ -1631,16 +1636,16 @@ class Microscope(Instrument):
             # Apply the conversion to ensure the data is serializable
             calibrationDict[float(wl)] = scan_data
 
-            print("Saving state...")        
+            self.micro_log.info("Saving state...")        
 
             with open(os.path.join(self.autocalibrationDir, 'autocal_{}_{}.json'.format(index, motor)), 'w') as f:
                 json.dump(calibrationDict, f)
 
-        print(f"{motor.lower()} Scan complete. Data saved to autocal_{index}_{motor}.json")
+        self.micro_log.info(f"{motor.lower()} Scan complete. Data saved to autocal_{index}_{motor}.json")
 
         self.detector_safety = True
         # self.open_pinhole_shutter()
-        print("Returning to initial position")
+        self.micro_log.info("Returning to initial position")
         self.go_to_laser_steps(initial_laser)
         self.go_to_grating_steps(initial_grating)
 
@@ -1734,10 +1739,10 @@ class Microscope(Instrument):
         """
         # Check if the motor is valid
         if motor not in self.motion_control.motor_map:
-            print("Invalid motor. Must be one of:", list(self.motion_control.motor_map.keys()))
+            self.micro_log.warning('Invalid motor. Must be one of: %s', list(self.motion_control.motor_map.keys()))
 
         if motor not in self.ldr_scan_dict.keys():
-            print("Invalid motor. Must be one of:", list(self.ldr_scan_dict.keys()))
+            self.micro_log.warning('Invalid motor. Must be one of: %s', list(self.ldr_scan_dict.keys()))
             return
             
         # Get scan parameters
@@ -1757,7 +1762,7 @@ class Microscope(Instrument):
         # Get motor ID from the flattened motor map
         motor_id = self.motor_map.get(motor)
         if not motor_id:
-            print(f"Could not find motor ID for {motor}")
+            self.micro_log.warning(f"Could not find motor ID for {motor}")
             return []
 
         # Perform the scan
@@ -1834,13 +1839,13 @@ class Microscope(Instrument):
     def set_acq_spectrum_mode(self):
         '''Sets the acquisition mode to spectrum.'''
         self.camera.acquire_mode = 'spectrum'
-        print('Acquisition mode set to spectrum')
+        self.micro_log.info('Acquisition mode set to spectrum')
     
     @ui_callable
     def set_acq_image_mode(self):
         '''Sets the acquisition mode to CCD image.'''
         self.camera.acquire_mode = 'image'
-        print('Acquisition mode set to image')
+        self.micro_log.info('Acquisition mode set to image')
 
     #? camera commands
 
@@ -1862,10 +1867,10 @@ class Microscope(Instrument):
         try:
             value = float(value)
         except ValueError:
-            print("Invalid acquisition time. Must be a number.")
+            self.micro_log.warning("Invalid acquisition time. Must be a number.")
             return
         if value < 0:
-            print("Acquisition time must be positive.")
+            self.micro_log.warning("Acquisition time must be positive.")
             return
         
         self.interface.acq_ctrl.general_parameters['acquisition_time'] = value
@@ -1875,7 +1880,7 @@ class Microscope(Instrument):
     @ui_callable
     def set_filename(self, filename):
         self.interface.acq_ctrl.general_parameters['filename'] = filename
-        print("Filename set to: ", filename)
+        self.micro_log.info('Filename set to: %s', filename)
 
     @ui_callable
     def set_laser_power(self, value):
@@ -1965,11 +1970,11 @@ class Microscope(Instrument):
         try:
             n_frames = int(n_frames)
         except ValueError:
-            print("Invalid number of frames. Must be an integer.")
+            self.micro_log.warning("Invalid number of frames. Must be an integer.")
             return
         
         self.interface.acq_ctrl.general_parameters['n_frames'] = n_frames
-        print('Number of frames set to: ', n_frames)
+        self.micro_log.info('Number of frames set to: %s', n_frames)
 
     @ui_callable
     def acquire_once(self, filename=None):
@@ -2027,7 +2032,7 @@ class Microscope(Instrument):
         try:
             state = bool(int(state))
         except ValueError:
-            print("Invalid state. Must be 0 or 1.")
+            self.micro_log.warning("Invalid state. Must be 0 or 1.")
             return
         self.interface.camera.enable_auto_temperature_control(state)
 
@@ -2152,7 +2157,7 @@ class Microscope(Instrument):
         if steps is None:
             steps = self.get_spectrometer_position()
         true_wavelength_laser = self.calibration_service.triax_to_wl(float(steps))
-        print('True wavelength: {}. Shifting motor positions to true wavelength'.format(true_wavelength_laser))
+        self.micro_log.info('True wavelength: {}. Shifting motor positions to true wavelength'.format(true_wavelength_laser))
         
         if shift is True:
             grating_wavelength = (10_000_000/true_wavelength_laser) - self.current_shift
@@ -2177,24 +2182,24 @@ class Microscope(Instrument):
         for motor, target in laser_steps.items():
             if motor in current_laser_pos and current_laser_pos[motor] != target:
                 laser_calibrated = False
-                print(f'Laser motor {motor}: Expected {target}, got {current_laser_pos[motor]}')
+                self.micro_log.info(f'Laser motor {motor}: Expected {target}, got {current_laser_pos[motor]}')
         
         if laser_calibrated:
-            print('Laser motors successfully calibrated')
+            self.micro_log.info('Laser motors successfully calibrated')
         else:
-            print('Error calibrating laser motors')
+            self.micro_log.warning('Error calibrating laser motors')
             
         # Verify all monochromator motors reached their targets
         mono_calibrated = True
         for motor, target in mono_steps.items():
             if motor in current_mono_pos and current_mono_pos[motor] != target:
                 mono_calibrated = False
-                print(f'Monochromator motor {motor}: Expected {target}, got {current_mono_pos[motor]}')
+                self.micro_log.info(f'Monochromator motor {motor}: Expected {target}, got {current_mono_pos[motor]}')
         
         if mono_calibrated:
-            print('Monochromator motors successfully calibrated')
+            self.micro_log.info('Monochromator motors successfully calibrated')
         else:
-            print('Error calibrating monochromator motors')
+            self.micro_log.warning('Error calibrating monochromator motors')
 
     @ui_callable
     def reference_calibration_from_wavelength(self, wavelength, shift=True):
@@ -2210,7 +2215,7 @@ class Microscope(Instrument):
             Whether to apply Raman shift correction. Default is True.
         '''
         true_wavelength_laser = float(wavelength)
-        print(f'True wavelength provided: {true_wavelength_laser} nm')
+        self.micro_log.info(f'True wavelength provided: {true_wavelength_laser} nm')
 
         if shift:
             grating_wavenumber = (10_000_000 / true_wavelength_laser) - self.current_shift
@@ -2229,7 +2234,7 @@ class Microscope(Instrument):
         motor_dict.update(target_mono_steps)
         self.write_motor_positions(motor_dict=motor_dict)
 
-        print('All Motors successfully shifted')
+        self.micro_log.info('All Motors successfully shifted')
 
     @ui_callable
     def reference_laser_from_wavelength(self, wavelength):
@@ -2245,7 +2250,7 @@ class Microscope(Instrument):
             Whether to apply Raman shift correction. Default is True.
         '''
         true_wavelength_laser = float(wavelength)
-        print(f'True wavelength provided: {true_wavelength_laser} nm')
+        self.micro_log.info(f'True wavelength provided: {true_wavelength_laser} nm')
 
 
         # Calculate target motor positions from the provided wavelength
@@ -2256,7 +2261,7 @@ class Microscope(Instrument):
         motor_dict.update(target_laser_steps)
         self.write_motor_positions(motor_dict=motor_dict)
 
-        print('Laser Motors successfully shifted')
+        self.micro_log.info('Laser Motors successfully shifted')
 
 
     @ui_callable
@@ -2273,7 +2278,7 @@ class Microscope(Instrument):
             Whether to apply Raman shift correction. Default is True.
         '''
         true_wavelength_laser = float(wavelength)
-        print(f'True wavelength provided: {true_wavelength_laser} nm')
+        self.micro_log.info(f'True wavelength provided: {true_wavelength_laser} nm')
 
         if shift:
             grating_wavenumber = (10_000_000 / true_wavelength_laser) - self.current_shift
@@ -2290,7 +2295,7 @@ class Microscope(Instrument):
         motor_dict.update(target_mono_steps)
         self.write_motor_positions(motor_dict=motor_dict)
 
-        print('Grating Motors successfully shifted')
+        self.micro_log.info('Grating Motors successfully shifted')
 
     @ui_callable
     def reference_monochromator_from_wavelength(self, wavelength, shift=True):
@@ -2306,7 +2311,7 @@ class Microscope(Instrument):
             Whether to apply Raman shift correction. Default is True.
         '''
         true_wavelength_laser = float(wavelength)
-        print(f'True wavelength provided: {true_wavelength_laser} nm')
+        self.micro_log.info(f'True wavelength provided: {true_wavelength_laser} nm')
 
         if shift:
             grating_wavenumber = (10_000_000 / true_wavelength_laser) - self.current_shift
@@ -2323,7 +2328,7 @@ class Microscope(Instrument):
         motor_dict.update(target_mono_steps)
         self.write_motor_positions(motor_dict=motor_dict)
 
-        print('Monochromator Motors successfully shifted')
+        self.micro_log.info('Monochromator Motors successfully shifted')
 
     def wavenumber_to_wavelength(self, wavenumber):
         return 10_000_000/wavenumber
@@ -2344,7 +2349,7 @@ class Microscope(Instrument):
         '''Checks the validity of the entered value for laser wavelength.'''
 
         if not self.check_hard_limits(wavelength, self.hard_limits['laser_wavelength']):
-            print('Laser wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['laser_wavelength']))
+            self.micro_log.warning('Laser wavelength "{}" out of range. Pick a wavelength between {} and {} nm'.format(wavelength, *self.hard_limits['laser_wavelength']))
             return False
         
         return True
@@ -2391,11 +2396,11 @@ class Microscope(Instrument):
                         move_steps[motor_id] = steps_to_move
         
         # Log the calculated positions
-        print(f'Current laser position: {current_pos}')
-        print(f'Target laser position: {target_steps}')
+        self.micro_log.info(f'Current laser position: {current_pos}')
+        self.micro_log.info(f'Target laser position: {target_steps}')
         
         if not move_steps:
-            print('Laser already at target position')
+            self.micro_log.info('Laser already at target position')
             
         return move_steps, target_steps
     
@@ -2403,7 +2408,7 @@ class Microscope(Instrument):
     def invert_calibrations(self):
         '''Inverts the calibration for the laser and monochromator motors.'''
         self.calibration_service.invert_calibrations()
-        print('Calibration inverted')
+        self.micro_log.info('Calibration inverted')
     
     @ui_callable
     @live_laser_calibration
@@ -2550,7 +2555,7 @@ class Microscope(Instrument):
     def check_monochromator_wavelength(self, wavelength):
         wavelength = string_to_float(wavelength)
         if not self.check_hard_limits(wavelength, self.hard_limits['monochromator_wavelength']):
-            print('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(
+            self.micro_log.warning('Wavelength out of range. Pick a wavelength between {} and {} nm'.format(
                 *self.hard_limits['monochromator_wavelength']))
             return False
         return wavelength
@@ -2583,11 +2588,11 @@ class Microscope(Instrument):
                         move_steps[motor_id] = steps_to_move
         
         # Log the calculated positions
-        print(f'Current monochromator position: {current_pos}')
-        print(f'Target monochromator position: {target_steps}')
+        self.micro_log.info(f'Current monochromator position: {current_pos}')
+        self.micro_log.info(f'Target monochromator position: {target_steps}')
         
         if not move_steps:
-            print('Monochromator already at target position')
+            self.micro_log.info('Monochromator already at target position')
             
         return move_steps, target_steps
 
@@ -2656,12 +2661,12 @@ class Microscope(Instrument):
             return
         
         if self.current_laser_wavenumber + limit > self.current_monochromator_wavenumber > self.current_laser_wavenumber - limit:
-            print(f'Warning: Detection is within {limit} wavenumbers of the laser wavelength - press enter to revert to safety')
+            self.micro_log.warning(f'Warning: Detection is within {limit} wavenumbers of the laser wavelength - press enter to revert to safety')
             command = input()
             if command.lower() == 'overwrite':
                 return
             else:
-                print(f'Moving to raman shift of {limit} cm-1')
+                self.micro_log.info(f'Moving to raman shift of {limit} cm-1')
                 self.current_shift = limit + 25
                 self.go_to_wavenumber(self.current_shift)
 
@@ -2797,20 +2802,20 @@ class Microscope(Instrument):
         try:
             wavenumber = float(wavenumber)
         except ValueError:
-            print('Invalid value for wavenumber - use a number')
+            self.micro_log.warning('Invalid value for wavenumber - use a number')
             return
             
         # Get the current laser wavelength
         laser_wavelengths = self.calculate_laser_wavelength()
         
         if not laser_wavelengths:
-            print("Failed to get laser wavelength <Microscope.go_to_wavenumber()>")
+            self.micro_log.warning("Failed to get laser wavelength <Microscope.go_to_wavenumber()>")
             return
             
         # Use l1 wavelength (primary laser wavelength) for calculations
         laser_wavelength = next(iter(laser_wavelengths.values()))
         if not laser_wavelength:
-            print("Failed to determine primary laser wavelength <Microscope.go_to_wavenumber()>")
+            self.micro_log.warning("Failed to determine primary laser wavelength <Microscope.go_to_wavenumber()>")
             return
             
         # Calculate the target wavelength for the monochromator
