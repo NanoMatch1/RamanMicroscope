@@ -527,5 +527,6 @@ if __name__ == '__main__':
     else:
         simulate = False
 
+    simulate = True  # Force simulation mode for testing purposes
     startup_commands = []
     main(startup_commands=startup_commands, simulate=simulate)

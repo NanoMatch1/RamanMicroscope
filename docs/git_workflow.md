@@ -160,12 +160,13 @@ Then open a PR into `develop` on GitHub and describe:
 - whether you tested it on real hardware or only in simulation
 - anything you are unsure about
 
-> **Why the PR, with only two of us:** it is not gatekeeping. It is a
-> permanent, threaded conversation about a specific piece of code, attached to
-> that code — which is a far better place to learn than email.
+> **Why the PR, with only two of us:**
+> It's a permanent, threaded conversation about a specific piece of code, attached to
+> that code. Much easier than a verbal conversation or email.
 
-Mark it a draft if it is not finished. A draft PR is a good way to ask "am I
-going in the right direction?" before spending another week.
+Mark it a draft if it is not finished - don't agonise over it. Keep it as brief notes if needed, 
+but make sure you do it. A draft PR is a good way to ask 
+"am I going in the right direction?" before spending another week.
 
 ---
 
@@ -182,4 +183,5 @@ git reflog                # every commit HEAD has pointed at, including "lost" o
 **Stop before running anything with `--hard`, `--force` or `clean -fd`.** Those
 are the four ways to actually destroy work. Everything else is recoverable.
 
-Ask. A five-minute question beats a day of reconstruction.
+Lastly, send me a message if you're still stuck on anything. We will usually be able to pick it 
+apart quick and it saves the headache of a bigger problem later

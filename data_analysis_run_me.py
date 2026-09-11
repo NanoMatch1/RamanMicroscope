@@ -12,10 +12,11 @@ def noise_workflow():
     dataSet = DataSet(fileDir, initialise=False)
     dataSet.initialise()
     # dataSet.access_database('slider_test')
-    dataSet.index_from_filenames()
-    dataSet._use_index_filenames()
-    dataSet.sort_by_scan_index()
-    dataSet.frames_to_spectrum(binning_region=(20,100))#binning_region=(35,45)) # edit this to the region of interest, or remove to 
+    # dataSet.index_from_filenames()
+    # dataSet._use_index_filenames()
+    # dataSet.sort_by_scan_index()
+    # dataSet.frames_to_spectrum(binning_region=(20,100))#binning_region=(35,45)) # edit this to the region of interest, or remove to 
+
 
     # average each spectrum
     for filename, data_obj in dataSet.data_dict.items():
@@ -82,15 +83,16 @@ dirname = os.path.dirname(__file__)
 dataDir = os.path.join(dirname, 'data')
 fileDir = os.path.join(dataDir, series_name)
 
-# fileDir = r'C:\Users\Sam\Data\14MayWLMoS2'
+fileDir = r'C:\Users\Samuel\Data\Raman\MULETA'
 
 if __name__ == '__main__':
     dataSet = DataSet(fileDir, initialise=False)
     dataSet.initialise()
     # dataSet.access_database('slider_test')
-    dataSet.index_from_filenames()
-    dataSet._use_index_filenames()
-    dataSet.sort_by_scan_index()
+    # dataSet.index_from_filenames()
+    # dataSet._use_index_filenames()
+    # dataSet.sort_by_scan_index()
+    # dataset.
     dataSet.frames_to_spectrum()#binning_region=(35,45)) # edit this to the region of interest, or remove to 
 
     dataSet.plot_current(offset = 1000, legend=False)

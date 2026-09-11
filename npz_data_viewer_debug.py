@@ -25,6 +25,7 @@ if __name__ == "__main__":
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     dataDir = os.path.join(scriptdir, "data")
     dataDir = r'C:\Users\Sam\matchbook\ramanproject\RamanMicroscope\data\scan_test_19'
+    dataDir = r'C:\Users\Samuel\Data\Raman\MULETA'
     # if len(sys.argv) != 2:
     #     print("Usage: python inspect_npz.py <file_path>")
     # else:
