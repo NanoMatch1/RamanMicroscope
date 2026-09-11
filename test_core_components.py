@@ -61,3 +61,67 @@ def test_failure_result_captures_exception_and_traceback():
 def test_failure_text_without_traceback_is_still_readable():
     result = CommandResult(command='x', ok=False, error='busy: scan running')
     assert result.text == 'Error: busy: scan running'
+
+
+# ----------------------------------------------------------------------------
+# OperatorPrompt
+# ----------------------------------------------------------------------------
+
+import logging
+
+import pytest
+
+from operator_prompt import ConsolePrompt, NonInteractivePrompt, NonInteractiveError
+
+
+def scripted_input(answers):
+    """An input() stand-in that returns the given answers in order."""
+    queue = list(answers)
+
+    def fake_input(prompt_text):
+        return queue.pop(0)
+
+    return fake_input
+
+
+def test_console_confirm_accepts_yes_and_no_forms():
+    assert ConsolePrompt(scripted_input(['y'])).confirm('Go?') is True
+    assert ConsolePrompt(scripted_input(['YES'])).confirm('Go?') is True
+    assert ConsolePrompt(scripted_input(['n'])).confirm('Go?') is False
+    assert ConsolePrompt(scripted_input(['No'])).confirm('Go?') is False
+
+
+def test_console_confirm_empty_answer_takes_the_default():
+    assert ConsolePrompt(scripted_input([''])).confirm('Go?', default=True) is True
+    assert ConsolePrompt(scripted_input([''])).confirm('Go?', default=False) is False
+
+
+def test_console_confirm_reasks_until_it_gets_a_yes_or_no():
+    prompt = ConsolePrompt(scripted_input(['maybe', 'dunno', 'y']))
+    assert prompt.confirm('Go?') is True
+
+
+def test_console_ask_with_choices_reasks_until_valid():
+    prompt = ConsolePrompt(scripted_input(['sideways', 'IMAGEMODE']))
+    assert prompt.ask('Mode', choices=['imagemode', 'ramanmode']) == 'imagemode'
+
+
+def test_console_ask_without_choices_returns_stripped_text():
+    assert ConsolePrompt(scripted_input(['  12.5 '])).ask('Step') == '12.5'
+
+
+def test_noninteractive_confirm_returns_default_and_logs(caplog):
+    prompt = NonInteractivePrompt(logging.getLogger('test.prompt'))
+    with caplog.at_level(logging.WARNING, logger='test.prompt'):
+        assert prompt.confirm('Move anyway?') is False
+        assert prompt.confirm('Keep going?', default=True) is True
+    assert 'Move anyway?' in caplog.text
+    assert "answering 'no'" in caplog.text
+    assert "answering 'yes'" in caplog.text
+
+
+def test_noninteractive_ask_raises_a_clear_error():
+    prompt = NonInteractivePrompt(logging.getLogger('test.prompt'))
+    with pytest.raises(NonInteractiveError) as excinfo:
+        prompt.ask('Enter current mode', choices=['imagemode', 'ramanmode'])
+    assert 'Enter current mode' in str(excinfo.value)
