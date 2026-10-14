@@ -26,3 +26,4 @@ acquisitioncontrol/acquisition_config.json
 acquisitioncontrol/viewer_settings.json
 viewer_settings.json
 instrument_errors.log
+transient/

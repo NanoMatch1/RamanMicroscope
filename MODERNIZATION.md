@@ -319,7 +319,7 @@ Current state: 29 tests (9 protocol unit + 20 headless workflow, added
 
 - ~~`changes.txt` (72 KB) raw pasted `git diff`~~ — ✅ DONE (Gate 3): deleted,
   superseded by real git history plus `CHANGELOG.md`.
-- `refactor_history.md` describes the March 2025 protocol rewrite; fold its
+- `docs/development_notes/refactor_history.md` describes the March 2025 protocol rewrite; fold its
   still-relevant "Architecture Notes" into `README.md` and retire the rest.
 - `README.md` describes the architecture well but predates the
   Tiger/PIXIS/RS-232 changes — it still implies the laser is stepper-driven.

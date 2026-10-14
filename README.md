@@ -13,9 +13,6 @@ from one Python command layer, with a simulation mode complete enough to run
 and test the whole application with no hardware attached.
 
 <!-- TODO(sam): add figures/instrument.jpg — a photograph of the rig -->
-> **✍️ To fill in:** photograph of the instrument, and a block diagram of the
-> beam path (`figures/instrument.jpg`, `figures/optical_layout.png`). See
-> [`figures/README.md`](figures/README.md).
 
 ---
 
@@ -40,21 +37,16 @@ an electronic transition and watch particular modes amplify.
 | Spatial scanning | motorised *x*, *y*, *z* stage | |
 | Imaging | switchable Raman / wide-field imaging mode | |
 
+Ranges are the configured limits, not measured performance figures.
+
 <!-- TODO(sam): the table above is read from config and code. Confirm or correct
      against measured performance, and add: spectral resolution, achievable spot
      size, objective(s), typical acquisition time, laser power at sample,
      polarisation extinction ratio. -->
-> **✍️ To fill in:** spectral resolution, spot size, objectives, typical
-> acquisition times, power at sample, and what the polarisation axes can
-> actually resolve. The numbers above come from the configuration file and the
-> code, not from a measurement — please confirm or correct them.
 
-### A representative measurement
-
-<!-- TODO(sam): add figures/example_spectrum.png -->
-> **✍️ To fill in:** one real spectrum — sample, excitation wavelength,
-> acquisition time in the caption. This is the single most useful thing that
-> could be added to this page.
+<!-- TODO(sam): restore a "### A representative measurement" heading here and
+     add figures/example_spectrum.png — one real spectrum, with
+     sample, excitation wavelength and acquisition time in the caption. -->
 
 ---
 
@@ -76,7 +68,6 @@ have to agree, and keeping them apart is how they stop agreeing.
 
 <!-- TODO(sam): confirm the Millennia and Ti:sapphire model numbers, and the
      TRIAX model (320? 550?). Add the objective and grating specifications. -->
-> **✍️ To fill in:** exact model numbers, grating groove densities, objective.
 
 ---
 
@@ -116,19 +107,26 @@ Other entry points:
 | Command | Purpose |
 |---|---|
 | `python interface_run_me.py` | main CLI + GUI |
-| `python data_viewer_run_me.py` | offline viewer for saved spectra |
-| `python calibration.py` | calibration service |
+| `python data_viewer_run_me.py` | live spectrum viewer: run it in a second window during `run` |
 
 <!-- TODO(sam): there are five calibration entry points (calibration.py,
      calibration_auto.py, calibration_manual.py, calibration_scaling.py,
      calibration_shift_run_me.py) and nothing documents which to run when.
      A short "how to recalibrate this instrument" section would be valuable. -->
-> **✍️ To fill in:** which calibration program to run, when, and in what order.
-> There are currently five and no guidance.
 
 > ⚠️ Simulate mode is currently selected by a path-and-platform heuristic rather
 > than an explicit flag, so check which mode the application reports at startup.
 > Tracked as `MODERNIZATION.md` 1.5.
+
+---
+
+## Operating the instrument
+
+[`docs/user_guide.md`](docs/user_guide.md) is the bench procedure: power-up
+order (motor power stays off until the command prompt appears), homing, tuning
+to a wavelength, the sulfur alignment check, jogging the grating motors back
+into alignment, and troubleshooting weak lasing. Read it before running the
+real instrument.
 
 ---
 
@@ -243,7 +241,8 @@ without risking the optics.
 | `arduino_mega_develop/` | controller firmware, authoritative for the protocol |
 | `calibration/`, `autocalibration/` | stored calibration data |
 | `tools/` | standalone diagnostics, not imported by the application |
-| `docs/` | contributor guide and lab PC verification procedure |
+| `docs/` | operator guide, contributor guide, lab PC verification procedure |
+| `docs/development_notes/` | historical design notes from earlier refactors |
 
 ### Motor addressing
 
