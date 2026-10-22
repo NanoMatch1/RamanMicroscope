@@ -242,7 +242,10 @@ class LaserDetection(QObject):
         """Generate a 1D spectrum by averaging over a specified width in the Y dimension."""
 
         xpos, ypos = laser_position
-        spectrum = np.median(image[ypos - binning_width:ypos + binning_width, :], axis=0)
+        # clamp to valid row range so a peak near the frame edge can't produce an empty/NaN slice
+        y_start = max(0, ypos - binning_width)
+        y_end = min(image.shape[0], ypos + binning_width)
+        spectrum = np.median(image[y_start:y_end, :], axis=0)
         self.dataY = spectrum
 
         return self.dataY
