@@ -204,11 +204,16 @@ workaround from an early input-only test and was never updated.
 
 **To resolve:**
 
-1. **Confirm with the student** whether a limit switch has since been
-   fitted to the mode motor (2A). If so, mode switching should home
-   against it rather than open-loop stepping a magic number — which is
-   the real fix, since an open-loop ±100000 silently mis-positions if a
-   step is ever lost.
+1. ~~Confirm whether a limit switch has been fitted to the mode motor
+   (2A).~~ **Answered from the bench (2026-10): no.** The switch found
+   near 2A only switches power to the microscope lamp; it is not wired
+   to a motor module. Its red wire runs from a terminal labelled `ES` to
+   the + terminal of a connector labelled 12–36 V; its black wire goes to
+   a screw post labelled `4°`. The return is believed to be the negative
+   terminal of the smaller power supply (a thick brown wire, partly
+   sleeved, so not fully traced). Mode switching therefore remains
+   open-loop; fitting a real endstop on 2A is still the proper fix, since
+   an open-loop ±100000 silently mis-positions if a step is ever lost.
 2. Note the firmware currently has only **one shared** limit input,
    `homingLimitPin = 13` (`.ino:82`, active-low `INPUT_PULLUP`), used by
    `homeMotor()` for whichever motor is being homed — there are no

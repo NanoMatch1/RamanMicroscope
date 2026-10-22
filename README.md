@@ -66,8 +66,10 @@ and is the authoritative definition of the motor command protocol. It is
 versioned here alongside the Python that speaks to it, deliberately — the two
 have to agree, and keeping them apart is how they stop agreeing.
 
-<!-- TODO(sam): confirm the Millennia and Ti:sapphire model numbers, and the
-     TRIAX model (320? 550?). Add the objective and grating specifications. -->
+<!-- TODO(sam): pump, Ti:sapphire and TRIAX models were reported from the lab
+     (2026-10). Confirm the pump name (JenLas JOL-D2.10 is a Jenoptik product;
+     the Tsunami-era pump was a Spectra-Physics Millennia). Add the objective
+     and the remaining TRIAX gratings. -->
 
 ---
 
@@ -127,6 +129,10 @@ order (motor power stays off until the command prompt appears), homing, tuning
 to a wavelength, the sulfur alignment check, jogging the grating motors back
 into alignment, and troubleshooting weak lasing. Read it before running the
 real instrument.
+
+If the Raman signal disappears entirely, the
+[grating alignment quickstart](docs/grating_alignment_quickstart.md) walks
+through re-aligning the excitation filter from scratch.
 
 ---
 
@@ -241,7 +247,7 @@ set without risking the optics.
 | `arduino_mega_develop/` | controller firmware, authoritative for the protocol |
 | `calibration/`, `autocalibration/` | stored calibration data |
 | `tools/` | standalone diagnostics, not imported by the application |
-| `docs/` | operator guide, contributor guide, lab PC verification procedure |
+| `docs/` | operator guide, grating alignment quickstart, contributor guide, lab PC verification procedure |
 | `docs/development_notes/` | historical design notes from earlier refactors |
 
 ### Motor addressing

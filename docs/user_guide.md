@@ -229,6 +229,10 @@ Many of these commands are required for maintenance but some have calibration-br
 
 
 
+# Re-aligning the gratings
+If the Raman signal is lost completely, follow the
+[grating alignment quickstart](grating_alignment_quickstart.md).
+
 # Achieving Kohler illumination
 1. adjust the X and Y translation knobs on the Optimecanic mount holding the white light fiber optic cable to align the light to the center of the microscope objective at the sample. You will optimise for sample brightness on the camera.
 2. Slide the focusing lens until the spot on the sample

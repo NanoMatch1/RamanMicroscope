@@ -313,9 +313,7 @@ needs a look at the actual wiring, not just the code.
 Please report: (a) is there a switch on 2A, (b) if so, what pin is it
 wired to, (c) is anything else sharing pin 13.
 
-(a) There is a switch, but it triggers only the globe for the microscope. To the best of my knowledge, this switch connects the power control to the power supply only, it is not connected to a module in the same way as other motors are, rather the red wire to a + terminal on a 12-36 V labelled connector and to the negative terminal on the smaller power supply unit (I am not certain of the latter, it is connected by a brown thick wire but some length of the wire is encapsulated. I tracked the brown wire after encapsulation. I'm sure you had the good sense not to connect different coloured wires but I'm noting it for completeness)
-
-(b/c) The red wire is first secured by a screw to a port labelled ES, then to the aforementioned 12-36 V + terminal. The black wire is connected to a screw supported post labelled 4^o (4 degrees). I cannot idenitfy a numbering system on the other motors from reading the circuit boards. 
+> **Answered 2026-10:** no limit switch on 2A — see `MODERNIZATION.md` 2.3.
 
 ---
 
