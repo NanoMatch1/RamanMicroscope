@@ -19,7 +19,7 @@ reinstating each bug and confirming the corresponding test fails.
   simulated read raised `AttributeError`. Because `Triax.initialise()`
   reads the position, this aborted startup entirely: simulate mode was
   completely unusable. Same root cause as the dead `_flush_read_buffer`
-  removed in `19e68df`.
+  removed in `f494577`.
 - `instruments_old.py` `report_status()`: passed `{all_motors}` — a set
   literal wrapping the motor dict — to `identify_microscope_mode()`,
   raising `TypeError: unhashable type: 'dict'` on every `report` command

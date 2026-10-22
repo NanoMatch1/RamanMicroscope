@@ -1,52 +1,15 @@
 # Author identity map
 #
-# This project accumulated eight git identities across four machines and two
-# institutions, three of which used strings that are not real email addresses
-# ("match@Raman", "sjbrooke@matchbook", "Martin"). Git and GitHub key an author
-# on their email, so those commits render as unlinked strangers.
+# Samuel's commits were made under several names across several machines
+# (NanoMatch, MelMatch, Sam, match@raman, ...). All of them carry the same
+# GitHub no-reply address, so GitHub already links them to one account; this
+# file additionally shows a single name in `git shortlog`, `git log` and
+# `git blame`.
 #
-# This file is the non-destructive fix: it rewrites how authors are DISPLAYED
-# by `git shortlog`, `git log`, `git blame` and most tooling, without touching
-# commits.
+# Format:  Canonical Name <email>   (renames every commit with that email)
 #
-# What it does NOT fix: GitHub's contribution graph, which reads the raw commit
-# email and ignores .mailmap. Repairing that needs a real history rewrite
-# (`git filter-repo --mailmap .mailmap`), which changes every commit hash and
-# forces everyone to re-clone. See MODERNIZATION.md.
-#
-# Format:  Canonical Name <canonical@email>  Commit Name <commit@email>
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# Samuel Brooke — one person, six identities.
-# ─────────────────────────────────────────────────────────────────────────────
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> NanoMatch <40452389+NanoMatch1@users.noreply.github.com>
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> Sam <40452389+NanoMatch1@users.noreply.github.com>
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> NanoMatch1 <40452389+NanoMatch1@users.noreply.github.com>
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> MelMatch <40452389+NanoMatch1@users.noreply.github.com>
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> nanomatch <sjbrooke@matchbook>
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> samuel@imdea <40452389+NanoMatch1@users.noreply.github.com>
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> match@matchpi <40452389+NanoMatch1@users.noreply.github.com>
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ⚠ "match@raman <match@Raman>" is a MACHINE account, not a person.
-#
-# It is the default identity of the lab PC in Melbourne. Every commit under it
-# so far is Samuel's (137 commits, 2025-03-31 .. 2026-08-26, confirmed), so the
-# mapping below is correct today.
-#
-# It will stop being correct as soon as anyone else commits from that machine,
-# and .mailmap cannot split one identity by date. There is no way to tell from
-# the commit itself which human was sitting at the rig.
-#
-# Therefore: anyone working on the lab PC must set their own git identity
-# before committing. See docs/git_workflow.md. If this mapping ever starts
-# absorbing someone else's work, delete this line rather than leaving it —
-# a misattributed contributor is worse than an unlinked one.
-# ─────────────────────────────────────────────────────────────────────────────
-Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> match@raman <match@Raman>
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Other contributors
-# ─────────────────────────────────────────────────────────────────────────────
-# Web-app prototype on feature/webapp (2025-08-29), committed with no email
-# set. Left unmapped: a contributor's address is theirs to publish.
+# Anyone committing from a shared machine (the lab PC) must set their own
+# identity first — see docs/git_workflow.md. Use your GitHub no-reply address
+# (GitHub → Settings → Emails) rather than a personal one: commit emails are
+# public, and CI rejects pushes that expose a personal address.
+Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com>
