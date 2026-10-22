@@ -220,8 +220,8 @@ lies.
 Every instrument has a simulated counterpart implementing the same interface,
 including a fake Arduino that speaks the real serial protocol byte for byte.
 This is not a stub for tests — it is how the application is developed and
-reviewed from another continent, and how a student can learn the command set
-without risking the optics.
+reviewed away from the instrument, and how a new user can learn the command
+set without risking the optics.
 
 ---
 

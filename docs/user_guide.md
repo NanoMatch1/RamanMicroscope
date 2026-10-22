@@ -229,15 +229,6 @@ Many of these commands are required for maintenance but some have calibration-br
 
 
 
-Notes for Riley
-1. Adjust intermediate filter in monochormator so that the spectrum cuts off at lower wavenumbers, closer to the laser line.
-- Trying to avoid cutting into the low-frequency modes between 100 and 300 cm-1
-2. see if the cutoff changes at all wavelengths, ~10 nm steps
-- us mos2 powder to see the effect, ~5s 
-3. Build the sample stage for high magnification oil immersion lenses inspired by thesis design
-4. Perform a linescan
-
-
 # Achieving Kohler illumination
 1. adjust the X and Y translation knobs on the Optimecanic mount holding the white light fiber optic cable to align the light to the center of the microscope objective at the sample. You will optimise for sample brightness on the camera.
 2. Slide the focusing lens until the spot on the sample
@@ -280,21 +271,3 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 
 
 - FYI Camera module in "4. Adapters > ThorCam PCB"
-
-
-# Notes and ToDo:
-## Sam ToDo:
-- change acquisition time to seconds
-- compress file saving!!!
-- Refactor acquisition loop
-    - improve acquisition UI
-    - add linescan interpolation mode
-- build calibrations app - BIG JOB
-- create dummy instrument classes for dependency injection.
-- create unit tests for all
-- Ensure scan parameters updating to metadata
-- compress data saving
-- Add simple start-stop UI with save database and load pipelines
-- check json calibration
-    - work on calibration modifying script
-- code solutions for Dark Signal Non Uniformity and Photo Repsonse Non Uniformity

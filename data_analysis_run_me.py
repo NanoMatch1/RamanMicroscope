@@ -83,8 +83,6 @@ dirname = os.path.dirname(__file__)
 dataDir = os.path.join(dirname, 'data')
 fileDir = os.path.join(dataDir, series_name)
 
-fileDir = r'C:\Users\Samuel\Data\Raman\MULETA'
-
 if __name__ == '__main__':
     dataSet = DataSet(fileDir, initialise=False)
     dataSet.initialise()

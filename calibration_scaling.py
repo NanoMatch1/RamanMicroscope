@@ -274,7 +274,7 @@ if __name__ == "__main__":
 
 
 
-    # new_calibration_path = r'C:\Users\Sam\matchbook\ramanproject\RamanMicroscope\calibration\modifications\Spectrometer Calibration.csv'
+    # new_calibration_path = os.path.join(os.path.dirname(__file__), 'calibration', 'modifications', 'Spectrometer Calibration.csv')
     # new_data = []
     # with open(new_calibration_path, 'r') as f:
     #     newline = f.read().replace('\r\n', '\n')

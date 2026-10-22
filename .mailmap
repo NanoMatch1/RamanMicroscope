@@ -18,10 +18,6 @@
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Samuel Brooke — one person, six identities.
-#
-# Canonical address is the personal one rather than the University of Melbourne
-# address, deliberately: the institutional account will not outlive the work,
-# and the goal is that these commits stay attributable indefinitely.
 # ─────────────────────────────────────────────────────────────────────────────
 Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> NanoMatch <40452389+NanoMatch1@users.noreply.github.com>
 Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> Sam <40452389+NanoMatch1@users.noreply.github.com>
@@ -52,6 +48,5 @@ Samuel Brooke <40452389+NanoMatch1@users.noreply.github.com> match@raman <match@
 # ─────────────────────────────────────────────────────────────────────────────
 # Other contributors
 # ─────────────────────────────────────────────────────────────────────────────
-# Web-app prototype on feature/webapp (2025-08-29), written during a paired
-# session. Committed with no email set.
-Martin <Martin> Martin <Martin>
+# Web-app prototype on feature/webapp (2025-08-29), committed with no email
+# set. Left unmapped: a contributor's address is theirs to publish.

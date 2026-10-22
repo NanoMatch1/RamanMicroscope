@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import copy
@@ -156,7 +157,7 @@ class AnalysisGUI(QWidget):
             self.log_output.append(f"Import failed: {e}")
 
 if __name__ == '__main__':
-    dataDir = r'C:\Users\Sam\Data\14MayWLMoS2'
+    dataDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
     app = QApplication(sys.argv)
     gui = AnalysisGUI(dataDir=dataDir)
     gui.resize(900, 600)
