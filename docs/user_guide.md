@@ -238,10 +238,6 @@ Notes for Riley
 4. Perform a linescan
 
 
-# Data access
-https://unimelbcloud-my.sharepoint.com/:f:/g/personal/rileyjt_student_unimelb_edu_au/ElSFjKdas_NDlLl6kADVAnUBTr1sApV6YKhTFq065Ky97w?e=5%3a3r9Vvt&at=9
-
-
 # Achieving Kohler illumination
 1. adjust the X and Y translation knobs on the Optimecanic mount holding the white light fiber optic cable to align the light to the center of the microscope objective at the sample. You will optimise for sample brightness on the camera.
 2. Slide the focusing lens until the spot on the sample
