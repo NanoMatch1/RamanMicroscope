@@ -283,7 +283,6 @@ Perform this step with the beamsplitters in the optical axis ("image mode").
 
 
 # Notes and ToDo:
-
 ## Sam ToDo:
 - change acquisition time to seconds
 - compress file saving!!!
