@@ -146,6 +146,13 @@ Keep the `feat:` / `fix:` / `chore:` / `docs:` / `refactor:` prefixes — this
 repo already uses them. Body text is free: use it to say *why*, since the
 diff already says *what*.
 
+Jot down a line or two as you go — what you tried, what broke, what fixed it —
+rather than trying to reconstruct it from memory at the end of the day.
+
+> **Why:** that note is what turns into the commit body and the PR
+> description. Writing it in the moment takes seconds; rebuilding it from a
+> diff a day later takes much longer, if it's even still possible.
+
 ---
 
 ## Opening a pull request

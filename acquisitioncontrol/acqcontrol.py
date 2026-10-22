@@ -95,7 +95,7 @@ class ScanSequenceGenerator:
         dx = end['x'] - start['x']
         dy = end['y'] - start['y']
         length = math.hypot(dx, dy)
-        num_steps = max(1, int(length / step))
+        num_steps = 1 if step == 0 else max(1, int(length / step))
 
         # Generate line points
         if length == 0:
@@ -691,7 +691,8 @@ class AcquisitionControl(QObject):
 
         if self.hidden_parameters['scan_mode'] == 'linescan':
             length = math.hypot(x_positions, y_positions)
-            num_steps = max(1, int(length / self.motion_parameters['resolution']['x']))
+            x_resolution = self.motion_parameters['resolution']['x']
+            num_steps = 1 if x_resolution == 0 else max(1, int(length / x_resolution))
             scan_size = wavelength_list * polarization_list * num_steps
         elif self.hidden_parameters['scan_mode'] == 'map':
             scan_size = wavelength_list * polarization_list * x_positions * y_positions * z_val

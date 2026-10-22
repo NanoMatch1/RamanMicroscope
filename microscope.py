@@ -1334,7 +1334,11 @@ class Microscope(Instrument):
             triax_position = 0
         
         if extra is None:
-            extra = self.calculate_laser_wavelength()
+            # calculate_laser_wavelength() is a Tiger-era no-op (returns {}); use the real piezomotor/live-cal wavelength instead.
+            if self.laser_wavelength_calibrated is not None:
+                extra = self.laser_wavelength_calibrated
+            else:
+                extra = self.interface.laser.get_estimated_wavelength()
 
         try:
             with open(os.path.join(self.interface.calibrationDir, 'motor_recordings', 'motor_recordings.json'), 'r') as f:

@@ -1,5 +1,6 @@
 # TRIAX: ~ 700 nm at 131343 steps
 import os
+import sys
 import traceback
 import threading
 
@@ -518,8 +519,6 @@ def main(startup_commands=[], simulate=False):
 
 
 if __name__ == '__main__':
-    import sys
-
     if "Users\\Sam" in os.getcwd():
         simulate = True
     elif sys.platform == 'linux':
@@ -527,6 +526,6 @@ if __name__ == '__main__':
     else:
         simulate = False
 
-    simulate = True  # Force simulation mode for testing purposes
+    simulate = False  # Force simulation mode for testing purposes
     startup_commands = []
     main(startup_commands=startup_commands, simulate=simulate)

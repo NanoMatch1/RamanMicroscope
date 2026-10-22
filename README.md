@@ -62,10 +62,10 @@ an electronic transition and watch particular modes amplify.
 
 | Subsystem | Device | Interface |
 |---|---|---|
-| Pump laser | Spectra-Physics Millennia | RS-232 |
-| Tunable laser | Ti:sapphire, grating-tuned ("Tiger") | RS-232, piezomotor |
+| Pump laser | JenLas JOL-D2.10 | RS-232 |
+| Tunable laser | Ti:sapphire, grating-tuned ("Tiger-200") | RS-232, piezomotor |
 | Excitation filter | double subtractive monochromator | stepper motors |
-| Spectrometer | HORIBA TRIAX | RS-232 |
+| Spectrometer | HORIBA TRIAX 550, 300 Grooves/mm, 600 nm Blaze | RS-232 |
 | Detector | Princeton Instruments PIXIS CCD | PICam SDK via `pylablib` |
 | Motion | Arduino MEGA — 4 modules, up to 4 axes each | USB serial, custom protocol |
 
@@ -77,6 +77,7 @@ have to agree, and keeping them apart is how they stop agreeing.
 <!-- TODO(sam): confirm the Millennia and Ti:sapphire model numbers, and the
      TRIAX model (320? 550?). Add the objective and grating specifications. -->
 > **✍️ To fill in:** exact model numbers, grating groove densities, objective.
+> Done(Riley) JenOptics pump laser model, ti:sapph model name, triax model + gratings specs. 
 
 ---
 
