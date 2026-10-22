@@ -6,11 +6,15 @@
 - Calibration: `python calibration.py`, `python calibration_manual.py`, or `python calibration_auto.py`
 
 ## Testing
-Both suites must pass before a change is considered complete.
+All three suites must pass before a change is considered complete.
 - Unit (Arduino protocol): `python -m pytest test_controller_simulated.py -q`
 - Full headless workflow: `python -m pytest test_headless_simulation.py -q`
   (also runs standalone without pytest: `python test_headless_simulation.py`)
-- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py -q`
+- Repository safety checks: `python -m pytest test_repo_guard.py -q`
+  (`tools/repo_guard.py`, the pre-commit hook in `.githooks/` and the CI
+  `repo-guard` job: no personal emails/paths/share links, data files or
+  personal commit identities in a public repo)
+- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q`
 
 The headless suite drives the whole application in simulate mode through
 the real command handler, with stdin replaced by an empty stream so any

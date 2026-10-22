@@ -99,7 +99,7 @@ explicit `argparse` flag: `python interface_run_me.py --simulate`.
 ### 1.6 The Arduino firmware is no longer in the repo
 
 `arduino_mega_develop/arduino_mega_develop.ino` (574 lines) was deleted in
-`a6d9efa`. It is recoverable from `2f3aacc` but is currently absent from
+`fcba0c0`. It is recoverable from `5997e22` but is currently absent from
 the working tree, and no `.ino` exists anywhere on disk.
 
 This matters more than it looks: the firmware is the **ground truth for the
@@ -110,7 +110,7 @@ imitates. Without it there is no way to:
 - reconcile the `RAMAN_MODE_STEPS` disagreement (see 2.3),
 - reflash or modify the controller.
 
-**✅ DONE (Gate 3):** restored from `2f3aacc` to
+**✅ DONE (Gate 3):** restored from `5997e22` to
 `arduino_mega_develop/arduino_mega_develop.ino`. It immediately paid for
 itself by settling the `RAMAN_MODE_STEPS` question in 2.3.
 
@@ -133,7 +133,7 @@ impossible, and hang unattended runs:
 - `microscope.py:2660` — `laser_safety_check()`
 
 (`detect_microscope_mode()` at `microscope.py:1111` was the worst case — it fired during
-`initialise()` — and is already fixed for simulation in `57cacf2`.)
+`initialise()` — and is already fixed for simulation in `2893573`.)
 
 **Pattern to adopt:** library code should never prompt. Take a
 `confirm: Callable[[str], bool]` or a `force: bool` parameter, defaulting
@@ -308,8 +308,8 @@ adopt them on new/touched code rather than in a sweep.
 
 ### 3.3 Test coverage gaps
 
-Current state: 29 tests (9 protocol unit + 20 headless workflow, added
-`57cacf2`). Untested:
+Current state: 29 instrument tests (9 protocol unit + 20 headless workflow,
+added `2893573`), plus 35 for the repository safety checks. Untested:
 
 - `Calibration` service — the polynomial fits and `wl_to_steps`/`steps_to_wl`
   round-trips. Pure functions, trivially testable, and the highest-value

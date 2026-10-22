@@ -1,6 +1,6 @@
 # Working on this repository
 
-Eight rules. Each one has a one-line reason, because a rule you understand is
+Nine rules. Each one has a one-line reason, because a rule you understand is
 a rule you keep.
 
 If you only read one thing: **rule 2**. Everything else on this page is
@@ -11,13 +11,21 @@ tidiness. Rule 2 is the one that has actually cost this project real work.
 ## 1. Set your own git identity before your first commit
 
 ```bash
-git config --global user.name  "Your Name"
-git config --global user.email "you@example.com"
+git config user.name  "Your Name"
+git config user.email "<id>+<username>@users.noreply.github.com"
+git config core.hooksPath .githooks      # turn on the safety checks (rule 9)
 ```
+
+Use your GitHub **no-reply** address, from GitHub → Settings → Emails (the
+"Keep my email addresses private" section shows it). On the shared lab PC,
+leave out `--global` so the identity belongs to this repository only.
 
 > **Why:** the lab PC has a default identity (`match@Raman`) that is not a
 > person, and everything committed under it gets credited to whoever used that
-> machine last. Set your own and your work stays yours.
+> machine last. Set your own and your work stays yours. The no-reply address
+> still links commits to your GitHub account, but the commit email is public
+> forever, so it should not be your personal one. CI rejects pushes that
+> would publish one.
 
 Check it took, and check it on *every* machine you commit from:
 
@@ -66,16 +74,16 @@ Delete it once merged — the history stays, the clutter does not.
 ## 4. Run the tests before you push
 
 ```bash
-python -m pytest test_controller_simulated.py test_headless_simulation.py -q
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
 ```
 
-Expect `29 passed`. No hardware needed — it takes about ten seconds.
+Expect `64 passed`. No hardware needed — it takes about ten seconds.
 
 > **Why:** these run the whole application against simulated instruments, so
 > they catch the "it won't even start" class of bug in ten seconds instead of
 > in front of the microscope.
 
-CI runs the same two suites on every push, so you will find out either way.
+CI runs the same suites on every push, so you will find out either way.
 Better to find out before.
 
 ---
@@ -152,6 +160,27 @@ rather than trying to reconstruct it from memory at the end of the day.
 > **Why:** that note is what turns into the commit body and the PR
 > description. Writing it in the moment takes seconds; rebuilding it from a
 > diff a day later takes much longer, if it's even still possible.
+
+---
+
+## 9. Keep personal details and data out — the repository is public
+
+Anything pushed to *any* branch is public the moment it is pushed, and git
+history does not forget. So none of these belong in a commit:
+
+- personal email addresses, home-directory paths (`C:\Users\<name>\…`),
+  links to personal OneDrive / SharePoint / Google Drive folders;
+- research plans, results, sample notes — those go in the lab notebook;
+- acquired data (`.npz`, `.spe`, …) — it lives in `data/`, which is ignored.
+
+`tools/repo_guard.py` checks for these automatically: before every commit
+once you have run `git config core.hooksPath .githooks`, and again in CI on
+every push. If it flags something you genuinely need, add
+`repo-guard: allow` to that line and say why in the commit message.
+
+> **Why:** removing one research plan from this repository's history took a
+> full history rewrite and a fresh clone on every machine. Not committing it
+> takes nothing.
 
 ---
 

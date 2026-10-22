@@ -1,7 +1,7 @@
 # Contributing
 
 Working on this instrument's code? Start with
-**[`docs/git_workflow.md`](docs/git_workflow.md)** — eight rules, one line of
+**[`docs/git_workflow.md`](docs/git_workflow.md)** — nine rules, one line of
 reasoning each.
 
 Deploying to or verifying the lab PC? Follow
@@ -14,14 +14,16 @@ technical-debt backlog, ordered by tier.
 ## Quick reference
 
 ```bash
-# set your identity first, on every machine you commit from
-git config --global user.name  "Your Name"
-git config --global user.email "you@example.com"
+# set your identity first, on every machine you commit from — use your
+# GitHub no-reply address (GitHub -> Settings -> Emails), never a personal one
+git config user.name  "Your Name"
+git config user.email "<id>+<username>@users.noreply.github.com"
+git config core.hooksPath .githooks     # safety checks before every commit
 
 # work on a branch
 git switch develop && git pull
 git switch -c fix/short-description
 
-# before you push: 29 tests, no hardware, ~10 seconds
-python -m pytest test_controller_simulated.py test_headless_simulation.py -q
+# before you push: 64 tests, no hardware, ~15 seconds
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
 ```

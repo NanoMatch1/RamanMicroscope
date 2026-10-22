@@ -83,8 +83,8 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 
-# 29 tests, no hardware required, about ten seconds
-python -m pytest test_controller_simulated.py test_headless_simulation.py -q
+# 64 tests, no hardware required, about fifteen seconds
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
 ```
 
 Run the command-line interface:
@@ -262,11 +262,11 @@ is a configuration change rather than a code change.
 
 ## Testing
 
-Two suites, both hardware-free, both required to pass before a change is
+Three suites, all hardware-free, all required to pass before a change is
 considered complete:
 
 ```bash
-python -m pytest test_controller_simulated.py test_headless_simulation.py -q   # 29 tests
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q   # 64 tests
 ```
 
 - **`test_controller_simulated.py`** (9) — the Arduino command protocol at the
@@ -274,8 +274,10 @@ python -m pytest test_controller_simulated.py test_headless_simulation.py -q   #
 - **`test_headless_simulation.py`** (20) — the whole application driven through
   its real command handler, with stdin replaced by an empty stream so that any
   interactive prompt fails immediately instead of hanging a headless run.
+- **`test_repo_guard.py`** (35) — the public-repository safety checks
+  (`tools/repo_guard.py`), including real commits through the pre-commit hook.
 
-CI runs both on every push and pull request.
+CI runs all three on every push and pull request.
 
 **Scope, honestly:** these cover the motor protocol and orchestration well.
 They do not yet cover the laser, spectrometer and camera device classes, the

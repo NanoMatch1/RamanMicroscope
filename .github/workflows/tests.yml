@@ -6,13 +6,43 @@ name: tests
 # CI possible for an instrument-control repository at all.
 
 on:
-  push:
-    branches: [develop, main, 'feature/**', 'fix/**']
+  push:   # every branch: anything pushed to a public repository is public
+    branches: ['**']
   pull_request:
     branches: [develop, main]
   workflow_dispatch:
 
 jobs:
+  # The repository is public: this rejects personal emails, home-directory
+  # paths, private share links, data files and large binaries in the pushed
+  # changes, and any commit identity that would publish a personal address.
+  # Same checks as the local pre-commit hook (.githooks/), so skipping the
+  # hook only delays the failure. Standard library only: no install step.
+  repo-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the range check needs the commits being pushed
+
+      - name: Check pushed changes
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          # Pull request: everything since the base. Push: everything since
+          # the previous tip, or, for a new branch, since it left develop.
+          if [ -n "$PR_BASE" ]; then
+            base="$PR_BASE"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE"
+          else
+            base=$(git merge-base origin/develop HEAD)
+          fi
+          echo "Checking $base..HEAD"
+          python tools/repo_guard.py range "$base" HEAD
+
   pytest:
     runs-on: ubuntu-latest
     strategy:
@@ -53,4 +83,4 @@ jobs:
           QT_QPA_PLATFORM: offscreen   # no display on a CI runner
           MPLBACKEND: Agg
         run: |
-          python -m pytest test_controller_simulated.py test_headless_simulation.py -q
+          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q

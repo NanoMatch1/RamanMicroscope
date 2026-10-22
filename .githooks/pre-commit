@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs tools/repo_guard.py on the staged changes before every commit.
+# Enable once per clone:  git config core.hooksPath .githooks
+# The same checks run in CI, so skipping this (git commit --no-verify) only
+# moves the failure to the push.
+# `py` first: on Windows, `python3` is often a Microsoft Store stub that
+# exists on PATH but does not run Python. Linux has no `py`, so falls through.
+for interpreter in py python3 python; do
+    if command -v "$interpreter" >/dev/null 2>&1; then
+        exec "$interpreter" tools/repo_guard.py staged
+    fi
+done
+echo "repo-guard: no Python interpreter found; commit not checked." >&2
+exit 1

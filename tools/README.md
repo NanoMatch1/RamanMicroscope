@@ -22,5 +22,6 @@ before running. See `MODERNIZATION.md` 1.4.
 | `recalibrate_function.py` | Recalibration helper. |
 | `spectrum_generator.py` | Synthetic spectrum generation. |
 | `dataset_post_processing.py` | Post-processing over acquired datasets. |
+| `repo_guard.py` | **The exception: run by the pre-commit hook and CI, not by hand.** Blocks personal emails, home-directory paths, share links, data files, large binaries and personal commit identities. `python tools/repo_guard.py list` shows the checks. |
 | `logging_test.py` | Exercises `logging_utils.LoggerInterface`. |
 | `cal1.csv`, `calitest.csv`, `motor_tests.json` | Captured data from the above runs. |
