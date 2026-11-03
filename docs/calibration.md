@@ -15,7 +15,7 @@ one place: **the CCD wavelength axis**, which is built from the TRIAX
 spectrometer position and the PIXIS pixel index.
 
 ```
-known lines (Hg lamp, or Tiger measured on the spare spectrometer)
+known lines (Ar-Hg lamp, or Tiger measured on the spare spectrometer)
         |
         v
 TRIAX + PIXIS wavelength axis      <- section 3: calibrate this first
@@ -116,60 +116,89 @@ exactly.
 
 ### 3.2 Wavelength references
 
-**Mercury lamp in second order (preferred).** The lab's mercury lamp is a UV
-lamp with almost no near-infrared lines. But a grating sends wavelength
-lambda in order m to the same angle as m * lambda in first order (grating
-equation: m * lambda = d (sin a + sin b)). So the blue mercury lines appear
-at twice their wavelength:
+**Argon-mercury lamp (preferred).** The lab's calibration lamp is an Ar-Hg
+pencil lamp. Its label lists 17 argon lines between 696 and 922 nm, which
+covers the instrument's working range in first order. The wavelengths are
+known to ~0.005 nm, far better than the 0.078 nm a pixel spans.
+`wavelength_calibration/reference_lines.py` uses the values printed on the
+label.
 
-| Hg line (air) | appears at (2nd order) |
-|---|---|
-| 365.015 nm | 730.030 nm |
-| 404.656 nm | 809.312 nm |
-| 407.783 nm | 815.566 nm |
-| 435.833 nm | 871.666 nm |
+Three things about the lamp matter for identifying lines:
 
-These wavelengths are known to ~0.002 nm, far better than the 0.078 nm a
-pixel spans. The 809.3/815.6 pair is ~80 pixels apart, so both lines sit on
-the chip at once. Things to check on the bench:
+- **It emits lines that aren't on the label.** The label lists the lines the
+  manufacturer considers useful. Strong argon lines at 714.704, 751.465,
+  801.479, 810.369 and 840.821 nm aren't listed, and some sit within 11-15
+  pixels of a listed line. The catalogue includes them so they can't be
+  mistaken for their listed neighbours, and they're good references in
+  their own right.
+- **Mercury shows up in higher orders.** A grating sends wavelength lambda in
+  order m to the same angle as m * lambda in first order (grating equation:
+  m * lambda = d (sin a + sin b)). With no order-sorting filter, the blue and
+  UV mercury lines appear among the argon lines: 365.015 -> 730.030,
+  404.656 -> 809.312, 407.783 -> 815.566, 435.833 -> 871.666 (second order),
+  and 253.652 -> 760.956 (third order; the strongest mercury line, and the
+  600 nm-blaze grating is efficient near 200 nm in third order). Whether
+  they're visible depends on how much UV reaches the TRIAX. They're in the
+  catalogue either way, and are used when found.
+- **772.376 and 772.421 nm are an unresolved pair** (0.6 pixel apart). The
+  fitted centre would be a brightness-weighted blend, so neither is used.
 
-- Light the TRIAX entrance slit directly with the lamp. That calibrates the
-  TRIAX + CCD alone and keeps the rest of the beam path out of it.
-- Nothing between the lamp and the TRIAX may block blue light (a long-pass
-  filter would remove the lines; that's the point of such filters).
-- First-order lines (546.074, 576.960, 579.066 nm) are a useful cross-check
-  at the short end of the range.
+Light the TRIAX entrance slit directly with the lamp. That calibrates the
+TRIAX + CCD on their own and keeps the rest of the beam path out of it.
 
-**Tiger laser + spare calibrated spectrometer (fallback, or cross-check).**
-Read the Tiger wavelength on the spare spectrometer, then walk the laser line
-across the PIXIS. Use at least three or four different Tiger wavelengths
-spread over the range. Points taken at one Tiger wavelength all share that
-wavelength's measurement error: more walk positions don't reduce it, more
-distinct wavelengths do. Enter the spare spectrometer's real accuracy (its
+**Tiger laser + spare calibrated spectrometer (cross-check).** Read the Tiger
+wavelength on the spare spectrometer, then walk the laser line across the
+PIXIS. Use at least three or four different Tiger wavelengths spread over
+the range. Points taken at one Tiger wavelength all share that wavelength's
+measurement error: more walk positions don't reduce it, more distinct
+wavelengths do. Enter the spare spectrometer's real accuracy (its
 specification, typically 0.1-0.5 nm), not its display resolution.
-
-**A neon calibration bulb** (future purchase) has many strong first-order
-lines between 700 and 900 nm and would be the most convenient reference.
 
 ### 3.3 The line walk
 
-The procedure steps the TRIAX so each reference line lands on a series of
-target pixels (100, 250, ..., 950). At each position it:
+The CCD spans ~79 nm. The TRIAX slides it across the range of the reference
+lines in steps of 1/6 of its width (about 25 positions for the Ar-Hg lamp),
+so each line is measured at about six places across the chip. At each
+position the procedure:
 
 1. acquires a frame and collapses it to a spectrum, using rows around the
-   brightest row (the image of the slit);
+   brightest row (the image of the slit). A column with any saturated pixel
+   in that band is marked as saturated;
 2. finds peaks more than 10 noise standard deviations above the background;
 3. identifies which known line each peak is. The current calibration
-   predicts roughly where each line should be. A common pixel shift is
-   estimated from the first spectrum by matching the pattern of peaks, then
-   refined from every line matched after that;
+   predicts roughly where every line in the catalogue should be. A common
+   pixel shift is found on the first usable spectrum by pattern matching
+   (the shift that lines up the most peaks with predictions, within 3
+   pixels), then refined from every line matched after that;
 4. fits a Gaussian on a constant background to each identified line, **in
    pixels**, and records (known wavelength, TRIAX steps, centre pixel,
    centre uncertainty).
 
+A line is used at a position only if all of these hold, and the reason is
+recorded whenever one fails:
+
+- no other catalogue line is predicted within 8 pixels (closer lines blend);
+- the nearest peak is within 4 pixels of the prediction, and that peak's
+  nearest predicted line is this one (mutual nearest neighbours);
+- the peak isn't saturated (a clipped top biases the centre). If a strong
+  line is skipped for saturation, shorten the exposure, or accept losing it
+  if plenty of other lines were measured;
+- the fit succeeds and passes the signal-to-noise threshold.
+
+The fit window is narrowed to half the distance to the nearest other peak,
+so a neighbour's tail stays out of it.
+
+**The catalogue has to be complete.** A line the walk doesn't know about can
+be mistaken for a known one nearby. That's why the unlisted argon lines and
+the higher-order mercury lines are in the catalogue even though nobody asked
+for them. If you change lamps, the catalogue for the new lamp needs the same
+care.
+
 The TRIAX visits every position moving in the same direction (increasing
 steps, after first backing off below the first position), so backlash in the
-grating drive is the same for every point.
+grating drive is the same for every point. If the TRIAX isn't at the
+requested position when it's read back, that position is skipped rather than
+measured while the grating might still be moving.
 
 The current calibration is used only for planning and line identification.
 The fit never sees it.
@@ -180,9 +209,9 @@ The observations are fitted by weighted least squares. Each point's
 uncertainty combines its reference-wavelength uncertainty with its fitted
 peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
 
-- **residual rms and max**: a few hundredths of a nm is good for mercury
-  lines. A residual of several nm on one line means it was misidentified
-  (one mercury line mistaken for its neighbour).
+- **residual rms and max**: a few hundredths of a nm is good for lamp
+  lines. A residual of ~1 nm or more on one line means it was misidentified
+  (mistaken for a neighbour); the report flags it.
 - **reduced chi-squared**: ~1 means the scatter matches the stated
   uncertainties. Much larger than 1 means the uncertainties are optimistic
   or the model is missing something; try the curvature term. (With
@@ -194,16 +223,19 @@ peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
 
 ### 3.5 Running it on the instrument
 
-**With the mercury lamp:**
+**With the Ar-Hg lamp:**
 
-1. Point the lamp at the TRIAX entrance slit. Narrow the slit (sharp lines
-   fit better) but keep the lines well above the noise.
-2. Set an acquisition time that gives strong lines without saturating
-   (`acqtime <seconds>`). Single frames are fine.
-3. Run `speccal hg`. The TRIAX walks the 730, 809, 816 and 872 nm lines
-   across the chip, about 28 positions. Each walk is saved to
-   `data/calibration_line_walks/linewalk_<date>_<time>_hg.json` and added
-   to this session's list.
+1. Point the lamp at the TRIAX entrance slit. Narrow the slit: the closest
+   pairs used are 11-15 pixels apart and need lines no more than ~5 pixels
+   wide.
+2. Set an acquisition time where the brightest lines (763.5 and 811.5 nm)
+   are close to, but below, saturation (`acqtime <seconds>`). Single frames
+   are fine.
+3. Run `speccal` (or `speccal arhg`). The TRIAX slides the chip from ~690
+   to ~930 nm, about 25 positions. Each walk is saved to
+   `data/calibration_line_walks/linewalk_<date>_<time>_arhg.json` and added
+   to this session's list. Set the logging level to DEBUG to see why each
+   skipped line was skipped; the reasons are also saved in the file.
 4. Run `speccalfit` and read the report (section 3.4). If the reduced
    chi-squared is well above 1, try `speccalfit curvature`.
 5. If it looks right, run `speccalapply` (or `speccalapply curvature`).
@@ -220,8 +252,8 @@ peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
    you use. Each walk is added to the session.
 4. `speccalfit`, then `speccalapply`, as above.
 
-Walks from one session are fitted together, so mercury and Tiger walks can
-be combined. `speccalreset` starts a new list. Saved walks can also be
+Walks from one session are fitted together, so lamp and Tiger walks can be
+combined. `speccalreset` starts a new list. Saved walks can also be
 fitted later, outside the application:
 
 ```
@@ -246,7 +278,8 @@ wavelength a pixel reads.
 
 ### 3.6 Simulate mode
 
-In simulate mode, `speccal hg` runs against a simulated mercury lamp. The
+In simulate mode, `speccal` runs against a simulated Ar-Hg lamp: every
+catalogue line, at uneven brightness, clipped at the CCD's full scale. The
 lamp has its own "true" calibration, ~2 nm away from the shipped one, so
 you can practise the whole procedure and watch it find the offset. The
 headless test suite runs exactly this workflow
@@ -260,7 +293,7 @@ simulation every calibration looked perfect.
 
 | File | Role |
 |---|---|
-| `wavelength_calibration/reference_lines.py` | mercury line table, diffraction orders, external references |
+| `wavelength_calibration/reference_lines.py` | Ar-Hg lamp line catalogue (labelled, unlisted, higher-order, blends), external references |
 | `wavelength_calibration/line_peaks.py` | peak finding and Gaussian fits, in pixels |
 | `wavelength_calibration/line_walk.py` | the procedure; hardware passed in as three functions |
 | `wavelength_calibration/wavelength_axis_model.py` | the model, its exact inverse, the weighted fit |

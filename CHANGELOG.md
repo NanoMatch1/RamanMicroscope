@@ -4,6 +4,28 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## Wavelength axis calibration: Ar-Hg lamp (2026-11-03, later)
+
+The calibration lamp turned out to be argon-mercury, not mercury only.
+
+- `reference_lines.argon_mercury_lamp_lines`: the lamp's labelled argon
+  lines (label values), strong unlisted argon lines (NIST), mercury in
+  orders 1-3, and the unresolved 772.376/772.421 pair flagged as unusable.
+- `LineWalk` takes the full catalogue (`catalogue_lines`, renamed from
+  `reference_lines`) and uses a line only when no other line is predicted
+  within 8 px, the peak and prediction are mutual nearest neighbours, and
+  the peak isn't saturated. The fit window shrinks to keep neighbours out.
+  The pattern-match shift uses a 3 px tolerance.
+- Planning slides the chip across the line range (6 samples per line, ~25
+  positions for Ar-Hg) instead of targeting each line separately.
+- `collapse_image_to_spectrum(saturation_level=...)` marks columns with a
+  clipped pixel; `speccal` passes 65000 counts.
+- `speccal` defaults to `arhg` (690-930 nm); `speccal hg` is gone, since the
+  lamp's argon lines would confuse a mercury-only catalogue.
+- Simulated lamp: per-line brightness, clipped at full scale.
+- Tests: 26 wavelength-calibration unit tests (Ar-Hg recovery with uneven
+  lines, saturated-line skip, catalogue, saturation marking).
+
 ## Wavelength axis calibration rebuilt (2026-11-03)
 
 The TRIAX + PIXIS wavelength axis is the reference for every wavelength the

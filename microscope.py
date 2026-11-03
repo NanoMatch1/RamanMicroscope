@@ -20,7 +20,7 @@ from wavelength_calibration.line_peaks import collapse_image_to_spectrum
 from wavelength_calibration.line_walk import LineWalk, save_line_walk
 from wavelength_calibration.promotion import (comparison_report_lines, fit_line_walk_files,
                                               write_model_to_master)
-from wavelength_calibration.reference_lines import externally_measured_line, mercury_lines_in_window
+from wavelength_calibration.reference_lines import argon_mercury_lamp_lines, externally_measured_line
 from wavelength_calibration.simulated_line_lamp import SimulatedLineLamp, default_true_model
 from wavelength_calibration.wavelength_axis_model import CalibrationFitError
 
@@ -1609,40 +1609,44 @@ class Microscope(Instrument):
 
     # ── Wavelength axis calibration: TRIAX + PIXIS (docs/calibration.md section 3) ──
 
+    ARGON_MERCURY_CALIBRATION_WINDOW_NM = (690.0, 930.0)
+    CCD_SATURATION_COUNTS = 65000  # PIXIS 16-bit ADC full scale is 65535; leave a little margin
+
     @ui_callable
-    def run_wavelength_axis_line_walk(self, reference='hg', wavelength_nm=None, uncertainty_nm=None):
+    def run_wavelength_axis_line_walk(self, reference='arhg', wavelength_nm=None, uncertainty_nm=None):
         '''Walk known lines across the CCD with the TRIAX and save the observations (data/calibration_line_walks/).
-        speccal hg                    second-order mercury lines; lamp lighting the TRIAX entrance slit
+        speccal / speccal arhg        Ar-Hg lamp lighting the TRIAX entrance slit, 690-930 nm
         speccal external 785.12 0.2   one line measured on another instrument (Tiger on the spare spectrometer): wavelength and uncertainty in nm
         Each walk is added to this session's list: speccalfit fits them all, speccalapply writes the result to the master calibration.'''
         reference = str(reference).lower()
-        if reference == 'hg':
-            reference_lines = mercury_lines_in_window(720, 880, diffraction_orders=(2,))
-            description = 'Hg lamp, second order'
+        if reference == 'arhg':
+            catalogue_lines = argon_mercury_lamp_lines(*self.ARGON_MERCURY_CALIBRATION_WINDOW_NM)
+            description = 'Ar-Hg lamp, argon first order plus mercury in orders 1-3'
         elif reference == 'external':
             if wavelength_nm is None or uncertainty_nm is None:
                 self.micro_log.error("speccal external needs a wavelength and its uncertainty in nm, "
                                      "e.g. 'speccal external 785.12 0.2'")
                 return None
             wavelength_nm, uncertainty_nm = float(wavelength_nm), float(uncertainty_nm)
-            reference_lines = [externally_measured_line(wavelength_nm, uncertainty_nm,
+            catalogue_lines = [externally_measured_line(wavelength_nm, uncertainty_nm,
                                                         name=f'external {wavelength_nm:.3f}')]
             description = f'external reference {wavelength_nm} +/- {uncertainty_nm} nm'
         else:
-            self.micro_log.error(f"speccal: unknown reference '{reference}'. Use 'hg' or 'external'.")
+            self.micro_log.error(f"speccal: unknown reference '{reference}'. Use 'arhg' or 'external'.")
             return None
 
         planning_model = self.calibration_service.wavelength_axis_model
         if self.simulate:
-            self._install_simulated_line_lamp(reference_lines)
+            self._install_simulated_line_lamp(catalogue_lines)
         try:
             line_walk = LineWalk(
                 move_triax_to_steps=self.interface.spectrometer.go_to_steps,
                 read_triax_steps=self.interface.spectrometer.get_triax_steps,
                 acquire_spectrum=self._acquire_calibration_spectrum,
                 planning_model=planning_model,
-                reference_lines=reference_lines,
+                catalogue_lines=catalogue_lines,
                 number_of_pixels=len(self.wavelength_axis),
+                saturation_level=self.CCD_SATURATION_COUNTS,
                 logger=self.micro_log,
             )
             result = line_walk.run()
@@ -1670,7 +1674,7 @@ class Microscope(Instrument):
         speccalfit             linear dispersion
         speccalfit curvature   also fit the dispersion curvature (nm_per_pixel_squared)'''
         if not self.line_walk_session_files:
-            self.micro_log.error("No line walks this session. Run 'speccal hg' or 'speccal external <nm> <uncertainty>'.")
+            self.micro_log.error("No line walks this session. Run 'speccal' (Ar-Hg lamp) or 'speccal external <nm> <uncertainty>'.")
             return None
         current_model = self.calibration_service.wavelength_axis_model
         try:
@@ -1707,11 +1711,11 @@ class Microscope(Instrument):
         image_data = self.interface.acq_ctrl._acquire_one_frame()
         if image_data is None:
             raise RuntimeError("Camera returned no frame during the line walk.")
-        return collapse_image_to_spectrum(image_data)
+        return collapse_image_to_spectrum(image_data, saturation_level=self.CCD_SATURATION_COUNTS)
 
-    def _install_simulated_line_lamp(self, reference_lines):
+    def _install_simulated_line_lamp(self, emitted_lines):
         '''Simulate mode: the simulated camera images a lamp whose true calibration is independent of the one in use.'''
-        simulated_lamp = SimulatedLineLamp(default_true_model(), reference_lines,
+        simulated_lamp = SimulatedLineLamp(default_true_model(), emitted_lines,
                                            number_of_pixels=len(self.wavelength_axis))
         spectrometer = self.interface.spectrometer
         self.interface.camera.hardware.simulated_scene = lambda: simulated_lamp.image(spectrometer.get_triax_steps())

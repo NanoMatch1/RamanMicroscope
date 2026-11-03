@@ -362,7 +362,7 @@ def _largest_difference_from_simulated_truth_nm(model, triax_steps_values):
 
 def test_wavelength_axis_line_walk_recovers_simulated_truth():
     """
-    The full operator workflow: 'speccal hg', 'speccalfit curvature', 'speccalapply curvature'.
+    The full operator workflow: 'speccal arhg', 'speccalfit curvature', 'speccalapply curvature'.
 
     In simulate mode the camera images a mercury lamp whose true calibration
     lives in the simulator and starts ~2 nm away from the shipped one. The
@@ -384,7 +384,7 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
         microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
         try:
             run_command('speccalreset')
-            line_walk_path = run_command('speccal hg')
+            line_walk_path = run_command('speccal arhg')
             assert os.path.exists(line_walk_path)
 
             fit = run_command('speccalfit curvature')

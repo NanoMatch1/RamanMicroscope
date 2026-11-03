@@ -30,13 +30,18 @@ class LinePeakFit:
         return asdict(self)
 
 
-def collapse_image_to_spectrum(image, half_height_rows=10):
+def collapse_image_to_spectrum(image, half_height_rows=10, saturation_level=None):
     """
     Turn a 2D CCD frame (rows x columns) into a 1D spectrum (one value per column).
 
     The spectrum is the mean over a band of rows centred on the brightest row,
     so the band follows the image of the slit wherever it sits on the chip.
     A 1D input is returned unchanged.
+
+    If `saturation_level` is given, any column with a pixel at or above it
+    inside the band is set to exactly `saturation_level`. Averaging would
+    otherwise hide a clipped pixel, and the line walk skips lines whose
+    window reaches the saturation level.
     """
     image = np.asarray(image, dtype=float)
     if image.ndim == 1:
@@ -48,7 +53,11 @@ def collapse_image_to_spectrum(image, half_height_rows=10):
     brightest_row = int(np.argmax(row_totals))
     first_row = max(0, brightest_row - half_height_rows)
     last_row = min(image.shape[0], brightest_row + half_height_rows + 1)
-    return image[first_row:last_row, :].mean(axis=0)
+    band = image[first_row:last_row, :]
+    spectrum = band.mean(axis=0)
+    if saturation_level is not None:
+        spectrum[np.any(band >= saturation_level, axis=0)] = saturation_level
+    return spectrum
 
 
 def estimate_background_and_noise(spectrum):

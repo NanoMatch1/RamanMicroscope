@@ -25,33 +25,45 @@ def default_true_model():
     )
 
 
-class SimulatedLineLamp:
-    """Generates spectra/frames of known lines for a given TRIAX position."""
+CCD_FULL_SCALE_COUNTS = 65535
 
-    def __init__(self, true_model, reference_lines, line_amplitude=5000.0, line_sigma_pixels=1.6,
-                 background_level=400.0, noise_standard_deviation=15.0, number_of_pixels=1024,
-                 image_height=100, random_seed=0):
+
+class SimulatedLineLamp:
+    """
+    Generates spectra/frames of known lines for a given TRIAX position.
+
+    Real lamp lines differ in brightness by more than an order of magnitude,
+    so each line gets its own amplitude: `line_amplitudes` if given (one per
+    line), otherwise a seeded random fraction (0.15-1) of `line_amplitude`.
+    Output is clipped at the CCD's full scale, so bright lines can saturate.
+    """
+
+    def __init__(self, true_model, emitted_lines, line_amplitude=5000.0, line_amplitudes=None,
+                 line_sigma_pixels=1.6, background_level=400.0, noise_standard_deviation=15.0,
+                 number_of_pixels=1024, image_height=100, random_seed=0):
         self.true_model = true_model
-        self.reference_lines = list(reference_lines)
-        self.line_amplitude = line_amplitude
+        self.emitted_lines = list(emitted_lines)
+        self.random_generator = np.random.default_rng(random_seed)
+        if line_amplitudes is None:
+            line_amplitudes = line_amplitude * self.random_generator.uniform(0.15, 1.0, len(self.emitted_lines))
+        self.line_amplitudes = list(line_amplitudes)
         self.line_sigma_pixels = line_sigma_pixels
         self.background_level = background_level
         self.noise_standard_deviation = noise_standard_deviation
         self.number_of_pixels = number_of_pixels
         self.image_height = image_height
-        self.random_generator = np.random.default_rng(random_seed)
 
     def noiseless_spectrum(self, triax_steps):
         pixels = np.arange(self.number_of_pixels, dtype=float)
         spectrum = np.full(self.number_of_pixels, self.background_level)
-        for line in self.reference_lines:
+        for line, amplitude in zip(self.emitted_lines, self.line_amplitudes):
             line_pixel = self.true_model.pixel_of_wavelength(line.apparent_wavelength_nm, triax_steps)
-            spectrum += self.line_amplitude * np.exp(-0.5 * ((pixels - line_pixel) / self.line_sigma_pixels) ** 2)
+            spectrum += amplitude * np.exp(-0.5 * ((pixels - line_pixel) / self.line_sigma_pixels) ** 2)
         return spectrum
 
     def spectrum(self, triax_steps):
         noise = self.random_generator.normal(0.0, self.noise_standard_deviation, self.number_of_pixels)
-        return self.noiseless_spectrum(triax_steps) + noise
+        return np.clip(self.noiseless_spectrum(triax_steps) + noise, 0, CCD_FULL_SCALE_COUNTS)
 
     def image(self, triax_steps, slit_image_centre_row=None, slit_image_half_height_rows=15):
         """A 2D frame: the spectrum along columns, the slit image as a Gaussian along rows."""
@@ -62,4 +74,4 @@ class SimulatedLineLamp:
         line_part = self.noiseless_spectrum(triax_steps) - self.background_level
         frame = self.background_level + row_profile[:, None] * line_part[None, :]
         frame += self.random_generator.normal(0.0, self.noise_standard_deviation, frame.shape)
-        return np.clip(frame, 0, 65535)
+        return np.clip(frame, 0, CCD_FULL_SCALE_COUNTS)

@@ -17,7 +17,8 @@ from wavelength_calibration.line_peaks import (collapse_image_to_spectrum, find_
                                                fit_line_peak)
 from wavelength_calibration.line_walk import (LineWalk, estimate_pattern_shift, load_line_walk_observations,
                                               save_line_walk)
-from wavelength_calibration.reference_lines import externally_measured_line, mercury_lines_in_window
+from wavelength_calibration.reference_lines import (argon_mercury_lamp_lines, externally_measured_line,
+                                                     mercury_lines_in_window)
 from wavelength_calibration.simulated_line_lamp import SimulatedLineLamp, default_true_model
 from wavelength_calibration.wavelength_axis_model import (CalibrationFitError, LineObservation,
                                                           WavelengthAxisModel, fit_wavelength_axis,
@@ -60,6 +61,16 @@ def test_first_order_only_window_has_no_nir_mercury_lines():
     assert mercury_lines_in_window(700, 900, diffraction_orders=(1,)) == []
 
 
+def test_argon_mercury_catalogue_contents():
+    lines = argon_mercury_lamp_lines(690, 930)
+    by_label = {line.label: line for line in lines}
+    assert 'Ar 811.531 (order 1)' in by_label and by_label['Ar 811.531 (order 1)'].usable_as_reference
+    assert 'Ar 810.369 (order 1)' in by_label, "unlisted neighbour lines must be in the catalogue"
+    assert not by_label['Ar 772.376 (order 1)'].usable_as_reference, "unresolved blend must not be a reference"
+    assert by_label['Hg 253.652 (order 3)'].apparent_wavelength_nm == pytest.approx(760.956)
+    assert by_label['Hg 404.656 (order 2)'].apparent_wavelength_nm == pytest.approx(809.312)
+
+
 # ----------------------------------------------------------------------------
 # Peak finding and fitting (pixel units)
 # ----------------------------------------------------------------------------
@@ -94,6 +105,14 @@ def test_collapse_image_follows_the_slit_image_rows():
     assert spectrum.shape == (1024,)
     expected_pixel = default_true_model().pixel_of_wavelength(809.312, triax_steps)
     assert any(abs(pixel - expected_pixel) <= 1 for pixel in find_line_peaks(spectrum))
+
+
+def test_collapse_marks_columns_with_a_saturated_pixel():
+    image = np.full((40, 1024), 400.0)
+    image[20, 300] = 65535  # one clipped pixel; the band mean alone would hide it
+    spectrum = collapse_image_to_spectrum(image, half_height_rows=10, saturation_level=65000)
+    assert spectrum[300] == 65000
+    assert spectrum[299] == pytest.approx(400.0)
 
 
 # ----------------------------------------------------------------------------
@@ -259,6 +278,41 @@ def test_line_walk_skips_a_position_the_triax_did_not_reach():
     assert all(observation.triax_steps != stuck_target - 40 for observation in result.observations)
     stalled_record = [record for record in result.position_records if record.requested_steps == stuck_target][0]
     assert 'skipped' in stalled_record.notes[0]
+
+
+def run_argon_mercury_walk(line_amplitudes=None, random_seed=6):
+    true_model = default_true_model()
+    catalogue = argon_mercury_lamp_lines(690, 930)
+    lamp = SimulatedLineLamp(true_model, catalogue, line_amplitudes=line_amplitudes, line_amplitude=20000,
+                             line_sigma_pixels=1.4, random_seed=random_seed)
+    triax = FakeTriax()
+    walk = LineWalk(triax.move_to, triax.read, lambda: lamp.spectrum(triax.read()), shipped_model(), catalogue,
+                    saturation_level=65000)
+    return walk, walk.run(), catalogue
+
+
+def test_argon_mercury_walk_recovers_truth_with_uneven_line_strengths():
+    walk, result, _catalogue = run_argon_mercury_walk()
+    assert len(walk.plan_triax_positions()) < 40
+    recorded_lines = {observation.line_name for observation in result.observations}
+    assert not any('772.' in name for name in recorded_lines), "the unresolved 772 nm blend was used"
+    assert {'Ar 800.616 (order 1)', 'Ar 801.479 (order 1)'} <= recorded_lines, "11 px pair should be resolved"
+    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True)
+    measured_steps = sorted({observation.triax_steps for observation in result.observations})
+    assert largest_axis_difference_nm(fit.model, default_true_model(), measured_steps) < 0.02
+    assert fit.residual_max_nm < 0.05, "a misidentified line would leave a residual of ~1 nm or more"
+
+
+def test_argon_mercury_walk_skips_a_saturated_line():
+    catalogue = argon_mercury_lamp_lines(690, 930)
+    amplitudes = [200000.0 if line.name == 'Ar 811.531' else 8000.0 for line in catalogue]
+    _walk, result, _ = run_argon_mercury_walk(line_amplitudes=amplitudes)
+    assert not any(o.line_name == 'Ar 811.531 (order 1)' for o in result.observations)
+    all_notes = [note for record in result.position_records for note in record.notes]
+    assert any('Ar 811.531' in note and 'saturated' in note for note in all_notes)
+    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True)
+    measured_steps = sorted({observation.triax_steps for observation in result.observations})
+    assert largest_axis_difference_nm(fit.model, default_true_model(), measured_steps) < 0.02
 
 
 def test_line_walk_save_and_load(tmp_path):
