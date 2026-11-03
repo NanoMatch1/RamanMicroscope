@@ -92,5 +92,6 @@
       "z": "2Z",
       "mode": "2A"
     }
-  }
+  },
+  "spectrometer_target_pixel": 100
 }

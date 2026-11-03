@@ -6,15 +6,16 @@
 - Calibration: `python calibration.py`, `python calibration_manual.py`, or `python calibration_auto.py`
 
 ## Testing
-All three suites must pass before a change is considered complete.
+All four suites must pass before a change is considered complete.
 - Unit (Arduino protocol): `python -m pytest test_controller_simulated.py -q`
+- Unit (wavelength axis calibration): `python -m pytest test_wavelength_calibration.py -q`
 - Full headless workflow: `python -m pytest test_headless_simulation.py -q`
   (also runs standalone without pytest: `python test_headless_simulation.py`)
 - Repository safety checks: `python -m pytest test_repo_guard.py -q`
   (`tools/repo_guard.py`, the pre-commit hook in `.githooks/` and the CI
   `repo-guard` job: no personal emails/paths/share links, data files or
   personal commit identities in a public repo)
-- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q`
+- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py -q`
 
 The headless suite drives the whole application in simulate mode through
 the real command handler, with stdin replaced by an empty stream so any
@@ -43,7 +44,10 @@ interactive prompt fails fast instead of hanging. Never add a bare
 - `/pixisspec/` Princeton Instruments PIXIS camera interface (replaced the
   Tucsen camera and its `/instruments/cameras/` tree)
 - `/acquisitioncontrol/` acquisition orchestration and the PyQt5 GUI
-- `/calibration/` stores calibration data files
+- `/calibration/` stores calibration data files; `master_calibration_microsteps_32.json`
+  is the only one loaded at runtime
+- `/wavelength_calibration/` TRIAX + PIXIS wavelength axis model, line walk and fit
+  (pure, simulator-tested) — see `docs/calibration.md`
 - `/tools/` standalone diagnostic and calibration scripts, not imported by
   the application — see `tools/README.md`
 - `/arduino_mega_develop/` controller firmware — the ground truth for the

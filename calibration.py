@@ -4,6 +4,8 @@ import json
 from types import SimpleNamespace
 from scipy.interpolate import UnivariateSpline
 
+from wavelength_calibration.wavelength_axis_model import WavelengthAxisModel
+
 class PolySinModulation:
     def __init__(self, a2, a1, a0, A, B, C, D):
         """
@@ -139,7 +141,7 @@ class Calibration:
             if len(calib) == 7:
                 self.logger.debug("Loading {} as poly_sin".format(name))
                 self.__setattr__(name, PolySinModulation(*calib))
-            if len(calib) == 6:
+            elif len(calib) == 6:
                 self.logger.debug("Loading {} as poly_sin".format(name))
                 self.__setattr__(name, LinSinModulation(*calib))
             else:
@@ -173,11 +175,14 @@ class Calibration:
 
         for action_group, dataset in master_calibration.items():
             self.logger.debug("---> Loading {} calibrations".format(action_group))
+            if action_group == 'wavelength_axis':
+                self._load_wavelength_axis_model(dataset)
+                continue
             for name, calib in dataset.items():
                 if len(calib) == 7:
                     self.logger.debug("Loading {} as poly_sin".format(name))
                     self.__setattr__(name, PolySinModulation(*calib))
-                if len(calib) == 6:
+                elif len(calib) == 6:
                     self.logger.debug("Loading {} as poly_sin".format(name))
                     self.__setattr__(name, LinSinModulation(*calib))
                 else:
@@ -186,11 +191,31 @@ class Calibration:
         
         self.logger.info("Master calibrations successfully built.")
 
+    def _load_wavelength_axis_model(self, stored_model):
+        """
+        Build the TRIAX + CCD wavelength axis model (wavelength_calibration package).
+
+        triax_to_wl and wl_to_triax remain as attributes so existing callers
+        (steps_to_wl, Triax.go_to_wavelength) are unchanged; both now come from
+        the one stored model, so they are exact inverses of each other.
+        """
+        self.wavelength_axis_model = WavelengthAxisModel.from_dict(stored_model)
+        self.triax_to_wl = self.wavelength_axis_model.triax_wavelength
+        self.wl_to_triax = self.wavelength_axis_model.triax_steps_for_wavelength
+        if not self.wavelength_axis_model.metadata.get('verified_against_external_reference', True):
+            self.logger.warning("Wavelength axis calibration has not been verified against an external "
+                                "reference (see docs/calibration.md section 2).")
+
     def generate_wavelength_axis(self, spectrometer_wavelength, array_length=1024):
-        pseudo_pixel = self.wl_to_pixel(spectrometer_wavelength)
-        pseudo_pixel_axis = np.linspace(pseudo_pixel - 50, pseudo_pixel + array_length - 50, array_length)
-        wavelength_axis = self.pixel_to_wl(pseudo_pixel_axis)
-        return wavelength_axis
+        """
+        One wavelength per CCD column, with `spectrometer_wavelength` (the TRIAX
+        wavelength, triax_to_wl of its position) on the model's reference pixel.
+        """
+        model = self.wavelength_axis_model
+        pixel_offsets = np.arange(array_length) - model.reference_pixel
+        return (spectrometer_wavelength
+                + model.nm_per_pixel * pixel_offsets
+                + model.nm_per_pixel_squared * pixel_offsets ** 2)
 
     def identify_microscope_mode(self, action_group):
         '''Identify if the microscope is in RamanMode or ImageMode based on the position of motor 2A (beamsplitters).'''

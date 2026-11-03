@@ -155,18 +155,31 @@ class Triax(Instrument):
         response = self.send_command('mg {}'.format(position))
         return response
     
-    def go_to_wavelength(self, wavelength, steps_correction=1910):
-        '''Moves the spectrometer to the specified wavelength. Steps correction is an artificial adjustment to push the laser closer to 100 to prevent the laser from being too far to the left. #TODO recalibrate for pixel 100, not 50'''
+    def go_to_wavelength(self, wavelength, target_pixel=None):
+        '''Moves the spectrometer so the specified wavelength lands on target_pixel of the CCD.
+        target_pixel defaults to spectrometer_target_pixel in microscope_config.json (100): close to the
+        short-wavelength edge, so a laser line leaves the rest of the chip for the Stokes spectrum.
+        See docs/calibration.md section 3.5.'''
         try:
             wavelength = float(wavelength)
         except ValueError:
             self.logger.info('Invalid input')
             return
-        
-        triax_steps = self.get_triax_steps() 
-        
-        target_steps = round(self.interface.microscope.calibration_service.wl_to_triax(wavelength)) - steps_correction
-        # 
+
+        microscope = self.interface.microscope
+        if target_pixel is None:
+            target_pixel = microscope.config.get('spectrometer_target_pixel', 100)
+        wavelength_axis_model = microscope.calibration_service.wavelength_axis_model
+        target_steps = round(wavelength_axis_model.triax_steps_for_wavelength(wavelength, at_pixel=float(target_pixel)))
+        response = self.go_to_steps(target_steps)
+        if response == 'S0':
+            self.logger.info('Triax moved to {} nm'.format(wavelength))
+        return response
+
+    def go_to_steps(self, target_steps):
+        '''Moves the grating to an absolute position in TRIAX steps and waits for it to arrive. Returns 'S0' on success, 'F0' on failure, None if already there.'''
+        target_steps = int(target_steps)
+        triax_steps = self.get_triax_steps()
         new_steps = target_steps - triax_steps
         # return if no movement is required
         if new_steps == 0:
@@ -178,7 +191,7 @@ class Triax(Instrument):
         if response == 'o':
             triax_res = self.wait_for_triax(target_steps)
             if triax_res == 'S0':
-                self.logger.info('Triax moved to {} nm'.format(wavelength))
+                self.logger.info('Triax moved to {} steps'.format(target_steps))
                 self.triax_steps = target_steps
                 return 'S0'
             else:

@@ -111,10 +111,12 @@ Other entry points:
 | `python interface_run_me.py` | main CLI + GUI |
 | `python data_viewer_run_me.py` | live spectrum viewer: run it in a second window during `run` |
 
-<!-- TODO(sam): there are five calibration entry points (calibration.py,
-     calibration_auto.py, calibration_manual.py, calibration_scaling.py,
-     calibration_shift_run_me.py) and nothing documents which to run when.
-     A short "how to recalibrate this instrument" section would be valuable. -->
+Calibration — what depends on what, and how to recalibrate the wavelength
+axis — is in the [calibration guide](docs/calibration.md).
+
+<!-- TODO(sam): the older calibration scripts (calibration_auto.py,
+     calibration_manual.py, calibration_scaling.py, calibration_shift_run_me.py)
+     are being replaced and archived; the guide will cover gratings next. -->
 
 > ⚠️ Simulate mode is currently selected by a path-and-platform heuristic rather
 > than an explicit flag, so check which mode the application reports at startup.

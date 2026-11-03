@@ -160,6 +160,8 @@ Many of these commands are required for maintenance but some have calibration-br
 - `reference(wavelength_nm, shift=True)`: Reference system to known laser wavelength.
     
 - `referencetriax(step_pos, pixel_pos)`: Reference spectrometer step to a CCD pixel (manual).
+
+- `speccal hg` / `speccal external <nm> <uncertainty_nm>`: line walk to calibrate the TRIAX + CCD wavelength axis. `speccalfit [curvature]` reports, `speccalapply [curvature]` writes the master calibration, `speccalreset` clears the session. See [the calibration guide](calibration.md), section 3.
     
 - `invertcal`: Invert calibration mappings (laser & monochromator).
     

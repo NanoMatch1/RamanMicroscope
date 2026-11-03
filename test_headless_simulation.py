@@ -26,6 +26,7 @@ import io
 import os
 import sys
 import atexit
+import json
 import shutil
 import contextlib
 
@@ -347,6 +348,92 @@ def test_laser_action_group_is_empty_but_safe():
     interface = get_interface()
     assert interface.microscope.action_groups['laser_wavelength'] == {}
     assert run_command('laserpos') == {}
+
+
+# ----------------------------------------------------------------------------
+# Wavelength axis calibration (TRIAX + PIXIS line walk)
+# ----------------------------------------------------------------------------
+
+def _largest_difference_from_simulated_truth_nm(model, triax_steps_values):
+    from wavelength_calibration.simulated_line_lamp import default_true_model
+    from wavelength_calibration.wavelength_axis_model import largest_axis_difference_nm
+    return largest_axis_difference_nm(model, default_true_model(), triax_steps_values)
+
+
+def test_wavelength_axis_line_walk_recovers_simulated_truth():
+    """
+    The full operator workflow: 'speccal hg', 'speccalfit curvature', 'speccalapply curvature'.
+
+    In simulate mode the camera images a mercury lamp whose true calibration
+    lives in the simulator and starts ~2 nm away from the shipped one. The
+    procedure must find the truth, and applying it must change the live
+    wavelength axis. The master file is a temporary copy, restored after.
+    """
+    import tempfile
+    from wavelength_calibration.wavelength_axis_model import WavelengthAxisModel
+
+    microscope = get_interface().microscope
+    original_master_path = microscope.master_calibration_path
+    original_backup_directory = microscope.calibration_backup_directory
+    original_model_dict = microscope.calibration_service.wavelength_axis_model.to_dict()
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        temporary_master_path = os.path.join(temporary_directory, 'master.json')
+        shutil.copyfile(original_master_path, temporary_master_path)
+        microscope.master_calibration_path = temporary_master_path
+        microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
+        try:
+            run_command('speccalreset')
+            line_walk_path = run_command('speccal hg')
+            assert os.path.exists(line_walk_path)
+
+            fit = run_command('speccalfit curvature')
+            measured_triax_steps = sorted({o.triax_steps for o in fit.observations})
+            assert len(fit.observations) >= 20
+            assert _largest_difference_from_simulated_truth_nm(fit.model, measured_triax_steps) < 0.03
+
+            starting_error_nm = _largest_difference_from_simulated_truth_nm(
+                WavelengthAxisModel.from_dict(original_model_dict), measured_triax_steps)
+            assert starting_error_nm > 1.0
+
+            run_command('speccalapply curvature')
+            applied_model = microscope.calibration_service.wavelength_axis_model
+            assert _largest_difference_from_simulated_truth_nm(applied_model, measured_triax_steps) < 0.03
+            with open(temporary_master_path) as file:
+                assert json.load(file)['wavelength_axis']['metadata']['verified_against_external_reference']
+            assert os.listdir(microscope.calibration_backup_directory)
+
+            run_command('wavelengthaxis')
+            steps = microscope.spectrometer_position
+            assert microscope.wavelength_axis[50] == applied_model.triax_wavelength(steps)
+        finally:
+            microscope.master_calibration_path = original_master_path
+            microscope.calibration_backup_directory = original_backup_directory
+            microscope.calibration_service._load_wavelength_axis_model(original_model_dict)
+            microscope.generate_wavelength_axis()
+            run_command('speccalreset')
+            if 'line_walk_path' in locals() and os.path.exists(line_walk_path):
+                os.remove(line_walk_path)
+
+
+def test_spectrometer_wavelength_lands_on_target_pixel():
+    """'st' must put the requested wavelength on spectrometer_target_pixel, within one TRIAX step."""
+    microscope = get_interface().microscope
+    target_pixel = microscope.config['spectrometer_target_pixel']
+    run_command('st 800')
+    nm_per_triax_step = microscope.calibration_service.wavelength_axis_model.triax_to_wavelength_coefficients[0]
+    assert abs(microscope.wavelength_axis[target_pixel] - 800.0) <= nm_per_triax_step
+
+
+def test_wavelength_axis_fit_refuses_without_line_walks():
+    """speccalfit with no walks this session reports the problem instead of raising."""
+    run_command('speccalreset')
+    assert run_command('speccalfit') is None
+
+
+def test_external_reference_line_walk_needs_wavelength_and_uncertainty():
+    """'speccal external' without numbers must refuse, not walk with a made-up wavelength."""
+    assert run_command('speccal external') is None
 
 
 # ----------------------------------------------------------------------------

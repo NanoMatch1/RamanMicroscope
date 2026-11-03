@@ -83,4 +83,4 @@ jobs:
           QT_QPA_PLATFORM: offscreen   # no display on a CI runner
           MPLBACKEND: Agg
         run: |
-          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
+          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py -q

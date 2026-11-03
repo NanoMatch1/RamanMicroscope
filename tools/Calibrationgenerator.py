@@ -1,4 +1,14 @@
 """
+NON-FUNCTIONAL - kept for reference (2026-11-03). Do not use to calibrate.
+
+1. Its inputs are circular: the [POST-FIT] "Live-cal" wavelength is read off
+   the wavelength axis this script fits, and "Peak pixel" was computed from
+   that wavelength through the same calibration, so a fit can only return
+   the calibration already loaded. See docs/calibration.md section 2.
+2. It writes master['camera_calibrations'], which no longer exists: the CCD
+   and TRIAX calibrations are now one `wavelength_axis` group, calibrated
+   with the `speccal` line walk (docs/calibration.md section 3).
+
 pixel_to_wl_calibration.py
 ──────────────────────────
 Fit a new pixel_to_wl and wl_to_pixel calibration from measured

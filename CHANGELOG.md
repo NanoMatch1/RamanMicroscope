@@ -4,6 +4,68 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## Wavelength axis calibration rebuilt (2026-11-03)
+
+The TRIAX + PIXIS wavelength axis is the reference for every wavelength the
+instrument reports. After the Tucsen -> PIXIS swap its pixel calibration was
+refitted with `tools/Calibrationgenerator.py`, whose inputs were themselves
+computed through the calibration being fitted, so it could only reproduce
+the coefficients it started from. The slope survived (it scales exactly
+with pixel pitch); the offset was never measured. Full account:
+`docs/calibration.md` section 2.
+
+### Added
+
+- `wavelength_calibration/` package: the model
+  `wavelength(pixel, triax_steps)` with an exact computed inverse; peak
+  fitting in pixels; a line walk (TRIAX steps a known line across the
+  chip, approaching from one direction); a weighted fit that refuses
+  degenerate data; promotion to the master file with backup; a
+  `python -m wavelength_calibration fit` command line. References: mercury
+  lines in second order, or an externally measured line (Tiger on the
+  spare spectrometer).
+- Commands `speccal`, `speccalfit`, `speccalapply`, `speccalreset`.
+- `Triax.go_to_steps()` (absolute move), factored out of `go_to_wavelength`.
+- Simulated PIXIS `simulated_scene` hook. Simulate mode images a mercury
+  lamp whose true calibration is independent of the one under test.
+- `docs/calibration.md`; `test_wavelength_calibration.py` (22 tests) plus 4
+  headless workflow tests; the new suite is in CI.
+
+### Changed
+
+- Master calibration: `camera_calibrations` and `triax_calibrations`
+  replaced by one `wavelength_axis` group, same values
+  (`tools/migrations/`), flagged unverified until a line walk is applied.
+  `triax_to_wl`/`wl_to_triax` remain as `Calibration` attributes, now exact
+  inverses of each other.
+- `Calibration.generate_wavelength_axis` uses unit pixel spacing. The old
+  `np.linspace(..., endpoint=True)` stretched the axis by 1/1023: up to
+  0.08 nm at the far edge.
+- `[POST-FIT]` log: "Centre pixel (512)" and "Peak pixel" are now real CCD
+  columns (they were computed through the pixel calibration).
+- `Triax.go_to_wavelength` (`st`) puts the requested wavelength on CCD
+  pixel `spectrometer_target_pixel` (`microscope_config.json`, default 100)
+  using the wavelength axis model. It used to stop a fixed 1910 steps short,
+  which parked the requested wavelength at pixel ~274 on the PIXIS and wasted
+  Stokes range.
+
+### Fixed
+
+- `Calibration.generate_master_calibration` / `generate_calibrations`:
+  `if` -> `elif`, so a 7-coefficient poly+sine entry is no longer
+  overwritten as a plain polynomial (latent; none exist yet).
+
+### Deprecated
+
+- `tools/Calibrationgenerator.py` marked non-functional (circular inputs, and
+  it targets the removed `camera_calibrations` group). Kept for reference.
+
+### Known consequences
+
+- `calibration_shift_run_me.py` and `calibration_manual.py` look for the
+  old `triax_calibrations` group and no longer find it. Both are offline
+  scripts due to be archived in the calibration clean-up.
+
 ## Simulation repair and test harness (2026-08-20)
 
 Follow-up to the migration commits below. Simulate mode did not start at

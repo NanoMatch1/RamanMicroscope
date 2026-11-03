@@ -401,6 +401,11 @@ class SimulatedHardware(CameraHardwareBase):
         self.acqtime    = 0.5          # seconds
         self.roi        = (0, 0, 1024, 1024)
         self._temperature = -20.0
+        # Optional callable returning a 2D frame. When set, grab_frame returns
+        # it instead of the default laser image, e.g. a simulated line lamp
+        # (wavelength_calibration.simulated_line_lamp) whose true wavelengths
+        # are independent of the calibration being tested.
+        self.simulated_scene = None
 
     def initialise(self):
         self.logger.info("[SIM] PIXIS simulated camera initialised.")
@@ -418,6 +423,8 @@ class SimulatedHardware(CameraHardwareBase):
         """Return a simulated CCD frame after a short delay."""
         self.logger.debug("[SIM] grab_frame() called.")
         time.sleep(min(self.acqtime, 0.1))   # cap sim delay at 100 ms
+        if self.simulated_scene is not None:
+            return np.clip(self.simulated_scene(), 0, 65535).astype(np.uint16)
         return self._generate_simulated_image()
 
     def open_camera(self):

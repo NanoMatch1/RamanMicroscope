@@ -16,6 +16,13 @@ from dataclasses import dataclass
 from functools import wraps
 
 from datafit.laser_detection import LaserDetection
+from wavelength_calibration.line_peaks import collapse_image_to_spectrum
+from wavelength_calibration.line_walk import LineWalk, save_line_walk
+from wavelength_calibration.promotion import (comparison_report_lines, fit_line_walk_files,
+                                              write_model_to_master)
+from wavelength_calibration.reference_lines import externally_measured_line, mercury_lines_in_window
+from wavelength_calibration.simulated_line_lamp import SimulatedLineLamp, default_true_model
+from wavelength_calibration.wavelength_axis_model import CalibrationFitError
 
 def enforce_response(func, expected_response=True, callback=None):
     """
@@ -95,13 +102,13 @@ def live_laser_calibration(func):
             try:
                 cal       = self.interface.calibration_service
                 triax_wl  = self.report_spectrometer_wavelength
-                centre_wl = cal.pixel_to_wl(512)
+                centre_wl = self.wavelength_axis[512]
                 laser_wl  = self.interface.laser.get_estimated_wavelength()
                 cal_wl    = self.laser_wavelength_calibrated
 
-                # ── pixel position of the fitted laser peak ───────────────────
+                # ── CCD column where the fitted laser peak sits ───────────────
                 if cal_wl is not None:
-                    peak_pixel = cal.wl_to_pixel(cal_wl)
+                    peak_pixel = cal.wavelength_axis_model.pixel_of_wavelength(cal_wl, self.spectrometer_position)
                     pixel_str  = f"{peak_pixel:.1f}"
                 else:
                     pixel_str  = "not calibrated"
@@ -609,6 +616,13 @@ class Microscope(Instrument):
         self.instrument_state = {}
         self.autosave = True
 
+        # Wavelength axis calibration (docs/calibration.md section 3). Paths are
+        # attributes so tests can point them at temporary copies.
+        self.master_calibration_path = os.path.join(interface.calibrationDir, 'master_calibration_microsteps_32.json')
+        self.calibration_backup_directory = os.path.join(interface.calibrationDir, 'backup')
+        self.line_walk_directory = os.path.join(self.dataDir, 'calibration_line_walks')
+        self.line_walk_session_files = []
+
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
 
@@ -659,6 +673,10 @@ class Microscope(Instrument):
             'report': self.report_status,
             'writemotors': self.write_motor_positions,
             'rldr': self.read_ldr0,
+            'speccal': self.run_wavelength_axis_line_walk,
+            'speccalfit': self.fit_wavelength_axis_line_walks,
+            'speccalapply': self.apply_wavelength_axis_line_walks,
+            'speccalreset': self.reset_wavelength_axis_line_walks,
             'autocal': self.run_calibration,
             'loadconfig': self.load_config,
 
@@ -1588,6 +1606,115 @@ class Microscope(Instrument):
     def camera_set_acquisition_time(self, time):
         self.acq_time = float(time)*1000 #ms
         self.camera.cam.set_attribute_value("Exposure Time", self.acq_time)
+
+    # ── Wavelength axis calibration: TRIAX + PIXIS (docs/calibration.md section 3) ──
+
+    @ui_callable
+    def run_wavelength_axis_line_walk(self, reference='hg', wavelength_nm=None, uncertainty_nm=None):
+        '''Walk known lines across the CCD with the TRIAX and save the observations (data/calibration_line_walks/).
+        speccal hg                    second-order mercury lines; lamp lighting the TRIAX entrance slit
+        speccal external 785.12 0.2   one line measured on another instrument (Tiger on the spare spectrometer): wavelength and uncertainty in nm
+        Each walk is added to this session's list: speccalfit fits them all, speccalapply writes the result to the master calibration.'''
+        reference = str(reference).lower()
+        if reference == 'hg':
+            reference_lines = mercury_lines_in_window(720, 880, diffraction_orders=(2,))
+            description = 'Hg lamp, second order'
+        elif reference == 'external':
+            if wavelength_nm is None or uncertainty_nm is None:
+                self.micro_log.error("speccal external needs a wavelength and its uncertainty in nm, "
+                                     "e.g. 'speccal external 785.12 0.2'")
+                return None
+            wavelength_nm, uncertainty_nm = float(wavelength_nm), float(uncertainty_nm)
+            reference_lines = [externally_measured_line(wavelength_nm, uncertainty_nm,
+                                                        name=f'external {wavelength_nm:.3f}')]
+            description = f'external reference {wavelength_nm} +/- {uncertainty_nm} nm'
+        else:
+            self.micro_log.error(f"speccal: unknown reference '{reference}'. Use 'hg' or 'external'.")
+            return None
+
+        planning_model = self.calibration_service.wavelength_axis_model
+        if self.simulate:
+            self._install_simulated_line_lamp(reference_lines)
+        try:
+            line_walk = LineWalk(
+                move_triax_to_steps=self.interface.spectrometer.go_to_steps,
+                read_triax_steps=self.interface.spectrometer.get_triax_steps,
+                acquire_spectrum=self._acquire_calibration_spectrum,
+                planning_model=planning_model,
+                reference_lines=reference_lines,
+                number_of_pixels=len(self.wavelength_axis),
+                logger=self.micro_log,
+            )
+            result = line_walk.run()
+        finally:
+            if self.simulate:
+                self.interface.camera.hardware.simulated_scene = None
+            self.generate_wavelength_axis()
+
+        os.makedirs(self.line_walk_directory, exist_ok=True)
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        line_walk_path = os.path.join(self.line_walk_directory, f'linewalk_{timestamp}_{reference}.json')
+        save_line_walk(line_walk_path, result, planning_model, description=description)
+        self.line_walk_session_files.append(line_walk_path)
+
+        for record in result.position_records:
+            for note in record.notes:
+                self.micro_log.debug(f"Line walk at TRIAX {record.measured_steps}: {note}")
+        self.micro_log.info(f"Line walk: {len(result.observations)} line positions saved to {line_walk_path}. "
+                            f"{len(self.line_walk_session_files)} walk(s) this session; 'speccalfit' to fit.")
+        return line_walk_path
+
+    @ui_callable
+    def fit_wavelength_axis_line_walks(self, curvature=False):
+        '''Fit this session's line walks and report against the calibration in use. Nothing is written.
+        speccalfit             linear dispersion
+        speccalfit curvature   also fit the dispersion curvature (nm_per_pixel_squared)'''
+        if not self.line_walk_session_files:
+            self.micro_log.error("No line walks this session. Run 'speccal hg' or 'speccal external <nm> <uncertainty>'.")
+            return None
+        current_model = self.calibration_service.wavelength_axis_model
+        try:
+            fit = fit_line_walk_files(self.line_walk_session_files, reference_pixel=current_model.reference_pixel,
+                                      fit_dispersion_curvature=str(curvature).lower() in ('curvature', 'true', '1'))
+        except CalibrationFitError as error:
+            self.micro_log.error(f"Cannot fit the line walks: {error}")
+            return None
+        for line in comparison_report_lines(fit, current_model, number_of_pixels=len(self.wavelength_axis)):
+            self.micro_log.info(line)
+        return fit
+
+    @ui_callable
+    def apply_wavelength_axis_line_walks(self, curvature=False):
+        '''Fit this session's line walks and write the result to the master calibration (the old file is backed up first).'''
+        fit = self.fit_wavelength_axis_line_walks(curvature)
+        if fit is None:
+            return None
+        backup_path = write_model_to_master(fit.model, self.master_calibration_path, self.calibration_backup_directory)
+        self.calibration_service._load_wavelength_axis_model(fit.model.to_dict())
+        self.calculate_spectrometer_wavelength()
+        self.generate_wavelength_axis()
+        self.micro_log.info(f"Wavelength axis calibration applied. Previous master file: {backup_path}")
+        return fit
+
+    @ui_callable
+    def reset_wavelength_axis_line_walks(self):
+        '''Forget this session's line walks (the files stay on disk).'''
+        self.line_walk_session_files = []
+        self.micro_log.info("Line walk session list cleared.")
+
+    def _acquire_calibration_spectrum(self):
+        '''One frame from the camera, collapsed to a spectrum over the rows of the slit image.'''
+        image_data = self.interface.acq_ctrl._acquire_one_frame()
+        if image_data is None:
+            raise RuntimeError("Camera returned no frame during the line walk.")
+        return collapse_image_to_spectrum(image_data)
+
+    def _install_simulated_line_lamp(self, reference_lines):
+        '''Simulate mode: the simulated camera images a lamp whose true calibration is independent of the one in use.'''
+        simulated_lamp = SimulatedLineLamp(default_true_model(), reference_lines,
+                                           number_of_pixels=len(self.wavelength_axis))
+        spectrometer = self.interface.spectrometer
+        self.interface.camera.hardware.simulated_scene = lambda: simulated_lamp.image(spectrometer.get_triax_steps())
 
     @ui_callable
     def read_ldr0(self):
