@@ -15,12 +15,21 @@ from .wavelength_axis_model import WavelengthAxisModel
 
 
 def default_true_model():
-    """A plausible PIXIS + TRIAX truth, offset from the shipped calibration on purpose."""
+    """
+    A plausible PIXIS + TRIAX truth, offset from the shipped calibration on purpose.
+
+    The dispersion falls with TRIAX position as the real one does (about
+    0.0777 -> 0.0773 nm/px from 700 to 900 nm for the 300 g/mm grating; see
+    the wavelength_axis_model docstring). A simulator without it passed every
+    test while the first real Ar-Hg walk gave reduced chi^2 in the thousands.
+    """
     return WavelengthAxisModel(
         reference_pixel=50.0,
         triax_to_wavelength_coefficients=[0.009096028148595274, -170.88512284432366 - 1.9],
         nm_per_pixel=0.0772,
         nm_per_pixel_squared=-2.0e-7,
+        nm_per_pixel_change_per_triax_step=-2.0e-8,
+        dispersion_reference_triax_steps=107_000.0,
         metadata={'note': 'simulated truth'},
     )
 

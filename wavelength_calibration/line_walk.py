@@ -91,13 +91,20 @@ def estimate_pattern_shift(detected_pixels, predicted_pixels, match_tolerance_pi
 
 @dataclass
 class LineWalkPositionRecord:
-    """What happened at one TRIAX position, kept for the report and for debugging."""
+    """
+    What happened at one TRIAX position, kept for the report and for debugging.
+
+    `spectrum` is the spectrum the identification worked on (one value per
+    column, after collapsing the frame and marking saturated columns), so a
+    saved walk can be re-examined without the instrument.
+    """
 
     requested_steps: int
     measured_steps: int
     detected_pixels: list
     matched_lines: list
     notes: list = field(default_factory=list)
+    spectrum: list = field(default_factory=list)
 
 
 @dataclass
@@ -246,6 +253,7 @@ class LineWalk:
                 self.logger.warning(f"Line walk: TRIAX at {measured_steps}, requested {requested_steps}; skipped")
                 continue
             spectrum = np.asarray(self.acquire_spectrum(), dtype=float)
+            record.spectrum = [round(float(value), 1) for value in spectrum]
 
             if pixel_shift is None:
                 detected_pixels = find_line_peaks(spectrum, minimum_signal_to_noise=self.minimum_signal_to_noise)
@@ -270,7 +278,7 @@ class LineWalk:
 
 
 def save_line_walk(path, result, planning_model, description=''):
-    """Write the raw observations and position records to JSON (the input to the fit)."""
+    """Write the observations and position records (spectra included) to JSON (the input to the fit)."""
     contents = {
         'data_type': 'wavelength_axis_line_walk',
         'recorded_on': datetime.datetime.now().isoformat(timespec='seconds'),

@@ -161,7 +161,7 @@ Many of these commands are required for maintenance but some have calibration-br
     
 - `referencetriax(step_pos, pixel_pos)`: Reference spectrometer step to a CCD pixel (manual).
 
-- `speccal` (Ar-Hg lamp) / `speccal external <nm> <uncertainty_nm>`: line walk to calibrate the TRIAX + CCD wavelength axis. `speccalfit [curvature]` reports, `speccalapply [curvature]` writes the master calibration, `speccalreset` clears the session. See [the calibration guide](calibration.md), section 3.
+- `speccal` (Ar-Hg lamp) / `speccal external <nm> <uncertainty_nm>`: line walk to calibrate the TRIAX + CCD wavelength axis. `speccalfit [curvature] [triaxquadratic] [fixeddispersion]` reports (`speccalfit curvature triaxquadratic` for the Ar-Hg walk), `speccalapply` (same options) writes the master calibration, `speccalreset` clears the session. Both save a fit report to `data/calibration_fit_reports/`. See [the calibration guide](calibration.md), section 3.
     
 - `invertcal`: Invert calibration mappings (laser & monochromator).
     

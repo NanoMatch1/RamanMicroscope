@@ -4,6 +4,39 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## Wavelength axis calibration: first bench walk fixes (2026-11-04)
+
+The first real Ar-Hg walk gave a small rms but a reduced chi-squared above
+5000, and matched some lines the lamp doesn't show.
+
+- `WavelengthAxisModel` gains `nm_per_pixel_change_per_triax_step` and
+  `dispersion_reference_triax_steps`: the dispersion falls as the grating
+  turns (cos of the diffraction angle). A single nm_per_pixel left ~0.15 nm
+  of error at the chip edges over 690-930 nm. `fit_wavelength_axis(...,
+  fit_dispersion_change_with_triax=True)`; `speccalfit`/`speccalapply` and
+  the command-line fit use it by default (`fixeddispersion` /
+  `--fixed-dispersion` to turn it off). Master files without the new keys
+  load with a fixed dispersion, as before.
+- `CalibrationService.generate_wavelength_axis` takes the TRIAX steps, not
+  the TRIAX wavelength, since the dispersion depends on them.
+- Lamp catalogue `ARGON_MERCURY_LAMP_LINES`: the lines this lamp shows on
+  this instrument. Mercury in orders 1-3 and Ar 710.748 (not seen) removed;
+  the weak line at 871.6 nm (probably Hg 435.833, second order) is kept for
+  identification only.
+- Line walk files keep each position's spectrum (`position_records[].spectrum`).
+- Every fit writes a report to `data/calibration_fit_reports/`: walks used,
+  fitted terms, every residual, the model, and APPLIED/NOT APPLIED. An
+  applied model names its report in metadata `fit_report`.
+- `speccalfit`/`speccalapply` take any of `curvature`, `triaxquadratic`
+  (quadratic TRIAX wavelength: the drive turns the grating angle, and
+  wavelength goes as its sine), `fixeddispersion`, and refuse unknown
+  options. The CLI has `--triax-quadratic`. A physical model of the TRIAX
+  needs all three terms for a 690-930 nm walk:
+  `speccalfit curvature triaxquadratic`.
+- The simulated truth includes the dispersion change; new tests check
+  that a fixed-dispersion fit is caught, and that a sin(angle) drive needs
+  the full model (29 unit tests).
+
 ## Wavelength axis calibration: Ar-Hg lamp (2026-11-03, later)
 
 The calibration lamp turned out to be argon-mercury, not mercury only.

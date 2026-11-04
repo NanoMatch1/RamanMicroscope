@@ -206,16 +206,15 @@ class Calibration:
             self.logger.warning("Wavelength axis calibration has not been verified against an external "
                                 "reference (see docs/calibration.md section 2).")
 
-    def generate_wavelength_axis(self, spectrometer_wavelength, array_length=1024):
+    def generate_wavelength_axis(self, triax_steps, array_length=1024):
         """
-        One wavelength per CCD column, with `spectrometer_wavelength` (the TRIAX
-        wavelength, triax_to_wl of its position) on the model's reference pixel.
+        One wavelength per CCD column for the TRIAX at `triax_steps`.
+
+        Takes the TRIAX position, not its wavelength, because the dispersion
+        itself depends on the grating angle (wavelength_axis_model docstring).
+        The reference pixel still carries triax_to_wl(triax_steps).
         """
-        model = self.wavelength_axis_model
-        pixel_offsets = np.arange(array_length) - model.reference_pixel
-        return (spectrometer_wavelength
-                + model.nm_per_pixel * pixel_offsets
-                + model.nm_per_pixel_squared * pixel_offsets ** 2)
+        return self.wavelength_axis_model.wavelength_axis(triax_steps, array_length)
 
     def identify_microscope_mode(self, action_group):
         '''Identify if the microscope is in RamanMode or ImageMode based on the position of motor 2A (beamsplitters).'''

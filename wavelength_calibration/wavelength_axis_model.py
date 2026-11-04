@@ -2,13 +2,25 @@
 The wavelength axis model: which wavelength lands on which CCD pixel.
 
     wavelength(pixel, triax_steps) = triax_wavelength(triax_steps)
-                                     + nm_per_pixel * (pixel - reference_pixel)
+                                     + nm_per_pixel_at(triax_steps) * (pixel - reference_pixel)
                                      + nm_per_pixel_squared * (pixel - reference_pixel)**2
+
+    nm_per_pixel_at(triax_steps) = nm_per_pixel
+                                   + nm_per_pixel_change_per_triax_step
+                                     * (triax_steps - dispersion_reference_triax_steps)
 
 - triax_wavelength(steps) is a polynomial in the TRIAX grating position: the
   wavelength the TRIAX puts on `reference_pixel`. It is the old `triax_to_wl`.
 - nm_per_pixel is the reciprocal linear dispersion at the focal plane times
-  the pixel pitch (about 6 nm/mm x 13 um for the 300 g/mm grating and PIXIS).
+  the pixel pitch (about 6 nm/mm x 13 um for the 300 g/mm grating and PIXIS),
+  at the TRIAX position `dispersion_reference_triax_steps`.
+- nm_per_pixel_change_per_triax_step: the dispersion depends on the grating
+  angle. Linear dispersion is d * cos(beta) / (m * f), with beta the
+  diffraction angle, and beta grows as the grating turns towards longer
+  wavelengths, so nm per pixel falls slowly from the blue end to the red end
+  (measured 0.0774 -> 0.0771 nm/px over 700-880 nm, 2026-11-04). Over a
+  690-930 nm walk, leaving this out puts up to ~0.15 nm of error at the far
+  edge of the chip; see docs/calibration.md section 3.1.
 - nm_per_pixel_squared is an optional small curvature term: dispersion
   changes slightly across the chip because the diffraction angle does.
 
@@ -58,6 +70,8 @@ class WavelengthAxisModel:
     triax_to_wavelength_coefficients: list  # numpy poly1d order: highest power first
     nm_per_pixel: float
     nm_per_pixel_squared: float = 0.0
+    nm_per_pixel_change_per_triax_step: float = 0.0
+    dispersion_reference_triax_steps: float = 0.0
     metadata: dict = field(default_factory=dict)
 
     # -- evaluation ---------------------------------------------------------
@@ -66,11 +80,16 @@ class WavelengthAxisModel:
         """Wavelength (nm) the TRIAX puts on the reference pixel."""
         return np.poly1d(self.triax_to_wavelength_coefficients)(triax_steps)
 
+    def nm_per_pixel_at(self, triax_steps):
+        """Linear dispersion (nm per pixel) at the reference pixel for a TRIAX position."""
+        return (self.nm_per_pixel
+                + self.nm_per_pixel_change_per_triax_step * (triax_steps - self.dispersion_reference_triax_steps))
+
     def wavelength_at(self, pixel, triax_steps):
         """Wavelength (nm) at a pixel index (scalar or array) for a TRIAX position."""
         pixel_offset = np.asarray(pixel, dtype=float) - self.reference_pixel
         return (self.triax_wavelength(triax_steps)
-                + self.nm_per_pixel * pixel_offset
+                + self.nm_per_pixel_at(triax_steps) * pixel_offset
                 + self.nm_per_pixel_squared * pixel_offset ** 2)
 
     def wavelength_axis(self, triax_steps, number_of_pixels):
@@ -80,11 +99,12 @@ class WavelengthAxisModel:
     def pixel_of_wavelength(self, wavelength_nm, triax_steps):
         """Fractional pixel index where a wavelength lands (inverse of wavelength_at)."""
         wavelength_offset = wavelength_nm - self.triax_wavelength(triax_steps)
+        nm_per_pixel = self.nm_per_pixel_at(triax_steps)
         if self.nm_per_pixel_squared == 0.0:
-            return self.reference_pixel + wavelength_offset / self.nm_per_pixel
-        roots = np.roots([self.nm_per_pixel_squared, self.nm_per_pixel, -wavelength_offset])
+            return self.reference_pixel + wavelength_offset / nm_per_pixel
+        roots = np.roots([self.nm_per_pixel_squared, nm_per_pixel, -wavelength_offset])
         real_roots = roots[np.isreal(roots)].real
-        linear_estimate = wavelength_offset / self.nm_per_pixel
+        linear_estimate = wavelength_offset / nm_per_pixel
         return self.reference_pixel + real_roots[np.argmin(np.abs(real_roots - linear_estimate))]
 
     def triax_steps_for_wavelength(self, wavelength_nm, at_pixel=None):
@@ -93,20 +113,25 @@ class WavelengthAxisModel:
 
         This is the exact inverse of the model, not a separately fitted
         polynomial, so steps -> wavelength -> steps always round-trips.
+
+        Off the reference pixel the dispersion term depends on the steps too,
+        so the equation solved is a polynomial in steps:
+            triax_wavelength(s) + (nm_per_pixel + change * (s - s_ref)) * dp
+                + nm_per_pixel_squared * dp**2 - wavelength = 0
         """
         if at_pixel is None:
             at_pixel = self.reference_pixel
         pixel_offset = at_pixel - self.reference_pixel
-        target_triax_wavelength = (wavelength_nm - self.nm_per_pixel * pixel_offset
-                                   - self.nm_per_pixel_squared * pixel_offset ** 2)
-        coefficients = np.array(self.triax_to_wavelength_coefficients, dtype=float)
-        if len(coefficients) == 2:
-            return (target_triax_wavelength - coefficients[1]) / coefficients[0]
-        shifted = coefficients.copy()
-        shifted[-1] -= target_triax_wavelength
-        roots = np.roots(shifted)
+        step_polynomial = np.array(self.triax_to_wavelength_coefficients, dtype=float)
+        step_polynomial[-2] += self.nm_per_pixel_change_per_triax_step * pixel_offset
+        step_polynomial[-1] += ((self.nm_per_pixel - self.nm_per_pixel_change_per_triax_step
+                                 * self.dispersion_reference_triax_steps) * pixel_offset
+                                + self.nm_per_pixel_squared * pixel_offset ** 2 - wavelength_nm)
+        linear_estimate = -step_polynomial[-1] / step_polynomial[-2]
+        if len(step_polynomial) == 2:
+            return linear_estimate
+        roots = np.roots(step_polynomial)
         real_roots = roots[np.isreal(roots)].real
-        linear_estimate = (target_triax_wavelength - coefficients[-1]) / coefficients[-2]
         return real_roots[np.argmin(np.abs(real_roots - linear_estimate))]
 
     # -- storage --------------------------------------------------------------
@@ -117,6 +142,8 @@ class WavelengthAxisModel:
             'triax_to_wavelength_coefficients': [float(c) for c in self.triax_to_wavelength_coefficients],
             'nm_per_pixel': float(self.nm_per_pixel),
             'nm_per_pixel_squared': float(self.nm_per_pixel_squared),
+            'nm_per_pixel_change_per_triax_step': float(self.nm_per_pixel_change_per_triax_step),
+            'dispersion_reference_triax_steps': float(self.dispersion_reference_triax_steps),
             'metadata': self.metadata,
         }
 
@@ -127,6 +154,8 @@ class WavelengthAxisModel:
             triax_to_wavelength_coefficients=list(stored['triax_to_wavelength_coefficients']),
             nm_per_pixel=float(stored['nm_per_pixel']),
             nm_per_pixel_squared=float(stored.get('nm_per_pixel_squared', 0.0)),
+            nm_per_pixel_change_per_triax_step=float(stored.get('nm_per_pixel_change_per_triax_step', 0.0)),
+            dispersion_reference_triax_steps=float(stored.get('dispersion_reference_triax_steps', 0.0)),
             metadata=dict(stored.get('metadata', {})),
         )
 
@@ -180,7 +209,8 @@ def _check_observations_can_determine_model(observations):
 
 
 def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_order=1,
-                        fit_dispersion_curvature=False, metadata=None):
+                        fit_dispersion_curvature=False, fit_dispersion_change_with_triax=False,
+                        metadata=None):
     """
     Weighted linear least-squares fit of the wavelength axis model.
 
@@ -192,6 +222,12 @@ def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_ord
     The TRIAX polynomial is fitted in a centred, scaled step variable for
     numerical conditioning (steps are ~1e5) and converted back to raw-step
     coefficients for storage.
+
+    fit_dispersion_change_with_triax adds one column, pixel_offset * scaled_steps:
+    the dispersion is then fitted as nm_per_pixel at the centre of the walk
+    plus a slope per TRIAX step, and the centre is stored as
+    dispersion_reference_triax_steps. Use it for any walk that spans more
+    than a few tens of nm (the Ar-Hg walk always does).
     """
     observations = list(observations)
     _check_observations_can_determine_model(observations)
@@ -208,7 +244,8 @@ def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_ord
 
     step_columns = [scaled_steps ** power for power in range(triax_polynomial_order, -1, -1)]
     pixel_columns = [pixel_offsets] + ([pixel_offsets ** 2] if fit_dispersion_curvature else [])
-    design_matrix = np.column_stack(step_columns + pixel_columns)
+    cross_columns = [pixel_offsets * scaled_steps] if fit_dispersion_change_with_triax else []
+    design_matrix = np.column_stack(step_columns + pixel_columns + cross_columns)
     number_of_parameters = design_matrix.shape[1]
     if len(observations) <= number_of_parameters:
         raise CalibrationFitError(
@@ -238,6 +275,8 @@ def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_ord
     raw_step_polynomial = scaled_step_polynomial(np.poly1d([1.0 / steps_scale, -steps_centre / steps_scale]))
     nm_per_pixel = float(parameters[triax_polynomial_order + 1])
     nm_per_pixel_squared = float(parameters[triax_polynomial_order + 2]) if fit_dispersion_curvature else 0.0
+    nm_per_pixel_change_per_triax_step = float(parameters[-1]) / steps_scale \
+        if fit_dispersion_change_with_triax else 0.0
 
     model_metadata = {
         'fitted_on': datetime.date.today().isoformat(),
@@ -251,11 +290,14 @@ def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_ord
         triax_to_wavelength_coefficients=[float(c) for c in raw_step_polynomial.coeffs],
         nm_per_pixel=nm_per_pixel,
         nm_per_pixel_squared=nm_per_pixel_squared,
+        nm_per_pixel_change_per_triax_step=nm_per_pixel_change_per_triax_step,
+        dispersion_reference_triax_steps=steps_centre if fit_dispersion_change_with_triax else 0.0,
         metadata=model_metadata,
     )
 
     parameter_names = ([f'triax (scaled steps)^{power}' for power in range(triax_polynomial_order, -1, -1)]
-                       + ['nm_per_pixel'] + (['nm_per_pixel_squared'] if fit_dispersion_curvature else []))
+                       + ['nm_per_pixel'] + (['nm_per_pixel_squared'] if fit_dispersion_curvature else [])
+                       + (['nm_per_pixel x (scaled steps)'] if fit_dispersion_change_with_triax else []))
     return WavelengthAxisFit(
         model=model, observations=observations, residuals_nm=residuals_nm,
         reduced_chi_squared=reduced_chi_squared, parameter_names=parameter_names,

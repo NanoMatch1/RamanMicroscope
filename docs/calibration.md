@@ -77,16 +77,24 @@ and takes wavelengths only from an external reference.
 
 ```
 wavelength(pixel, triax_steps) = triax_wavelength(triax_steps)
-                                 + nm_per_pixel        * (pixel - reference_pixel)
-                                 + nm_per_pixel_squared * (pixel - reference_pixel)^2
+                                 + nm_per_pixel_at(triax_steps) * (pixel - reference_pixel)
+                                 + nm_per_pixel_squared          * (pixel - reference_pixel)^2
+
+nm_per_pixel_at(triax_steps) = nm_per_pixel
+                               + nm_per_pixel_change_per_triax_step
+                                 * (triax_steps - dispersion_reference_triax_steps)
 ```
 
 - `triax_wavelength(steps)` is the wavelength the TRIAX puts on the reference
-  pixel. It is a polynomial in the TRIAX's own step count (linear in
-  practice; the TRIAX controller's steps are close to linear in wavelength).
+  pixel. It is a polynomial in the TRIAX's own step count: linear for short
+  walks, quadratic over the full Ar-Hg range (explained below).
 - `nm_per_pixel` is the dispersion: how many nm one pixel spans. Physically,
   the reciprocal linear dispersion of the spectrometer (nm per mm at the
-  focal plane) times the pixel pitch.
+  focal plane) times the pixel pitch. It is the value at
+  `dispersion_reference_triax_steps` (the middle of the calibration walk).
+- `nm_per_pixel_change_per_triax_step` is how the dispersion changes as the
+  grating turns (explained below). It is small, about -2e-8 nm per pixel per
+  step, but it matters over a 690-930 nm walk.
 - `nm_per_pixel_squared` is an optional curvature term. The dispersion is not
   quite constant across the chip because the diffraction angle changes
   across it; the effect is about 0.1-0.2 nm at the edges.
@@ -107,6 +115,45 @@ own: a spectrometer with twice the dispersion and twice the TRIAX slope
 produces identical data. A second known wavelength sets the scale. The fit
 refuses single-wavelength data and says why.
 
+**Why the dispersion depends on the TRIAX position.** The dispersion comes
+from the grating equation. Differentiating m * lambda = d (sin a + sin b) at
+a fixed incidence angle a gives d(lambda)/d(b) = d cos(b) / m, so one
+pixel (a fixed step in b, since pixel pitch / focal length is fixed) spans
+
+```
+nm_per_pixel = d * cos(b) * pixel_pitch / (m * focal_length)
+```
+
+where d is the groove spacing (3333 nm for 300 g/mm) and b the diffraction
+angle. Turning the grating to longer wavelengths increases b, so cos(b) and
+the nm per pixel fall. For the 300 g/mm grating, the 550 mm focal length and
+13 um pixels, that is about 0.0777 nm/px at 700 nm and 0.0773 at 900 nm. The
+first Ar-Hg walk on the bench showed the same trend (0.0774 -> 0.0771).
+
+A 0.5 % change sounds negligible, but at the far edge of the chip, ~950
+pixels from the reference pixel, it is 0.3-0.4 nm across the walk. A single
+nm_per_pixel can only split the difference: ~0.04 nm rms and up to ~0.15 nm
+of error at the chip edges. Bright lamp lines are fitted to ~0.01 pixel, so
+that error shows up as a reduced chi-squared in the hundreds or thousands.
+
+Two smaller effects of the same geometry come with it:
+
+- **The TRIAX steps turn the grating angle, not the wavelength.** The
+  wavelength on the reference pixel goes as sin(grating angle), so it is
+  slightly curved in steps: about 0.2 nm away from a straight line at the
+  ends of a 690-930 nm walk. A quadratic `triax_wavelength` (option
+  `triaxquadratic`) takes it up.
+- **The focal plane is flat.** Pixels are evenly spaced in distance, not in
+  angle, so the dispersion also changes slightly across the chip at one
+  grating position. That is the `curvature` term.
+
+In a physical model of the TRIAX (grating equation, 550 mm focal length,
+flat focal plane, steps linear in grating angle), a 690-930 nm walk needs
+all three terms together: with any one or two of them the reduced
+chi-squared stays in the hundreds, and with all three it is ~0.2. For the
+Ar-Hg walk, fit with `speccalfit curvature triaxquadratic` (the dispersion
+term is on by default).
+
 **Why the inverse is computed, not fitted.** The old calibrations stored each
 conversion and its inverse (`wl_to_g1` and `g1_to_wl`, ...) as two separately
 fitted polynomials, so going wavelength -> steps -> wavelength didn't return
@@ -120,28 +167,35 @@ exactly.
 pencil lamp. Its label lists 17 argon lines between 696 and 922 nm, which
 covers the instrument's working range in first order. The wavelengths are
 known to ~0.005 nm, far better than the 0.078 nm a pixel spans.
-`wavelength_calibration/reference_lines.py` uses the values printed on the
-label.
 
-Three things about the lamp matter for identifying lines:
+The catalogue, `ARGON_MERCURY_LAMP_LINES` in
+`wavelength_calibration/reference_lines.py`, lists the lines this lamp
+**actually shows on this instrument**. It is based on the first bench walk
+(November 2026, 690-910 nm):
 
-- **It emits lines that aren't on the label.** The label lists the lines the
-  manufacturer considers useful. Strong argon lines at 714.704, 751.465,
-  801.479, 810.369 and 840.821 nm aren't listed, and some sit within 11-15
-  pixels of a listed line. The catalogue includes them so they can't be
-  mistaken for their listed neighbours, and they're good references in
-  their own right.
-- **Mercury shows up in higher orders.** A grating sends wavelength lambda in
-  order m to the same angle as m * lambda in first order (grating equation:
-  m * lambda = d (sin a + sin b)). With no order-sorting filter, the blue and
-  UV mercury lines appear among the argon lines: 365.015 -> 730.030,
-  404.656 -> 809.312, 407.783 -> 815.566, 435.833 -> 871.666 (second order),
-  and 253.652 -> 760.956 (third order; the strongest mercury line, and the
-  600 nm-blaze grating is efficient near 200 nm in third order). Whether
-  they're visible depends on how much UV reaches the TRIAX. They're in the
-  catalogue either way, and are used when found.
-- **772.376 and 772.421 nm are an unresolved pair** (0.6 pixel apart). The
-  fitted centre would be a brightness-weighted blend, so neither is used.
+- **Lines that aren't on the label are in it.** Argon lines at 714.704,
+  751.465, 801.479, 810.369 and 840.821 nm aren't listed on the label, and
+  some sit 11-21 pixels from a listed line. They're in the catalogue so they
+  can't be mistaken for their listed neighbours, and they're good references
+  in their own right.
+- **Lines the lamp doesn't show are left out.** Ar 710.748 is on the label
+  but wasn't seen. A grating also sends wavelength lambda in order m to the
+  same angle as m * lambda in first order, so mercury's blue and UV lines
+  could appear among the argon lines in second and third order (730.0,
+  760.96, 809.31, 815.57 nm, ...). None of them were seen, presumably because
+  the lamp envelope or the optics absorb the UV. A line in the catalogue
+  that isn't really there is a target that an unrelated weak peak can be
+  matched to, so these are out.
+- **One weak line at ~871.6 nm** matches Hg 435.833 in second order. It is
+  kept for identification but not used as a reference until it's confirmed.
+- **772.376 and 772.421 nm are an unresolved pair** (0.6 pixel apart). They
+  look like one line, but the fitted centre would be a brightness-weighted
+  blend, so neither is used.
+- 912.297 and 922.450 nm were beyond the frames recorded so far: expected,
+  not yet confirmed.
+
+If a walk shows a line that isn't in the table, or keeps missing one that
+is, edit the table. It's the only place the lamp's lines are defined.
 
 Light the TRIAX entrance slit directly with the lamp. That calibrates the
 TRIAX + CCD on their own and keeps the rest of the beam path out of it.
@@ -188,11 +242,11 @@ recorded whenever one fails:
 The fit window is narrowed to half the distance to the nearest other peak,
 so a neighbour's tail stays out of it.
 
-**The catalogue has to be complete.** A line the walk doesn't know about can
-be mistaken for a known one nearby. That's why the unlisted argon lines and
-the higher-order mercury lines are in the catalogue even though nobody asked
-for them. If you change lamps, the catalogue for the new lamp needs the same
-care.
+**The catalogue has to match the lamp.** A line the walk doesn't know about
+can be mistaken for a known one nearby, and a catalogue line the lamp
+doesn't emit can be matched to an unrelated peak. If you change lamps,
+build the new catalogue from a real walk: the saved file keeps every
+spectrum (section 3.5), so you can see exactly what the lamp shows.
 
 The TRIAX visits every position moving in the same direction (increasing
 steps, after first backing off below the first position), so backlash in the
@@ -214,9 +268,13 @@ peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
   (mistaken for a neighbour); the report flags it.
 - **reduced chi-squared**: ~1 means the scatter matches the stated
   uncertainties. Much larger than 1 means the uncertainties are optimistic
-  or the model is missing something; try the curvature term. (With
+  or the model is missing something. A small rms with a chi-squared in the
+  thousands is what a missing model term looks like (section 3.1). (With
   Tiger + spare-spectrometer data it varies a lot from run to run, for the
   shared-error reason above.)
+- **the residual table in the saved report**: residuals that follow a
+  pattern (with TRIAX position, or across the chip) point to a missing
+  model term; one line that is off on its own points to a misidentification.
 - **the change from the current calibration**: the report gives the largest
   difference across the chip. Expect an offset of up to a few nm the first
   time (section 2). After that, a large change means something moved.
@@ -235,12 +293,25 @@ peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
    to ~930 nm, about 25 positions. Each walk is saved to
    `data/calibration_line_walks/linewalk_<date>_<time>_arhg.json` and added
    to this session's list. Set the logging level to DEBUG to see why each
-   skipped line was skipped; the reasons are also saved in the file.
-4. Run `speccalfit` and read the report (section 3.4). If the reduced
-   chi-squared is well above 1, try `speccalfit curvature`.
-5. If it looks right, run `speccalapply` (or `speccalapply curvature`).
-   This backs up the master file to `calibration/backup/`, writes the new
+   skipped line was skipped. The reasons are also saved in the file, with
+   the spectrum from every position.
+4. Run `speccalfit curvature triaxquadratic` and read the report
+   (section 3.4). This is the full model of section 3.1; the dispersion is
+   fitted as changing with the TRIAX position by default. Options can be
+   given in any order: `curvature`, `triaxquadratic`, and
+   `fixeddispersion` (holds the dispersion fixed; only sensible for a walk
+   spanning a few tens of nm).
+5. If it looks right, run `speccalapply` with the same options. This backs
+   up the master file to `calibration/backup/`, writes the new
    `wavelength_axis` group, and reloads it straight away.
+
+Every `speccalfit` and `speccalapply` saves its report to
+`data/calibration_fit_reports/wavelength_axis_fit_<date>_<time>.txt`. The
+report includes the line walks used, the fitted terms, every point's
+residual, the fitted model, and a status line: `NOT APPLIED`, or `APPLIED`
+with the master file and its backup. An applied model names its report in
+its metadata (`fit_report`), so the calibration in use can always be traced
+back to the fit that produced it.
 
 **With the Tiger and the spare spectrometer:**
 
@@ -258,8 +329,11 @@ fitted later, outside the application:
 
 ```
 python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json
-python -m wavelength_calibration fit <files> --curvature --apply
+python -m wavelength_calibration fit <files> --curvature --triax-quadratic --apply
 ```
+
+These save their report in the same place (`--report-directory` to
+change it). `--fixed-dispersion` is the equivalent of `fixeddispersion`.
 
 **After applying:** the live laser calibration and all spectra use the new
 axis immediately. If the offset changed by more than a pixel or two, the
@@ -289,15 +363,26 @@ The simulator holding its own truth matters. The older simulated camera
 placed the laser line using the software's own wavelength axis, so in
 simulation every calibration looked perfect.
 
+The truth also has to be physically complete. Until November 2026 the
+simulated spectrometer had a constant dispersion, so the simulated walk
+passed while the first real one gave a reduced chi-squared above 5000
+(section 3.1). Its truth now includes the dispersion change with TRIAX
+position, and `test_fixed_dispersion_cannot_describe_a_wide_walk` checks
+that a fixed-dispersion fit is caught.
+`test_grating_angle_drive_needs_the_full_physical_model` adds the
+sin(grating angle) drive and checks that only the full model recovers it.
+The simulator used by `speccal` in simulate mode doesn't include the
+quadratic drive yet.
+
 ### 3.7 Where the code lives
 
 | File | Role |
 |---|---|
-| `wavelength_calibration/reference_lines.py` | Ar-Hg lamp line catalogue (labelled, unlisted, higher-order, blends), external references |
+| `wavelength_calibration/reference_lines.py` | Ar-Hg lamp line catalogue (the lines this lamp shows, blends marked), external references |
 | `wavelength_calibration/line_peaks.py` | peak finding and Gaussian fits, in pixels |
 | `wavelength_calibration/line_walk.py` | the procedure; hardware passed in as three functions |
 | `wavelength_calibration/wavelength_axis_model.py` | the model, its exact inverse, the weighted fit |
-| `wavelength_calibration/promotion.py` | fit saved walks, compare, write the master file |
+| `wavelength_calibration/promotion.py` | fit saved walks, compare, write the fit report and the master file |
 | `wavelength_calibration/simulated_line_lamp.py` | lamp + spectrometer simulator |
 | `calibration.py` (`_load_wavelength_axis_model`) | loads the model at startup |
 | `microscope.py` (`speccal*` commands) | connects the procedure to the TRIAX and PIXIS |

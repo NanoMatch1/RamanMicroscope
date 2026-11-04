@@ -375,6 +375,7 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
     microscope = get_interface().microscope
     original_master_path = microscope.master_calibration_path
     original_backup_directory = microscope.calibration_backup_directory
+    original_report_directory = microscope.calibration_fit_report_directory
     original_model_dict = microscope.calibration_service.wavelength_axis_model.to_dict()
 
     with tempfile.TemporaryDirectory() as temporary_directory:
@@ -382,6 +383,7 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
         shutil.copyfile(original_master_path, temporary_master_path)
         microscope.master_calibration_path = temporary_master_path
         microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
+        microscope.calibration_fit_report_directory = os.path.join(temporary_directory, 'reports')
         try:
             run_command('speccalreset')
             line_walk_path = run_command('speccal arhg')
@@ -395,12 +397,18 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
             starting_error_nm = _largest_difference_from_simulated_truth_nm(
                 WavelengthAxisModel.from_dict(original_model_dict), measured_triax_steps)
             assert starting_error_nm > 1.0
+            assert len(os.listdir(microscope.calibration_fit_report_directory)) == 1, "speccalfit saves a report"
+            assert run_command('speccalfit nonsense') is None, "an unknown option must refuse, not fit"
 
             run_command('speccalapply curvature')
             applied_model = microscope.calibration_service.wavelength_axis_model
             assert _largest_difference_from_simulated_truth_nm(applied_model, measured_triax_steps) < 0.03
             with open(temporary_master_path) as file:
-                assert json.load(file)['wavelength_axis']['metadata']['verified_against_external_reference']
+                stored_metadata = json.load(file)['wavelength_axis']['metadata']
+            assert stored_metadata['verified_against_external_reference']
+            with open(os.path.join(microscope.calibration_fit_report_directory,
+                                   stored_metadata['fit_report'])) as file:
+                assert 'status: APPLIED' in file.read()
             assert os.listdir(microscope.calibration_backup_directory)
 
             run_command('wavelengthaxis')
@@ -409,6 +417,7 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
         finally:
             microscope.master_calibration_path = original_master_path
             microscope.calibration_backup_directory = original_backup_directory
+            microscope.calibration_fit_report_directory = original_report_directory
             microscope.calibration_service._load_wavelength_axis_model(original_model_dict)
             microscope.generate_wavelength_axis()
             run_command('speccalreset')

@@ -61,14 +61,17 @@ def test_first_order_only_window_has_no_nir_mercury_lines():
     assert mercury_lines_in_window(700, 900, diffraction_orders=(1,)) == []
 
 
-def test_argon_mercury_catalogue_contents():
+def test_argon_mercury_catalogue_holds_the_lines_this_lamp_shows():
     lines = argon_mercury_lamp_lines(690, 930)
     by_label = {line.label: line for line in lines}
     assert 'Ar 811.531 (order 1)' in by_label and by_label['Ar 811.531 (order 1)'].usable_as_reference
     assert 'Ar 810.369 (order 1)' in by_label, "unlisted neighbour lines must be in the catalogue"
+    assert by_label['Ar 714.704 (order 1)'].usable_as_reference, "weak unlisted line seen on the bench"
     assert not by_label['Ar 772.376 (order 1)'].usable_as_reference, "unresolved blend must not be a reference"
-    assert by_label['Hg 253.652 (order 3)'].apparent_wavelength_nm == pytest.approx(760.956)
-    assert by_label['Hg 404.656 (order 2)'].apparent_wavelength_nm == pytest.approx(809.312)
+    assert by_label['Hg 435.833 (order 2)'].apparent_wavelength_nm == pytest.approx(871.666)
+    assert not by_label['Hg 435.833 (order 2)'].usable_as_reference, "weak, identity unconfirmed"
+    assert 'Ar 710.748 (order 1)' not in by_label, "on the label but not seen: an absent line invites false matches"
+    assert not any(line.name.startswith('Hg') and line.name != 'Hg 435.833' for line in lines)
 
 
 # ----------------------------------------------------------------------------
@@ -136,6 +139,13 @@ def test_wavelength_axis_has_unit_pixel_spacing():
     assert axis[50] == pytest.approx(model.triax_wavelength(106_000))
 
 
+def test_model_stored_before_the_dispersion_term_loads_with_fixed_dispersion():
+    stored = shipped_model().to_dict()
+    del stored['nm_per_pixel_change_per_triax_step'], stored['dispersion_reference_triax_steps']
+    model = WavelengthAxisModel.from_dict(stored)
+    assert model.nm_per_pixel_at(90_000) == model.nm_per_pixel_at(120_000) == shipped_model().nm_per_pixel
+
+
 def test_model_dictionary_round_trip():
     model = default_true_model()
     restored = WavelengthAxisModel.from_dict(model.to_dict())
@@ -186,7 +196,7 @@ def test_fit_with_curvature_recovers_curvature():
     true_model = default_true_model()
     observations = synthetic_observations(true_model, [730.03, 809.312, 815.566, 871.666],
                                           range(60, 1000, 60), pixel_noise=0.02)
-    fit = fit_wavelength_axis(observations, fit_dispersion_curvature=True)
+    fit = fit_wavelength_axis(observations, fit_dispersion_curvature=True, fit_dispersion_change_with_triax=True)
     assert fit.model.nm_per_pixel_squared == pytest.approx(true_model.nm_per_pixel_squared, rel=0.1)
     assert largest_axis_difference_nm(fit.model, true_model, [95_000, 115_000]) < 0.01
 
@@ -251,7 +261,8 @@ def test_line_walk_and_fit_recover_truth_from_wrong_starting_calibration():
     result = walk.run()
     assert len(result.observations) >= 20
 
-    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True)
+    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True,
+                              fit_dispersion_change_with_triax=True)
     assert largest_axis_difference_nm(fit.model, true_model, [95_000, 115_000]) < 0.02
     assert fit.reduced_chi_squared < 3
 
@@ -297,10 +308,67 @@ def test_argon_mercury_walk_recovers_truth_with_uneven_line_strengths():
     recorded_lines = {observation.line_name for observation in result.observations}
     assert not any('772.' in name for name in recorded_lines), "the unresolved 772 nm blend was used"
     assert {'Ar 800.616 (order 1)', 'Ar 801.479 (order 1)'} <= recorded_lines, "11 px pair should be resolved"
-    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True)
+    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True,
+                              fit_dispersion_change_with_triax=True)
     measured_steps = sorted({observation.triax_steps for observation in result.observations})
     assert largest_axis_difference_nm(fit.model, default_true_model(), measured_steps) < 0.02
     assert fit.residual_max_nm < 0.05, "a misidentified line would leave a residual of ~1 nm or more"
+
+
+def test_fixed_dispersion_cannot_describe_a_wide_walk():
+    """
+    Riley's first bench walk (2026-11-04): small rms, reduced chi^2 in the thousands.
+
+    The dispersion falls as the grating turns; one nm_per_pixel for the whole
+    690-930 nm walk leaves a systematic error that the tiny bright-line
+    uncertainties turn into a huge chi^2. The cross term removes it.
+    """
+    _walk, result, _catalogue = run_argon_mercury_walk()
+    measured_steps = sorted({observation.triax_steps for observation in result.observations})
+    fixed_dispersion_fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True)
+    tracking_fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True,
+                                       fit_dispersion_change_with_triax=True)
+    assert fixed_dispersion_fit.reduced_chi_squared > 50
+    assert largest_axis_difference_nm(fixed_dispersion_fit.model, default_true_model(), measured_steps) > 0.1
+    assert tracking_fit.reduced_chi_squared < 3
+    assert tracking_fit.model.nm_per_pixel_change_per_triax_step == pytest.approx(-2.0e-8, rel=0.1)
+
+
+def grating_angle_drive_true_model():
+    """
+    Truth for a TRIAX whose steps turn the grating ANGLE: wavelength ~ sin(angle), so
+    triax_wavelength is quadratic in steps (curvature -lambda / (2 S^2), S = steps per
+    radian ~ 7e5, about -7.6e-10 nm/step^2 at 800 nm), on top of the dispersion change.
+    """
+    quadratic_nm_per_step_squared = -7.6e-10
+    centre_steps, centre_wavelength_nm, centre_slope_nm_per_step = 107_000.0, 800.0, 0.009096
+    linear_nm_per_step = centre_slope_nm_per_step - 2 * quadratic_nm_per_step_squared * centre_steps
+    constant_nm = (centre_wavelength_nm - quadratic_nm_per_step_squared * centre_steps ** 2
+                   - linear_nm_per_step * centre_steps)
+    model = default_true_model()
+    model.triax_to_wavelength_coefficients = [quadratic_nm_per_step_squared, linear_nm_per_step, constant_nm]
+    return model
+
+
+def test_grating_angle_drive_needs_the_full_physical_model():
+    true_model = grating_angle_drive_true_model()
+    for pixel in (50, 900):
+        steps = true_model.triax_steps_for_wavelength(842.465, at_pixel=pixel)
+        assert true_model.wavelength_at(pixel, steps) == pytest.approx(842.465, abs=1e-9)
+
+    catalogue = argon_mercury_lamp_lines(690, 930)
+    lamp = SimulatedLineLamp(true_model, catalogue, line_amplitude=20000, line_sigma_pixels=1.4, random_seed=6)
+    triax = FakeTriax()
+    result = LineWalk(triax.move_to, triax.read, lambda: lamp.spectrum(triax.read()), shipped_model(), catalogue,
+                      saturation_level=65000).run()
+    measured_steps = sorted({observation.triax_steps for observation in result.observations})
+    partial_fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True,
+                                      fit_dispersion_change_with_triax=True)
+    full_fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True,
+                                   fit_dispersion_change_with_triax=True, triax_polynomial_order=2)
+    assert partial_fit.reduced_chi_squared > 50
+    assert full_fit.reduced_chi_squared < 3
+    assert largest_axis_difference_nm(full_fit.model, true_model, measured_steps) < 0.02
 
 
 def test_argon_mercury_walk_skips_a_saturated_line():
@@ -310,7 +378,8 @@ def test_argon_mercury_walk_skips_a_saturated_line():
     assert not any(o.line_name == 'Ar 811.531 (order 1)' for o in result.observations)
     all_notes = [note for record in result.position_records for note in record.notes]
     assert any('Ar 811.531' in note and 'saturated' in note for note in all_notes)
-    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True)
+    fit = fit_wavelength_axis(result.observations, fit_dispersion_curvature=True,
+                              fit_dispersion_change_with_triax=True)
     measured_steps = sorted({observation.triax_steps for observation in result.observations})
     assert largest_axis_difference_nm(fit.model, default_true_model(), measured_steps) < 0.02
 
@@ -327,6 +396,9 @@ def test_line_walk_save_and_load(tmp_path):
     assert len(observations) == len(result.observations)
     assert planning_model.nm_per_pixel == shipped_model().nm_per_pixel
     assert contents['description'] == 'unit test'
+    saved_spectra = [record['spectrum'] for record in contents['position_records']]
+    assert all(len(spectrum) == 1024 for spectrum in saved_spectra), "every position keeps its spectrum"
+    assert saved_spectra[0] == result.position_records[0].spectrum
 
 
 # ----------------------------------------------------------------------------
@@ -354,12 +426,15 @@ def test_command_line_fit_reports_without_writing_then_applies(tmp_path, capsys)
     master_path = tmp_path / 'master.json'
     _write_master_with_model(master_path, shipped_model())
     backup_directory = tmp_path / 'backup'
+    report_directory = tmp_path / 'reports'
     common_arguments = ['fit', str(walk_path), '--curvature', '--master', str(master_path),
-                        '--backup-directory', str(backup_directory)]
+                        '--backup-directory', str(backup_directory), '--report-directory', str(report_directory)]
 
     assert main(common_arguments) == 0
     assert 'Not applied' in capsys.readouterr().out
     assert json.loads(master_path.read_text())['wavelength_axis'] == shipped_model().to_dict()
+    [report_only_path] = list(report_directory.iterdir())
+    assert 'status: NOT APPLIED' in report_only_path.read_text()
 
     assert main(common_arguments + ['--apply']) == 0
     stored = json.loads(master_path.read_text())
@@ -367,6 +442,13 @@ def test_command_line_fit_reports_without_writing_then_applies(tmp_path, capsys)
     assert largest_axis_difference_nm(applied_model, default_true_model(), [95_000, 115_000]) < 0.03
     assert stored['polarization_calibrations'] == {'angle_to_pin': [13.333, 0.0]}
     assert len(list(backup_directory.iterdir())) == 1
+
+    applied_report_path = report_directory / applied_model.metadata['fit_report']
+    assert applied_report_path != report_only_path, "a second fit must not overwrite the first report"
+    applied_report = applied_report_path.read_text()
+    assert 'status: APPLIED' in applied_report and str(backup_directory) in applied_report
+    assert 'residuals (measured - fitted wavelength)' in applied_report
+    assert 'nm_per_pixel x (scaled steps)' in applied_report, "the dispersion term is fitted by default"
 
 
 def test_command_line_fit_explains_a_single_wavelength(tmp_path, capsys):
@@ -381,5 +463,6 @@ def test_command_line_fit_explains_a_single_wavelength(tmp_path, capsys):
     master_path = tmp_path / 'master.json'
     _write_master_with_model(master_path, shipped_model())
 
-    assert main(['fit', str(walk_path), '--master', str(master_path)]) == 1
+    assert main(['fit', str(walk_path), '--master', str(master_path),
+                 '--report-directory', str(tmp_path / 'reports')]) == 1
     assert 'two different known wavelengths' in capsys.readouterr().out
