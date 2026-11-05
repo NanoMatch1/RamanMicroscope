@@ -16,10 +16,11 @@ from pixisspec.simulated_picam_device import SimulatedPicamDevice
 # Simulate mode: exposures and readouts run at this fraction of real time.
 SIMULATED_TIME_SCALE = 0.1
 SIMULATED_READOUT_S = 0.1
-# A frame is taken once the sensor is at most this far above its set point. The camera
-# regulates to the set point and the PIXIS holds it steadily, so this only catches a
-# camera that is still cooling down or has lost regulation.
-TEMPERATURE_MARGIN_ABOVE_SET_POINT_C = 5.0
+# grab_frame_safe takes a frame once the sensor is at or below this. The cooler runs flat
+# out (RealHardware.SENSOR_TEMPERATURE_SET_POINT_C is below what it reaches, ~-43 C), so
+# the sensor is not regulated to the set point; this only catches a camera still cooling
+# down after power-on or one whose cooling has failed.
+SENSOR_TEMPERATURE_LIMIT_C = -30.0
 TEMPERATURE_POLL_INTERVAL_S = 5.0
 
 
@@ -201,29 +202,23 @@ class PIXISCamera(QObject):
             return self.hardware.grab_streamed_frame(timeout=timeout)
 
     def grab_frame_safe(self, timeout=10000, temperature_wait_timeout_s=600.0,
-                        temperature_limit_c=None):
+                        temperature_limit_c=SENSOR_TEMPERATURE_LIMIT_C):
         """
         Acquire a frame once the sensor is cold enough; None if it does not get there in time.
 
-        Cold enough means at or below the set point plus TEMPERATURE_MARGIN_ABOVE_SET_POINT_C,
-        or `temperature_limit_c` if given. While waiting, the temperature is checked every
-        TEMPERATURE_POLL_INTERVAL_S; after `temperature_wait_timeout_s` an error is logged and
-        None returned, so the caller's retry and failure handling takes over instead of the
-        scan hanging. An unreadable temperature or set point counts as not cold enough.
+        Cold enough means at or below `temperature_limit_c` (SENSOR_TEMPERATURE_LIMIT_C).
+        While waiting, the temperature is checked every TEMPERATURE_POLL_INTERVAL_S; after
+        `temperature_wait_timeout_s` an error is logged and None returned, so the caller's
+        retry and failure handling takes over instead of the scan hanging. An unreadable
+        temperature counts as not cold enough.
         """
+        allowed_temperature_c = temperature_limit_c
         give_up_at = time.monotonic() + temperature_wait_timeout_s
         while True:
             sensor_temperature_c = self.hardware.get_temperature()
             if sensor_temperature_c is not None:
                 self._publish_temperature(sensor_temperature_c)
-            if temperature_limit_c is not None:
-                allowed_temperature_c = temperature_limit_c
-            else:
-                set_point_c = self.hardware.get_target_temperature()
-                allowed_temperature_c = (None if set_point_c is None
-                                         else set_point_c + TEMPERATURE_MARGIN_ABOVE_SET_POINT_C)
-            if (sensor_temperature_c is not None and allowed_temperature_c is not None
-                    and sensor_temperature_c <= allowed_temperature_c):
+            if sensor_temperature_c is not None and sensor_temperature_c <= allowed_temperature_c:
                 return self.grab_frame(timeout=timeout)
             seconds_left = give_up_at - time.monotonic()
             if seconds_left <= 0:

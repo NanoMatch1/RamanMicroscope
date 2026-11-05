@@ -31,8 +31,16 @@ previous TRIAX position.
 - Frame averaging (`n_frames`) is a true mean (`acqcontrol.average_frames`);
   it was `(average + new) / 2`, which weighted the last frame 1/2 and the
   first 1/2^(n-1). The live view averages the same way.
-- `grab_frame_safe` takes a frame once the sensor is within 5 °C of its set
-  point (now read from the camera) and gives up after
+- Sensor set point -50 °C (`RealHardware.SENSOR_TEMPERATURE_SET_POINT_C`), was
+  -20 °C, the Tucsen's set point carried over in the port. This PIXIS reaches
+  about -43 °C (vacuum no longer good enough for the specified -70 °C), so the
+  cooler now runs flat out with status "Unlocked": roughly ten times less dark
+  current than at -20 °C. The set point is committed to the camera when set;
+  before, Picam held it until the next acquisition setup, so even -20 °C did
+  not reach the camera at start-up. A set point the camera clips is logged.
+- `grab_frame_safe` takes a frame once the sensor is at or below -30 °C
+  (`SENSOR_TEMPERATURE_LIMIT_C`), which only catches a camera still cooling
+  after power-on or one whose cooling has failed, and gives up after
   `temperature_wait_timeout_s` (default 10 min) with an error and no frame,
   instead of waiting forever. The discard-if-warmer-after check, needed for
   the Tucsen's temperature swings, is gone.

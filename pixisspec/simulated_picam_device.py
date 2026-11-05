@@ -31,8 +31,12 @@ that relies on a snap fails in tests rather than intermittently on the bench. Ac
 demand with a sequence that is stopped while still running (RealHardware.acquire_frames).
 
 `time_scale` shortens every wait (exposure, readout, start) for simulation and tests;
-reported times and settings stay in real units. The sensor temperature reads as the set
-point (an instantly cooled sensor).
+reported times and settings stay in real units.
+
+Settings behave as in Picam: a written value is held until it is committed, which pylablib
+does in setup_acquisition() and start_acquisition(). The sensor is cooled instantly to the
+committed set point, but no colder than `coldest_sensor_temperature_c`; below that the
+status reads "Unlocked", as on the lab PIXIS (about -43 C, 2026-11-06).
 """
 
 import collections
@@ -60,15 +64,18 @@ class SimulatedPicamDevice:
     """A free-running CCD with pylablib's PicamCamera interface, driven by a scene callable."""
 
     def __init__(self, scene, exposure_s=0.05, readout_s=0.02, acquisition_start_delay_s=0.005,
-                 default_buffer_frames=100, time_scale=1.0):
+                 default_buffer_frames=100, time_scale=1.0, coldest_sensor_temperature_c=-45.0,
+                 initial_set_point_c=-70.0):
         self.scene = scene
         self.exposure_s = float(exposure_s)
         self.readout_s = float(readout_s)
         self.acquisition_start_delay_s = acquisition_start_delay_s
         self.time_scale = float(time_scale)
+        self.coldest_sensor_temperature_c = float(coldest_sensor_temperature_c)
+        self.committed_set_point_c = float(initial_set_point_c)
         self.acquisition_mode = 'sequence'
         self.buffer_frames = default_buffer_frames
-        self.attributes = {'Sensor Temperature Set Point': -20.0,
+        self.attributes = {'Sensor Temperature Set Point': float(initial_set_point_c),
                            'ADC Analog Gain': 'Low', 'ROIs': [(0, 1024, 1, 0, 100, 1)],
                            'Time Stamp Resolution': TIME_STAMP_TICKS_PER_SECOND}
         self.frame_buffer = {}
@@ -93,6 +100,11 @@ class SimulatedPicamDevice:
         self.stop_acquisition()
         self.acquisition_mode = mode
         self.buffer_frames = int(nframes)
+        self._commit_settings()
+
+    def _commit_settings(self):
+        """Picam_CommitParameters: written settings reach the camera (here, the set point)."""
+        self.committed_set_point_c = float(self.attributes['Sensor Temperature Set Point'])
 
     def clear_acquisition(self):
         self.stop_acquisition()
@@ -102,6 +114,7 @@ class SimulatedPicamDevice:
         self.stop_acquisition()
         if mode is not None or nframes is not None:
             self.setup_acquisition(mode or self.acquisition_mode, nframes or self.buffer_frames)
+        self._commit_settings()   # pylablib commits on every start
         with self.frames_changed:
             self.frame_buffer.clear()
             self.frame_exposure_times.clear()
@@ -260,7 +273,10 @@ class SimulatedPicamDevice:
         if name == 'Exposure Time':
             return self.exposure_s * 1e3   # Picam uses milliseconds
         if name == 'Sensor Temperature Reading':
-            return self.attributes['Sensor Temperature Set Point']
+            return max(self.committed_set_point_c, self.coldest_sensor_temperature_c)
+        if name == 'Sensor Temperature Status':
+            return ('Locked' if self.committed_set_point_c >= self.coldest_sensor_temperature_c
+                    else 'Unlocked')
         if name not in self.attributes and error_on_missing:
             raise KeyError(f"simulated PIXIS has no attribute {name!r}")
         return self.attributes.get(name, default)

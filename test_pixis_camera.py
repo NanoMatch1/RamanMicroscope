@@ -230,6 +230,51 @@ def test_exposure_change_restarts_the_stream_only_if_it_was_running(stream_runni
 
 
 # ----------------------------------------------------------------------
+# Sensor cooling: set point committed, cooler flat out
+# ----------------------------------------------------------------------
+
+def real_hardware_opening_a_simulated_device(coldest_sensor_temperature_c):
+    """RealHardware opening a simulated device whose cooler bottoms out at that temperature."""
+    camera_stub = SimpleNamespace(interface=None, logger=logging.getLogger('test_pixis_camera'),
+                                  acqtime=EXPOSURE_S)
+    return RealHardware(camera_stub, open_device=lambda serial, logger: SimulatedPicamDevice(
+        SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE), exposure_s=EXPOSURE_S, readout_s=READOUT_S,
+        coldest_sensor_temperature_c=coldest_sensor_temperature_c))
+
+
+def test_start_up_runs_the_cooler_flat_out():
+    hardware = real_hardware_opening_a_simulated_device(COLDEST_SENSOR_TEMPERATURE_C)
+    hardware.initialise()
+    set_point_c = hardware.get_target_temperature()
+    sensor_temperature_c = hardware.get_temperature()
+    status = hardware._cam.get_attribute_value('Sensor Temperature Status')
+    hardware.close_camera()
+    assert set_point_c == RealHardware.SENSOR_TEMPERATURE_SET_POINT_C
+    assert sensor_temperature_c == COLDEST_SENSOR_TEMPERATURE_C
+    assert status == 'Unlocked'
+
+
+def test_set_point_reaches_the_camera_without_an_acquisition():
+    """Picam holds written settings until committed; the set point must not wait for one."""
+    hardware = real_hardware_opening_a_simulated_device(COLDEST_SENSOR_TEMPERATURE_C)
+    hardware.open_camera()
+    hardware.set_target_temperature(-20.0)
+    sensor_temperature_c = hardware.get_temperature()
+    hardware.close_camera()
+    assert sensor_temperature_c == -20.0
+
+
+def test_set_point_change_keeps_a_running_stream_running():
+    hardware = real_hardware_opening_a_simulated_device(COLDEST_SENSOR_TEMPERATURE_C)
+    hardware.open_camera()
+    hardware.open_stream()
+    hardware.set_target_temperature(-25.0)
+    still_streaming = hardware._stream_open and hardware._cam.acquisition_in_progress()
+    hardware.close_camera()
+    assert still_streaming
+
+
+# ----------------------------------------------------------------------
 # Frame averaging: n frames, equal weight
 # ----------------------------------------------------------------------
 
@@ -256,10 +301,10 @@ def test_averaged_frames_are_weighted_equally():
 # Waiting for the sensor temperature must give up, not hang a scan
 # ----------------------------------------------------------------------
 
-SET_POINT_C = -20.0
+COLDEST_SENSOR_TEMPERATURE_C = -43.0   # the lab PIXIS, cooler flat out (2026-11-06)
 
 
-def camera_with_temperatures(sensor_temperatures_c, set_point_c=SET_POINT_C):
+def camera_with_temperatures(sensor_temperatures_c):
     """Stub PIXISCamera: the sensor reads the given temperatures in turn (the last one repeats)."""
     remaining_temperatures = list(sensor_temperatures_c)
     frames_taken = []
@@ -274,8 +319,7 @@ def camera_with_temperatures(sensor_temperatures_c, set_point_c=SET_POINT_C):
         return frames_taken[-1]
 
     camera_stub = SimpleNamespace(
-        hardware=SimpleNamespace(get_temperature=read_sensor_temperature,
-                                 get_target_temperature=lambda: set_point_c),
+        hardware=SimpleNamespace(get_temperature=read_sensor_temperature),
         grab_frame=grab_frame, _publish_temperature=lambda sensor_temperature_c: None,
         logger=logging.getLogger('test_pixis_camera'))
     return camera_stub, frames_taken
@@ -286,14 +330,15 @@ def fast_temperature_polling(monkeypatch):
     monkeypatch.setattr('pixisspec.pixiscam.TEMPERATURE_POLL_INTERVAL_S', 0.01)
 
 
-def test_grab_frame_safe_takes_a_frame_at_the_set_point(fast_temperature_polling):
-    camera_stub, frames_taken = camera_with_temperatures([SET_POINT_C])
+def test_grab_frame_safe_takes_a_frame_with_the_cooler_flat_out(fast_temperature_polling):
+    """Unlocked at its coldest, well below the -30 C limit: no waiting."""
+    camera_stub, frames_taken = camera_with_temperatures([COLDEST_SENSOR_TEMPERATURE_C])
     frame = PIXISCamera.grab_frame_safe(camera_stub, timeout=1000)
     assert frame is not None and len(frames_taken) == 1
 
 
 def test_grab_frame_safe_waits_for_the_sensor_to_cool(fast_temperature_polling):
-    camera_stub, frames_taken = camera_with_temperatures([5.0, -10.0, SET_POINT_C + 4.0])
+    camera_stub, frames_taken = camera_with_temperatures([20.0, -10.0, -29.5, -31.0])
     frame = PIXISCamera.grab_frame_safe(camera_stub, timeout=1000, temperature_wait_timeout_s=5)
     assert frame is not None and len(frames_taken) == 1
 

@@ -74,6 +74,12 @@ class RealHardware(CameraHardwareBase):
     # Ring buffer for both acquire and run; the same parameters mean switching between
     # them does not make pylablib reallocate the buffer.
     ACQUISITION_BUFFER_FRAMES = 100
+    # Sensor set point. The PIXIS 1024F here gets to about -43 C (its vacuum is no longer
+    # good enough for the -70 C of the specification), so asking for -50 C runs the cooler
+    # flat out: coldest sensor, least dark current, status "Unlocked". The former -20 C was
+    # the Tucsen's set point, carried over in the port; it held this sensor ~25 C warmer
+    # than it can run (about ten times the dark current).
+    SENSOR_TEMPERATURE_SET_POINT_C = -50.0
 
     def __init__(self, camera, open_device=open_pylablib_picam_camera):
         self.camera         = camera
@@ -94,7 +100,7 @@ class RealHardware(CameraHardwareBase):
         """
         self.open_camera()
         self.set_exposure_time(self.camera.acqtime)   # acqtime is in seconds
-        self.set_target_temperature(-20)
+        self.set_target_temperature(self.SENSOR_TEMPERATURE_SET_POINT_C)
         self.logger.info("PIXIS camera initialised.")
 
     def open_camera(self):
@@ -392,10 +398,23 @@ class RealHardware(CameraHardwareBase):
             self.logger.error("PIXIS: set_target_temperature() called but camera not connected.")
             return
         try:
-            self._cam.set_attribute_value("Sensor Temperature Set Point", float(target_celsius))
-            self.logger.info(f"PIXIS target temperature set to {target_celsius:.1f} °C.")
+            # Picam keeps written settings until they are committed, and pylablib commits only
+            # when an acquisition is set up or started; commit now so the cooler gets it at once.
+            with self._stream_paused():
+                self._cam.set_attribute_value("Sensor Temperature Set Point", float(target_celsius))
+                self._commit_settings_to_camera()
+            set_point_c = self.get_target_temperature()
+            if set_point_c is not None and abs(set_point_c - float(target_celsius)) > 0.01:
+                # pylablib clips a set point outside the camera's range without saying so
+                self.logger.warning(f"PIXIS: asked for a {target_celsius:.1f} °C set point, "
+                                    f"the camera allows {set_point_c:.1f} °C.")
+            self.logger.info(f"PIXIS target temperature set to {set_point_c} °C.")
         except Exception as e:
             self.logger.error(f"PIXIS: set_target_temperature() failed: {e}")
+
+    def _commit_settings_to_camera(self):
+        """Send written settings to the camera. pylablib commits in setup_acquisition."""
+        self._cam.setup_acquisition(mode='sequence', nframes=self.ACQUISITION_BUFFER_FRAMES)
 
     def enable_auto_temperature_control(self, enable):
         """
