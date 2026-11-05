@@ -14,6 +14,7 @@ before running. See `MODERNIZATION.md` 1.4.
 | Script | Purpose |
 |---|---|
 | `sdk check.py` | Princeton Instruments PICAM/pylablib SDK exploration. The largest reference here (~88 KB) — interactive menu covering exposure, ROI, temperature and TRIAX interaction. Written during the Tucsen→PIXIS port. |
+| `pixis_frame_freshness_check.py` | Does a camera grab return a frame exposed after the request? Measures the streaming grab the application uses against an on-demand grab (start, wait, read, stop), plus ROI, readout time, frame period and shutter settings. Run with the application closed; report in `data/camera_checks/`. Written for the 2026-11-05 stale-frame audit. |
 | `Lasercalbration.py` | Tiger laser wavelength-calibration data collection, driving the laser and TRIAX together. Source of the verified points in `instruments/lasers/tiger_calibration.py`. |
 | `triax_connection_test.py` | TRIAX RS-232 connection and handshake diagnostics. Useful when the spectrometer will not initialise. |
 | `Riley Triax Test.py`, `Riley triax driver test.py` | Earlier minimal TRIAX serial probes. |
