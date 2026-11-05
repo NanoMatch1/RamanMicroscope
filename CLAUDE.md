@@ -6,16 +6,18 @@
 - Calibration: `python calibration.py`, `python calibration_manual.py`, or `python calibration_auto.py`
 
 ## Testing
-All four suites must pass before a change is considered complete.
+All five suites must pass before a change is considered complete.
 - Unit (Arduino protocol): `python -m pytest test_controller_simulated.py -q`
 - Unit (wavelength axis calibration): `python -m pytest test_wavelength_calibration.py -q`
+- Unit (PIXIS camera: acquire vs run, frame freshness, averaging, temperature gate):
+  `python -m pytest test_pixis_camera.py -q` (RealHardware on `SimulatedPicamDevice`)
 - Full headless workflow: `python -m pytest test_headless_simulation.py -q`
   (also runs standalone without pytest: `python test_headless_simulation.py`)
 - Repository safety checks: `python -m pytest test_repo_guard.py -q`
   (`tools/repo_guard.py`, the pre-commit hook in `.githooks/` and the CI
   `repo-guard` job: no personal emails/paths/share links, data files or
   personal commit identities in a public repo)
-- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py -q`
+- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q`
 
 The headless suite drives the whole application in simulate mode through
 the real command handler, with stdin replaced by an empty stream so any

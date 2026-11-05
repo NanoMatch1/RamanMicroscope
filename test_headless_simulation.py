@@ -29,6 +29,7 @@ import atexit
 import json
 import shutil
 import contextlib
+import time
 
 import numpy as np
 
@@ -40,6 +41,8 @@ if REPO_DIR not in sys.path:
 sys.stdin = io.StringIO()
 
 from interface_run_me import Interface
+from pixisspec.pixis_hardware import RealHardware
+from pixisspec.simulated_picam_device import SimulatedPicamDevice
 
 
 # ----------------------------------------------------------------------------
@@ -308,6 +311,41 @@ def test_single_frame_acquisition_completes():
     run_command('nframe 1')
     run_command('acqtime 0.1')
     run_command('acquire')
+
+
+def test_simulate_mode_runs_the_real_camera_driver():
+    """Simulate mode runs RealHardware itself, on a simulated Picam device, not a stand-in."""
+    camera = get_interface().camera
+    assert isinstance(camera.hardware, RealHardware)
+    assert isinstance(camera.hardware._cam, SimulatedPicamDevice)
+
+
+def test_run_gives_live_frames_and_acquire_stops_it():
+    """`run` streams frames for live viewing; an acquisition stops it, then takes its own frame."""
+    interface = get_interface()
+    camera = interface.camera
+    live_frames = []
+    record_live_frame = lambda image_data, wavelengths: live_frames.append(image_data)
+    original_callback = camera.save_transient_spectrum_cb
+    camera.save_transient_spectrum_cb = record_live_frame
+    try:
+        run_command('nframe 1')
+        run_command('acqtime 0.1')
+        run_command('run')
+        deadline = time.monotonic() + 5
+        while len(live_frames) < 3 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert len(live_frames) >= 3, "run produced no live frames"
+        assert camera.is_running and camera.hardware._stream_open
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            frame = camera.grab_frame()
+        assert frame is not None
+        assert not camera.is_running and not camera.hardware._stream_open
+        assert camera.acquisition_thread is None
+    finally:
+        run_command('stop')
+        camera.save_transient_spectrum_cb = original_callback
 
 
 # ----------------------------------------------------------------------------

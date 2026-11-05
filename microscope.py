@@ -1653,7 +1653,7 @@ class Microscope(Instrument):
             result = line_walk.run()
         finally:
             if self.simulate:
-                self.interface.camera.hardware.simulated_scene = None
+                self.interface.camera.simulated_scene.override_scene = None
             self.generate_wavelength_axis()
 
         os.makedirs(self.line_walk_directory, exist_ok=True)
@@ -1755,7 +1755,7 @@ class Microscope(Instrument):
         simulated_lamp = SimulatedLineLamp(default_true_model(), emitted_lines,
                                            number_of_pixels=len(self.wavelength_axis))
         spectrometer = self.interface.spectrometer
-        self.interface.camera.hardware.simulated_scene = lambda: simulated_lamp.image(spectrometer.get_triax_steps())
+        self.interface.camera.simulated_scene.override_scene = lambda: simulated_lamp.image(spectrometer.get_triax_steps())
 
     @ui_callable
     def read_ldr0(self):

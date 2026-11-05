@@ -9,7 +9,18 @@ from contextlib import contextmanager
 from PyQt5.QtCore import QObject, pyqtSignal
 from functools import wraps
 
-from pixisspec.pixis_hardware import RealHardware, SimulatedHardware
+from pixisspec.pixis_hardware import RealHardware
+from pixisspec.simulated_microscope_scene import SimulatedMicroscopeScene
+from pixisspec.simulated_picam_device import SimulatedPicamDevice
+
+# Simulate mode: exposures and readouts run at this fraction of real time.
+SIMULATED_TIME_SCALE = 0.1
+SIMULATED_READOUT_S = 0.1
+# A frame is taken once the sensor is at most this far above its set point. The camera
+# regulates to the set point and the PIXIS holds it steadily, so this only catches a
+# camera that is still cooling down or has lost regulation.
+TEMPERATURE_MARGIN_ABOVE_SET_POINT_C = 5.0
+TEMPERATURE_POLL_INTERVAL_S = 5.0
 
 
 def synchronized(func):
@@ -34,7 +45,16 @@ class PIXISCamera(QObject):
     - Exposure times are always in SECONDS at this level, matching
       the Tucsen convention. RealHardware converts to ms internally.
     - ROI is always (HOffset, VOffset, Width, Height).
-    - simulate=True uses SimulatedHardware and never touches pylablib.
+    - simulate=True runs the same RealHardware on a SimulatedPicamDevice imaging
+      `self.simulated_scene`, and never touches a camera.
+
+    Acquire and run
+    ---------------
+    grab_frame / grab_frame_safe ACQUIRE: every frame is exposed after the call, so
+    after any move that preceded it. Everything that records data uses them.
+    start_continuous_acquisition (the `run` command) RUNS the camera free for live
+    viewing during alignment; its frames can predate a move. Acquiring stops a run.
+    See RealHardware.
     """
 
     # Singleton guard — only one camera instance may be active at a time,
@@ -78,13 +98,19 @@ class PIXISCamera(QObject):
 
         # ── Hardware backend ───────────────────────────────────────────
         if self.simulate:
-            self.hardware = SimulatedHardware(self)
-            self.logger.info('PIXISCamera: using simulated hardware.')
+            self.simulated_scene = SimulatedMicroscopeScene(interface)
+            self.hardware = RealHardware(self, open_device=self._open_simulated_device)
+            self.logger.info('PIXISCamera: using a simulated camera device.')
         else:
             self.hardware = RealHardware(self)
             self.logger.info('PIXISCamera: using real hardware.')
 
         self.logger.info('PIXISCamera __init__ complete.')
+
+    def _open_simulated_device(self, camera_serial, logger):
+        """Simulate mode: the Picam device RealHardware opens instead of the real camera."""
+        return SimulatedPicamDevice(self.simulated_scene, exposure_s=self.acqtime,
+                                    readout_s=SIMULATED_READOUT_S, time_scale=SIMULATED_TIME_SCALE)
 
     # ------------------------------------------------------------------
     # NOTE on command_functions
@@ -148,10 +174,9 @@ class PIXISCamera(QObject):
     # Frame acquisition
     # ------------------------------------------------------------------
 
-    @synchronized
     def grab_frame(self, timeout=50000):
         """
-        Grab a single frame from the camera.
+        Acquire a single frame exposed after this call. Stops a run (live view) first.
 
         Parameters
         ----------
@@ -162,29 +187,58 @@ class PIXISCamera(QObject):
         -------
         np.ndarray or None
         """
-        return self.hardware.grab_frame(timeout=timeout)
+        if self.acquisition_thread is not None and self.acquisition_thread.is_alive():
+            self.logger.info("PIXISCamera: stopping the live view (run) to acquire.")
+            self.stop_continuous_acquisition()
+        with self.camera_lock:
+            return self.hardware.grab_frame(timeout=timeout)
 
-    def grab_frame_safe(self, target_temp=-15, timeout=10000):
+    def grab_streamed_frame(self, timeout=50000):
+        """Run mode: the newest frame of the live stream (may predate a move); None once stopped."""
+        with self.camera_lock:
+            if self.stop_flag.is_set():
+                return None
+            return self.hardware.grab_streamed_frame(timeout=timeout)
+
+    def grab_frame_safe(self, timeout=10000, temperature_wait_timeout_s=600.0,
+                        temperature_limit_c=None):
         """
-        Grab a frame only when the sensor is at or below target_temp.
-        Mirrors TucsenCamera.grab_frame_safe().
+        Acquire a frame once the sensor is cold enough; None if it does not get there in time.
+
+        Cold enough means at or below the set point plus TEMPERATURE_MARGIN_ABOVE_SET_POINT_C,
+        or `temperature_limit_c` if given. While waiting, the temperature is checked every
+        TEMPERATURE_POLL_INTERVAL_S; after `temperature_wait_timeout_s` an error is logged and
+        None returned, so the caller's retry and failure handling takes over instead of the
+        scan hanging. An unreadable temperature or set point counts as not cold enough.
         """
+        give_up_at = time.monotonic() + temperature_wait_timeout_s
         while True:
-            temp = self.check_camera_temperature()
-            if temp is not None and temp <= target_temp:
-                image_data = self.grab_frame(timeout=timeout)
-                temp_after = self.check_camera_temperature()
-                if temp_after is not None and temp_after > target_temp:
-                    self.logger.info(
-                        f"Frame acquired at {temp_after}°C — discarding and retrying."
-                    )
-                    continue
-                return image_data
+            sensor_temperature_c = self.hardware.get_temperature()
+            if sensor_temperature_c is not None:
+                self._publish_temperature(sensor_temperature_c)
+            if temperature_limit_c is not None:
+                allowed_temperature_c = temperature_limit_c
             else:
-                self.logger.info(
-                    f"Camera too warm ({temp}°C) — waiting for {target_temp}°C."
+                set_point_c = self.hardware.get_target_temperature()
+                allowed_temperature_c = (None if set_point_c is None
+                                         else set_point_c + TEMPERATURE_MARGIN_ABOVE_SET_POINT_C)
+            if (sensor_temperature_c is not None and allowed_temperature_c is not None
+                    and sensor_temperature_c <= allowed_temperature_c):
+                return self.grab_frame(timeout=timeout)
+            seconds_left = give_up_at - time.monotonic()
+            if seconds_left <= 0:
+                self.logger.error(
+                    f"PIXISCamera: sensor at {sensor_temperature_c} °C, "
+                    f"allowed {allowed_temperature_c} °C; "
+                    f"gave up after {temperature_wait_timeout_s:.0f} s — no frame taken."
                 )
-                time.sleep(5)
+                return None
+            self.logger.info(
+                f"PIXISCamera: sensor at {sensor_temperature_c} °C, "
+                f"waiting for {allowed_temperature_c} °C "
+                f"({seconds_left:.0f} s left)."
+            )
+            time.sleep(min(TEMPERATURE_POLL_INTERVAL_S, seconds_left))
 
     # ------------------------------------------------------------------
     # Continuous acquisition
@@ -192,36 +246,35 @@ class PIXISCamera(QObject):
 
     def start_continuous_acquisition(self, report=False):
         """
-        Start continuous frame acquisition on a background thread.
+        Run mode (`run`): live frames from the free-running stream on a background thread,
+        for alignment and live optimisation. Frames can predate a move; not for data.
+        Each cycle of n_frames is averaged with equal weights as the frames arrive.
         Mirrors TucsenCamera.start_continuous_acquisition().
         """
         n_frames = self.interface.acq_ctrl.general_parameters['n_frames']
 
         def continuous_task():
             try:
-                self.stop_flag.clear()
                 while not self.stop_flag.is_set():
+                    frames_this_cycle = []
                     for index in range(n_frames):
+                        new_frame = self.grab_streamed_frame(timeout=100000)
                         if self.stop_flag.is_set():
                             self.logger.info(
                                 "PIXISCamera: stop flag set — ending acquisition."
                             )
                             return
-
-                        new_frame = self.grab_frame(timeout=100000)
                         self.get_temperature()
 
                         if new_frame is None:
                             self.logger.info(
-                                "PIXISCamera: grab_frame returned None — stopping."
+                                "PIXISCamera: no frame from the stream — stopping."
                             )
-                            break
+                            self.stop_flag.set()
+                            return
 
-                        # Average frames as they arrive
-                        if index == 0:
-                            data = new_frame.astype(np.float32)
-                        else:
-                            data = (data + new_frame.astype(np.float32)) / 2
+                        frames_this_cycle.append(new_frame.astype(np.float32))
+                        data = np.mean(frames_this_cycle, axis=0)
 
                         wavelengths = self.interface.microscope.wavelength_axis
                         self.save_transient_spectrum_cb(data, wavelengths)
@@ -237,32 +290,38 @@ class PIXISCamera(QObject):
             )
             return
 
+        self.stop_flag.clear()
+        self.open_stream()
         self.acquisition_thread = threading.Thread(
             target=continuous_task, daemon=True
         )
         self.acquisition_thread.start()
         self.logger.info("PIXISCamera: continuous acquisition started.")
 
-    @synchronized
     def stop_continuous_acquisition(self):
         """
-        Stop the continuous acquisition thread.
+        Stop the live view: end the thread, then stop the stream.
+
+        Not synchronized while joining: the thread may be waiting for the camera lock,
+        and holding the lock here would keep it from finishing.
         Mirrors TucsenCamera.stop_continuous_acquisition().
         """
         self.stop_flag.set()
         if self.acquisition_thread and self.acquisition_thread.is_alive():
-            self.acquisition_thread.join(timeout=2)
-            self.acquisition_thread = None
+            self.acquisition_thread.join(timeout=self.acqtime + 10)
+            if self.acquisition_thread.is_alive():
+                self.logger.warning("PIXISCamera: live view thread did not finish in time.")
+        self.acquisition_thread = None
+        self.close_stream()
         self.logger.info("PIXISCamera: continuous acquisition stopped.")
 
     # ------------------------------------------------------------------
     # Exposure
     # ------------------------------------------------------------------
 
-    @synchronized
     def set_exposure_time(self, value):
         """
-        Set the exposure time.
+        Set the exposure time. Stops a run (live view) first.
 
         Parameters
         ----------
@@ -272,7 +331,8 @@ class PIXISCamera(QObject):
         if not self.stop_flag.is_set():
             self.stop_continuous_acquisition()
 
-        ret = self.hardware.set_exposure_time(value)
+        with self.camera_lock:
+            ret = self.hardware.set_exposure_time(value)
         if ret is True:
             self.acqtime = float(value)
             self.logger.info(
@@ -344,9 +404,13 @@ class PIXISCamera(QObject):
         """
         temp = self.hardware.get_temperature()
         if temp is not None:
-            self.cam_temp = float(round(temp, 2))
-            self.temp_signal.emit(self.cam_temp)
+            self._publish_temperature(temp)
         return self.cam_temp
+
+    def _publish_temperature(self, sensor_temperature_c):
+        """Record a sensor reading and send it to the GUI (temp_signal)."""
+        self.cam_temp = float(round(sensor_temperature_c, 2))
+        self.temp_signal.emit(self.cam_temp)
 
     @synchronized
     def check_camera_temperature(self):

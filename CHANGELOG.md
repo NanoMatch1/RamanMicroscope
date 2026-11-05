@@ -4,6 +4,47 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## PIXIS camera: acquire on demand, run only for live view (2026-11-06)
+
+Branch `feature/pixis-acquire-on-demand`. The camera streamed from start-up
+(pylablib "sequence" mode, free-running into a ring buffer) and `grab_frame`
+returned the newest frame already in the buffer. After a move that frame had
+been exposed before or during the move: on the lab PC at 0.5 s exposure,
+5 of 5 grabs after a pause returned a frame exposed 1.0-1.8 s before the
+request (`tools/pixis_frame_freshness_check.py`, judged by exposure time
+stamps). Riley's line walks of 2026-11-04 show it as lines sitting at the
+previous TRIAX position.
+
+- **Acquire** (`grab_frame`, `RealHardware.acquire_frames`) is the default for
+  everything that records data: an acquisition starts at the request, its
+  first frames are read, and it is stopped while still running, so every frame
+  is exposed after the request. The CCD is idle between acquisitions. Cost on
+  the lab PC at full-chip readout: ~0.95 s per frame beyond the exposure
+  (0.33 s start and clean, 0.56 s readout).
+- **Run** (`run`, `start_continuous_acquisition`) keeps the free-running
+  stream for live viewing during alignment (`grab_streamed_frame`). Any
+  acquisition, exposure change or scan stops it first. Exposure, ROI and
+  binning changes restart the stream only if it was running.
+- pylablib's own `grab()`/`snap()` are not used: with pylablib 1.4.5 their
+  `stop_acquisition()` can raise `PicamError_AcquisitionNotInProgress` after a
+  snap has finished by itself (once in two runs on the lab PC).
+- Frame averaging (`n_frames`) is a true mean (`acqcontrol.average_frames`);
+  it was `(average + new) / 2`, which weighted the last frame 1/2 and the
+  first 1/2^(n-1). The live view averages the same way.
+- `grab_frame_safe` takes a frame once the sensor is within 5 °C of its set
+  point (now read from the camera) and gives up after
+  `temperature_wait_timeout_s` (default 10 min) with an error and no frame,
+  instead of waiting forever. The discard-if-warmer-after check, needed for
+  the Tucsen's temperature swings, is gone.
+- Simulate mode runs `RealHardware` itself on `SimulatedPicamDevice`, a
+  pylablib `PicamCamera` stand-in with a free-running CCD thread
+  (`pixisspec/simulated_picam_device.py`); the simulated scene (laser line,
+  or the line walk's lamp via `camera.simulated_scene.override_scene`) is
+  `pixisspec/simulated_microscope_scene.py`. `SimulatedHardware` is removed.
+- `Triax.go_to_steps`: the "coms anomaly" branch now waits for the move to
+  finish instead of reporting success at once.
+- New suite `test_pixis_camera.py`.
+
 ## Wavelength axis calibration: first bench walk fixes (2026-11-04)
 
 The first real Ar-Hg walk gave a small rms but a reduced chi-squared above

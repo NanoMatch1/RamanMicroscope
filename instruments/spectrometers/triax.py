@@ -199,8 +199,14 @@ class Triax(Instrument):
                 return 'F0'
         # Note: workaround for something not handled well by the above code #TODO fix this
         elif response.startswith('o'):
+            # The move was accepted: wait for it to finish, or the next frame sees a moving grating.
             self.logger.info('Triax coms anomaly #TODO debug. Response:{}'.format(response))
-            return 'S0'
+            triax_res = self.wait_for_triax(target_steps)
+            if triax_res == 'S0':
+                self.triax_steps = target_steps
+            else:
+                self.logger.info('Triax move failed after coms anomaly: {}'.format(triax_res))
+            return triax_res
 
         else:
             self.logger.info('Triax communication failed:')

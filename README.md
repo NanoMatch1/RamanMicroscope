@@ -83,8 +83,8 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 
-# 64 tests, no hardware required, about fifteen seconds
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
+# no hardware required, under a minute
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q
 ```
 
 Run the command-line interface:
@@ -264,11 +264,11 @@ is a configuration change rather than a code change.
 
 ## Testing
 
-Three suites, all hardware-free, all required to pass before a change is
+Five suites, all hardware-free, all required to pass before a change is
 considered complete:
 
 ```bash
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q   # 64 tests
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q
 ```
 
 - **`test_controller_simulated.py`** (9) — the Arduino command protocol at the
@@ -278,12 +278,17 @@ python -m pytest test_controller_simulated.py test_headless_simulation.py test_r
   interactive prompt fails immediately instead of hanging a headless run.
 - **`test_repo_guard.py`** (35) — the public-repository safety checks
   (`tools/repo_guard.py`), including real commits through the pre-commit hook.
+- **`test_wavelength_calibration.py`** — the TRIAX + PIXIS wavelength axis
+  model, line walk and fit (`docs/calibration.md`).
+- **`test_pixis_camera.py`** — the PIXIS camera driver (`RealHardware`) run on a
+  simulated free-running CCD: acquired frames start after the request, the live
+  view (`run`) streams, frame averaging, and the sensor temperature gate.
 
-CI runs all three on every push and pull request.
+CI runs all five on every push and pull request.
 
 **Scope, honestly:** these cover the motor protocol and orchestration well.
-They do not yet cover the laser, spectrometer and camera device classes, the
-calibration programs, the fitting code, or the GUI. That is a deliberate
+They do not yet cover the laser and spectrometer device classes, the older
+calibration programs, or the GUI. That is a deliberate
 position for a hardware project rather than an oversight — but it is where new
 tests are most welcome.
 

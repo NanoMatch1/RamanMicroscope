@@ -68,6 +68,9 @@ All commands can be passed arguments in the form of characters separated by `<sp
 
 
 - `run`: runs the camera in continuous acquisition mode. Data is plotted to the data_viewer_run_me.py
+  This is the live view for alignment: it shows the newest frame at once, so a frame can predate a
+  move. Acquisitions (`acquire`, scans, calibrations) stop it and take their own frames, each
+  exposed after the request.
 - `stop`: stops a continuous acquisition.
 - `filename` $string$: sets the current filename ($string$) for saved data
 - `gui`: brings up the GUI for preparing and performing multidimensional scan datasets
@@ -196,7 +199,7 @@ Many of these commands are required for maintenance but some have calibration-br
     
 - `acquire`: Acquire a single frame (if implemented).
     
-- `run`: Start continuous acquisition.
+- `run`: Start continuous acquisition (live view; stopped by any acquisition).
     
 - `stop`: Stop continuous acquisition.
     
