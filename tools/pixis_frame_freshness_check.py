@@ -15,9 +15,13 @@ This script measures, on the real camera:
   2. STREAMING grab, exactly as the application does it now: after each pause, is the
      returned frame one that finished before the request, one that was already exposing
      at the request, or one that started after it?
-  3. ON-DEMAND grab (the proposed "acquire"): pylablib grab(), which starts an
-     acquisition, waits for the frames, reads them and stops. How much time does it add
-     beyond the exposure, and when does the exposure start relative to the request?
+  3. ON-DEMAND grab (the proposed "acquire"): start a sequence acquisition at the request,
+     wait for the frames counted from its start, read them, stop it while it is still
+     running. How much time does it add beyond the exposure, and when does the exposure
+     start relative to the request?
+  4. whether pylablib's own grab() works on this camera. It snaps, and in pylablib 1.4.5
+     stop_acquisition() raises PicamError_AcquisitionNotInProgress once a snap has finished
+     by itself (found on the lab PC 2026-11-05), which is why section 3 uses a sequence.
 
 A frame's freshness is judged two ways. The frame counter needs no camera support: frame
 k is the (k+1)th frame to complete, so a returned index below the count completed at the
@@ -40,6 +44,7 @@ import json
 import os
 import sys
 import time
+import traceback
 
 import numpy as np
 
@@ -157,14 +162,41 @@ def measure_streaming_grabs(camera, pause_s, repeats, frame_timeout_s, ticks_per
     return records
 
 
+def grab_on_demand(camera, frame_count, frame_timeout_s):
+    """Start a sequence acquisition now, read the first `frame_count` frames, stop it while it still runs.
+
+    Every frame starts after the call. A snap would stop by itself, and pylablib 1.4.5 then
+    raises from stop_acquisition() on Picam cameras; stopping a running sequence works.
+    """
+    camera.start_acquisition(mode='sequence', nframes=STREAMING_BUFFER_FRAMES)
+    try:
+        camera.wait_for_frame(since='start', nframes=frame_count, timeout=frame_timeout_s * frame_count)
+        return camera.read_multiple_images(rng=(0, frame_count), return_info=True)
+    finally:
+        camera.stop_acquisition()
+
+
+def check_pylablib_snap_grab(camera, frame_timeout_s):
+    """Does pylablib's grab() (snap mode) complete on this camera? Returns a one-line verdict."""
+    try:
+        camera.grab(nframes=1, frame_timeout=frame_timeout_s)
+        return "pylablib grab() works on this camera"
+    except Exception as error:
+        try:
+            camera.stop_acquisition()
+        except Exception:
+            pass
+        return f"pylablib grab() FAILS: {type(error).__name__}: {error}"
+
+
 def measure_on_demand_grabs(camera, pause_s, repeats, frames_per_grab, exposure_s, frame_timeout_s,
                             ticks_per_second, clock=time.perf_counter):
-    """pylablib grab(): start an acquisition at the request, wait for the frames, read them, stop."""
+    """grab_on_demand after each pause: time beyond the exposure, and when the exposures start."""
     records = []
     for repeat_index in range(repeats):
         time.sleep(pause_s)
         request_time = clock()
-        frames, frame_infos = camera.grab(nframes=frames_per_grab, frame_timeout=frame_timeout_s, return_info=True)
+        frames, frame_infos = grab_on_demand(camera, frames_per_grab, frame_timeout_s)
         returned_time = clock()
         exposure_starts = [exposure_start_seconds_after_acquisition_start(frame_info, ticks_per_second)
                            for frame_info in frame_infos]
@@ -227,8 +259,25 @@ def write_report(report_directory, report_lines, raw_results):
     return report_path
 
 
+def run_section(measurement, summarise, raw_results, result_name, camera):
+    """Run one measurement; on failure report the error and stop the camera, so later sections still run."""
+    try:
+        records = measurement()
+    except Exception:
+        raw_results[result_name] = traceback.format_exc()
+        try:
+            camera.stop_acquisition()
+        except Exception:
+            pass
+        return ['  FAILED:'] + ['    ' + line for line in traceback.format_exc().splitlines()] + ['']
+    raw_results[result_name] = records
+    return summarise(records) + ['']
+
+
 def run_check(camera, exposure_s, repeats, pause_s, frames_per_grab, report_directory):
-    """All three measurements on an open camera; restores the exposure and metadata setting afterwards."""
+    """All four sections on an open camera; restores the exposure and metadata setting afterwards.
+
+    The report is written even if a section fails, with the error in its place."""
     original_exposure_s = camera.get_exposure()
     report_lines = [f"PIXIS frame freshness check, {datetime.datetime.now().isoformat(timespec='seconds')}",
                     f"exposure {exposure_s} s, {repeats} repeats per method"]
@@ -250,19 +299,26 @@ def run_check(camera, exposure_s, repeats, pause_s, frames_per_grab, report_dire
                          f"  exposure time stamps: {'yes' if ticks_per_second else 'NOT available'}", '']
 
         print("Measuring streaming grabs (the application's current method)...")
-        streaming_records = measure_streaming_grabs(camera, pause_s, repeats, frame_timeout_s, ticks_per_second)
-        raw_results['streaming'] = streaming_records
         report_lines += ['2. STREAMING grab (current: free-running + wait_for_frame + read_newest_image)']
-        report_lines += summarise_streaming(streaming_records) + ['']
+        report_lines += run_section(lambda: measure_streaming_grabs(camera, pause_s, repeats, frame_timeout_s,
+                                                                    ticks_per_second),
+                                    summarise_streaming, raw_results, 'streaming', camera)
 
-        raw_results['on_demand'] = {}
         for grab_frame_count in sorted({1, frames_per_grab}):
             print(f"Measuring on-demand grabs of {grab_frame_count} frame(s) (proposed acquire)...")
-            on_demand_records = measure_on_demand_grabs(camera, pause_s, repeats, grab_frame_count, exposure_s_set,
-                                                        frame_timeout_s, ticks_per_second)
-            raw_results['on_demand'][grab_frame_count] = on_demand_records
             report_lines += [f'3. ON-DEMAND grab (proposed: start, wait, read, stop), {grab_frame_count} frame(s)']
-            report_lines += summarise_on_demand(on_demand_records) + ['']
+            report_lines += run_section(lambda: measure_on_demand_grabs(camera, pause_s, repeats, grab_frame_count,
+                                                                        exposure_s_set, frame_timeout_s,
+                                                                        ticks_per_second),
+                                        summarise_on_demand, raw_results, f'on_demand_{grab_frame_count}_frames',
+                                        camera)
+
+        print("Checking pylablib's own grab() (snap mode)...")
+        snap_verdict = check_pylablib_snap_grab(camera, frame_timeout_s)
+        raw_results['pylablib_snap_grab'] = snap_verdict
+        report_lines += ["4. pylablib grab() in snap mode", f"  {snap_verdict}", '']
+    except Exception:
+        report_lines += ['(check stopped early)', traceback.format_exc()]
     finally:
         try:
             camera.stop_acquisition()
