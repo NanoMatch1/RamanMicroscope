@@ -4,7 +4,21 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
-## Wavelength axis calibration: first bench walk fixes (2026-11-04)
+## Wavelength axis calibration: TRIAX repeatability check (2026-11-06)
+
+A walk with small residuals within each TRIAX position but a reduced
+chi-squared in the thousands pointed at the TRIAX not being where it reports.
+
+- `multispeccal [count]` runs the Ar-Hg walk `count` times (default 5), each
+  planned from the same calibration so they visit the same TRIAX steps.
+- `speccaltriaxcheck [n_walks] [tolerance_px]` compares the fitted pixel of
+  each line at each TRIAX step across the session's walks, reports the offset
+  of every walk at every position (pixels, nm, TRIAX steps), and records them
+  in `data/calibration_triax_checks/`. Offsets over 5 px are treated as
+  misidentified lines (marked `*`) and left out of the verdict, which is
+  `REPEATABLE`, `NOT REPEATABLE` or `INCONCLUSIVE`. New module
+  `wavelength_calibration/triax_repeatability.py`.
+
 
 The first real Ar-Hg walk gave a small rms but a reduced chi-squared above
 5000, and matched some lines the lamp doesn't show.

@@ -440,6 +440,40 @@ def test_wavelength_axis_fit_refuses_without_line_walks():
     assert run_command('speccalfit') is None
 
 
+def test_multispeccal_and_triax_check_in_simulation():
+    """
+    'multispeccal 3' makes three walks from the same calibration, so they visit the same TRIAX steps;
+    the simulated TRIAX is exact, so 'speccaltriaxcheck' must call them repeatable and record the offsets.
+    """
+    import tempfile
+    microscope = get_interface().microscope
+    original_walk_directory = microscope.line_walk_directory
+    original_check_directory = microscope.triax_check_directory
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
+        microscope.triax_check_directory = os.path.join(temporary_directory, 'checks')
+        try:
+            run_command('speccalreset')
+            assert run_command('speccaltriaxcheck') is None, "no walks yet: refuse rather than raise"
+            assert run_command('multispeccal nonsense') is None
+            assert run_command('multispeccal 0') is None
+
+            line_walk_paths = run_command('multispeccal 3')
+            assert len(line_walk_paths) == 3 and all(os.path.exists(path) for path in line_walk_paths)
+            assert microscope.line_walk_session_files == line_walk_paths
+
+            result = run_command('speccaltriaxcheck')
+            assert result.repeatable, result.report_lines()
+            assert len(result.positions) >= 10
+            assert len(os.listdir(microscope.triax_check_directory)) == 1, "the offsets are recorded"
+            assert run_command('speccaltriaxcheck 1') is None, "one walk cannot be compared"
+            assert len(run_command('speccaltriaxcheck 2').walk_labels) == 2
+        finally:
+            microscope.line_walk_directory = original_walk_directory
+            microscope.triax_check_directory = original_check_directory
+            run_command('speccalreset')
+
+
 def test_external_reference_line_walk_needs_wavelength_and_uncertainty():
     """'speccal external' without numbers must refuse, not walk with a made-up wavelength."""
     assert run_command('speccal external') is None
