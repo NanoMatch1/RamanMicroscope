@@ -22,6 +22,7 @@ from wavelength_calibration.promotion import (fit_line_walk_files, new_fit_repor
                                               write_model_to_master)
 from wavelength_calibration.reference_lines import argon_mercury_lamp_lines, externally_measured_line
 from wavelength_calibration.simulated_line_lamp import SimulatedLineLamp, default_true_model
+from wavelength_calibration.triax_repeatability import compare_repeated_walk_files, save_triax_repeatability
 from wavelength_calibration.wavelength_axis_model import CalibrationFitError
 
 def enforce_response(func, expected_response=True, callback=None):
@@ -622,6 +623,7 @@ class Microscope(Instrument):
         self.calibration_backup_directory = os.path.join(interface.calibrationDir, 'backup')
         self.line_walk_directory = os.path.join(self.dataDir, 'calibration_line_walks')
         self.calibration_fit_report_directory = os.path.join(self.dataDir, 'calibration_fit_reports')
+        self.triax_check_directory = os.path.join(self.dataDir, 'calibration_triax_checks')
         self.line_walk_session_files = []
 
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
@@ -678,6 +680,8 @@ class Microscope(Instrument):
             'speccalfit': self.fit_wavelength_axis_line_walks,
             'speccalapply': self.apply_wavelength_axis_line_walks,
             'speccalreset': self.reset_wavelength_axis_line_walks,
+            'multispeccal': self.run_repeated_wavelength_axis_line_walks,
+            'speccaltriaxcheck': self.check_triax_repeatability,
             'autocal': self.run_calibration,
             'loadconfig': self.load_config,
 
@@ -1670,6 +1674,76 @@ class Microscope(Instrument):
         return line_walk_path
 
     WAVELENGTH_AXIS_FIT_OPTIONS = ('curvature', 'triaxquadratic', 'fixeddispersion')
+
+    @ui_callable
+    def run_repeated_wavelength_axis_line_walks(self, count=5):
+        '''Run the Ar-Hg line walk several times in a row (default 5), for speccaltriaxcheck.
+        multispeccal        5 walks
+        multispeccal 3      3 walks
+        Every walk is planned from the calibration in use, so they all visit the same TRIAX steps: do not run
+        speccalapply in between. Each walk is saved and added to this session's list like a single speccal.'''
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            self.micro_log.error(f"multispeccal: the number of walks must be a whole number, got '{count}'.")
+            return None
+        if count < 1:
+            self.micro_log.error("multispeccal: the number of walks must be at least 1.")
+            return None
+
+        line_walk_paths = []
+        for walk_number in range(1, count + 1):
+            self.micro_log.info(f"multispeccal: walk {walk_number} of {count}")
+            try:
+                line_walk_path = self.run_wavelength_axis_line_walk('arhg')
+            except Exception as error:
+                self.micro_log.error(f"multispeccal: walk {walk_number} of {count} failed "
+                                     f"({type(error).__name__}: {error}); stopping after {len(line_walk_paths)} walk(s).")
+                break
+            if line_walk_path is None:
+                break
+            line_walk_paths.append(line_walk_path)
+        self.micro_log.info(f"multispeccal: {len(line_walk_paths)} of {count} walk(s) saved. "
+                            "'speccaltriaxcheck' compares them.")
+        return line_walk_paths
+
+    @ui_callable
+    def check_triax_repeatability(self, number_of_walks=None, tolerance_pixels=0.2):
+        '''Check whether repeated walks put each line on the same pixel at the same TRIAX step, and record the offsets.
+        speccaltriaxcheck           all of this session's walks
+        speccaltriaxcheck 5         the last 5 walks of this session
+        speccaltriaxcheck 5 0.1     ... and call it repeatable only if every offset is within 0.1 pixel (default 0.2)
+        A line that lands on different pixels at the same step means the TRIAX is not where it reports. The offset of
+        each walk at each TRIAX position, in pixels, nm and TRIAX steps, is logged and saved to
+        data/calibration_triax_checks/.'''
+        walk_paths = list(self.line_walk_session_files)
+        if number_of_walks is not None:
+            try:
+                number_of_walks = int(number_of_walks)
+                tolerance_pixels = float(tolerance_pixels)
+            except (TypeError, ValueError):
+                self.micro_log.error("speccaltriaxcheck: the number of walks must be a whole number and "
+                                     "the tolerance a number of pixels.")
+                return None
+            if number_of_walks < 2:
+                self.micro_log.error("speccaltriaxcheck: at least 2 walks are needed to compare.")
+                return None
+            walk_paths = walk_paths[-number_of_walks:]
+        if len(walk_paths) < 2:
+            self.micro_log.error(f"speccaltriaxcheck: {len(walk_paths)} walk(s) this session; run 'multispeccal' "
+                                 "(or 'speccal' more than once) first.")
+            return None
+
+        try:
+            result = compare_repeated_walk_files(walk_paths, tolerance_pixels=float(tolerance_pixels))
+        except (OSError, ValueError, KeyError) as error:
+            self.micro_log.error(f"speccaltriaxcheck: cannot read the line walks ({type(error).__name__}: {error}).")
+            return None
+        for line in result.report_lines():
+            self.micro_log.info(line)
+        if result.positions:
+            self.micro_log.info(f"Offsets saved to {save_triax_repeatability(self.triax_check_directory, result)}")
+        return result
 
     @ui_callable
     def fit_wavelength_axis_line_walks(self, *fit_options):

@@ -402,6 +402,96 @@ def test_line_walk_save_and_load(tmp_path):
 
 
 # ----------------------------------------------------------------------------
+# TRIAX repeatability: do repeated walks put the same line on the same pixel?
+# ----------------------------------------------------------------------------
+
+def repeat_walk_observations(position_offsets_pixels, line_noise=0.0, seed=0):
+    """One walk's observations: 3 lines at each TRIAX position, the whole position shifted by its offset."""
+    random_generator = np.random.default_rng(seed)
+    observations = []
+    for triax_steps, offset in position_offsets_pixels.items():
+        for line_number, base_pixel in enumerate((200.0, 450.0, 700.0)):
+            observations.append(LineObservation(
+                line_name=f'Ar line {line_number}', apparent_wavelength_nm=700.0 + line_number,
+                wavelength_uncertainty_nm=0.002, triax_steps=triax_steps,
+                centre_pixel=base_pixel + offset + random_generator.normal(0.0, line_noise),
+                centre_uncertainty_pixels=0.02))
+    return observations
+
+
+def test_triax_check_finds_a_position_that_moves_between_repeats():
+    from wavelength_calibration.triax_repeatability import compare_repeated_walks
+    walks = [('a', repeat_walk_observations({90000: 0.0, 91000: 0.0, 92000: 0.0})),
+             ('b', repeat_walk_observations({90000: 0.0, 91000: 1.5, 92000: 0.0})),
+             ('c', repeat_walk_observations({90000: 0.0, 91000: 0.0, 92000: 0.0}))]
+    result = compare_repeated_walks(walks)
+    assert not result.repeatable
+    by_position = {position.triax_steps: position for position in result.positions}
+    assert by_position[91000].offsets_pixels['b'] == pytest.approx(1.5, abs=1e-9)  # the median of the three is 0
+    assert by_position[91000].offsets_pixels['a'] == pytest.approx(0.0, abs=1e-9)
+    assert abs(by_position[90000].offsets_pixels['b']) < 1e-9
+    assert result.largest_offset_pixels == pytest.approx(1.5, abs=1e-9)
+    assert any('NOT REPEATABLE' in line for line in result.report_lines())
+
+
+def test_triax_check_passes_walks_that_agree_to_within_the_fit_noise():
+    from wavelength_calibration.triax_repeatability import compare_repeated_walks
+    offsets = {90000: 3.0, 91000: -2.0, 92000: 5.5}  # large but identical every time: repeatable
+    walks = [(f'walk{index}', repeat_walk_observations(offsets, line_noise=0.01, seed=index)) for index in range(5)]
+    result = compare_repeated_walks(walks)
+    assert result.repeatable
+    assert result.largest_offset_pixels < 0.05
+    assert len(result.positions) == 3
+
+
+def test_triax_check_leaves_a_misidentified_walk_out_of_the_verdict():
+    from wavelength_calibration.triax_repeatability import compare_repeated_walks
+    walks = [(label, repeat_walk_observations({90000: 0.0, 91000: 0.0}, line_noise=0.01, seed=index))
+             for index, label in enumerate('abcd')]
+    walks.append(('e', repeat_walk_observations({90000: 30.0, 91000: 0.0}, line_noise=0.01, seed=9)))
+    result = compare_repeated_walks(walks)
+    by_position = {position.triax_steps: position for position in result.positions}
+    assert by_position[90000].suspect_offsets_pixels['e'] == pytest.approx(30.0, abs=0.1)
+    assert 'e' not in by_position[90000].offsets_pixels
+    assert result.number_of_suspect_offsets == 1
+    assert result.verdict == 'REPEATABLE', "the misidentified walk must not mask a repeatable TRIAX"
+    assert result.largest_offset_pixels < 0.05
+    report = '\n'.join(result.report_lines())
+    assert '*' in report and 'neighbour' in report
+
+
+def test_triax_check_is_inconclusive_when_most_offsets_are_suspect():
+    from wavelength_calibration.triax_repeatability import compare_repeated_walks
+    walks = [('a', repeat_walk_observations({90000: 0.0, 91000: 0.0})),
+             ('b', repeat_walk_observations({90000: 40.0, 91000: 40.0}))]
+    result = compare_repeated_walks(walks)
+    assert result.verdict == 'INCONCLUSIVE' and not result.repeatable
+    assert result.number_of_suspect_offsets == 4
+    assert any('INCONCLUSIVE' in line for line in result.report_lines())
+
+
+def test_triax_check_ignores_pairs_seen_in_only_one_walk_and_says_so_when_none_overlap():
+    from wavelength_calibration.triax_repeatability import compare_repeated_walks
+    result = compare_repeated_walks([('a', repeat_walk_observations({90000: 0.0})),
+                                     ('b', repeat_walk_observations({95000: 0.0}))])
+    assert result.positions == []
+    assert not result.repeatable
+    assert any('same TRIAX steps' in line for line in result.report_lines())
+
+
+def test_triax_check_records_offsets_to_a_file(tmp_path):
+    import json
+    from wavelength_calibration.triax_repeatability import compare_repeated_walks, save_triax_repeatability
+    walks = [('a', repeat_walk_observations({90000: 0.0})), ('b', repeat_walk_observations({90000: 0.8}))]
+    path = save_triax_repeatability(str(tmp_path), compare_repeated_walks(walks))
+    with open(path) as file:
+        stored = json.load(file)
+    assert stored['walks'] == ['a', 'b']
+    assert stored['positions'][0]['offsets_pixels'] == {'a': pytest.approx(-0.4), 'b': pytest.approx(0.4)}
+    assert stored['repeatable'] is False
+
+
+# ----------------------------------------------------------------------------
 # Command line: python -m wavelength_calibration fit
 # ----------------------------------------------------------------------------
 

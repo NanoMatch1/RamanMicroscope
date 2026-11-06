@@ -335,6 +335,28 @@ python -m wavelength_calibration fit <files> --curvature --triax-quadratic --app
 These save their report in the same place (`--report-directory` to
 change it). `--fixed-dispersion` is the equivalent of `fixeddispersion`.
 
+**Checking the TRIAX itself.** If the lines at each TRIAX position agree with
+each other (a few hundredths of a nm) but the positions disagree by up to
+~0.1 nm, the TRIAX is not where it reports, and no smooth model term can fix
+that. Run `multispeccal` (5 walks by default), then `speccaltriaxcheck`
+(`speccaltriaxcheck 5 0.1` for the last 5 walks and a 0.1 px tolerance). Do
+not run `speccalapply` in between: the walks must come from the same
+calibration so they visit the same TRIAX steps. The check compares each
+line's fitted pixel at each TRIAX step across the walks and reports the
+offset of every walk at every position (pixels, nm and TRIAX steps), saved
+to `data/calibration_triax_checks/`.
+
+- Offsets within the tolerance (default 0.2 px): the TRIAX is repeatable. A
+  poor fit then comes from something that repeats, either the model or a
+  systematic error in the drive.
+- Offsets that change from walk to walk: random positioning error (backlash,
+  lost steps), which averaging over more walks will not remove.
+- Offsets over ~5 px are more likely a line identified as its neighbour in
+  one walk. They are marked `*` in the report and left out of the verdict and
+  the statistics, so one misidentified walk cannot hide a repeatable TRIAX.
+  The verdict is `INCONCLUSIVE` if most offsets are marked. Check the marked
+  walks' DEBUG notes.
+
 **After applying:** the live laser calibration and all spectra use the new
 axis immediately. If the offset changed by more than a pixel or two, the
 grating calibrations were made against the old axis and should be checked
@@ -383,6 +405,7 @@ quadratic drive yet.
 | `wavelength_calibration/line_walk.py` | the procedure; hardware passed in as three functions |
 | `wavelength_calibration/wavelength_axis_model.py` | the model, its exact inverse, the weighted fit |
 | `wavelength_calibration/promotion.py` | fit saved walks, compare, write the fit report and the master file |
+| `wavelength_calibration/triax_repeatability.py` | compare repeated walks: does the TRIAX put a line on the same pixel at the same step |
 | `wavelength_calibration/simulated_line_lamp.py` | lamp + spectrometer simulator |
 | `calibration.py` (`_load_wavelength_axis_model`) | loads the model at startup |
 | `microscope.py` (`speccal*` commands) | connects the procedure to the TRIAX and PIXIS |
