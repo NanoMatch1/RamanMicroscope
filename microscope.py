@@ -16,14 +16,18 @@ from dataclasses import dataclass
 from functools import wraps
 
 from datafit.laser_detection import LaserDetection
-from wavelength_calibration.line_peaks import collapse_image_to_spectrum
+from wavelength_calibration.calibration_checks import any_failed, format_check_report, run_checks
+from wavelength_calibration.line_peaks import collapse_image_to_spectrum, slit_image_rows
 from wavelength_calibration.line_walk import LineWalk, save_line_walk
-from wavelength_calibration.promotion import (fit_line_walk_files, new_fit_report_path, write_fit_report,
+from wavelength_calibration.promotion import (FitOptions, fit_and_check_line_walk_files,
+                                              new_fit_report_path, write_fit_report,
                                               write_model_to_master)
+from wavelength_calibration.provenance import software_version
 from wavelength_calibration.reference_lines import argon_mercury_lamp_lines, externally_measured_line
 from wavelength_calibration.scatter_export import export_scatter_csv, new_export_path
-from wavelength_calibration.simulated_line_lamp import SimulatedLineLamp, default_true_model
-from wavelength_calibration.wavelength_axis_model import CalibrationFitError
+from wavelength_calibration.simulated_line_lamp import (SimulatedLineLamp, default_true_model,
+                                                        realistic_line_amplitudes)
+from wavelength_calibration.triax_zero import run_triax_zero, write_zero_report, zero_evidence
 
 def enforce_response(func, expected_response=True, callback=None):
     """
@@ -680,6 +684,7 @@ class Microscope(Instrument):
             'speccalexport': self.export_wavelength_axis_scatter,
             'speccalapply': self.apply_wavelength_axis_line_walks,
             'speccalreset': self.reset_wavelength_axis_line_walks,
+            'speccalzero': self.rezero_wavelength_axis,
             'autocal': self.run_calibration,
             'loadconfig': self.load_config,
 
@@ -1612,19 +1617,23 @@ class Microscope(Instrument):
 
     # ── Wavelength axis calibration: TRIAX + PIXIS (docs/calibration.md section 3) ──
 
-    ARGON_MERCURY_CALIBRATION_WINDOW_NM = (690.0, 930.0)
     CCD_SATURATION_COUNTS = 65000  # PIXIS 16-bit ADC full scale is 65535; leave a little margin
 
     @ui_callable
-    def run_wavelength_axis_line_walk(self, reference='arhg', wavelength_nm=None, uncertainty_nm=None):
-        '''Walk known lines across the CCD with the TRIAX and save the observations (data/calibration_line_walks/).
-        speccal / speccal arhg        Ar-Hg lamp lighting the TRIAX entrance slit, 690-930 nm
-        speccal external 785.12 0.2   one line measured on another instrument (Tiger on the spare spectrometer): wavelength and uncertainty in nm
-        Each walk is added to this session's list: speccalfit fits them all, speccalapply writes the result to the master calibration.'''
+    def run_wavelength_axis_line_walk(self, reference='arhg', wavelength_nm=None,
+                                      uncertainty_nm=None):
+        '''Walk known lines across the CCD with the TRIAX; save every spectrum.
+        Saved to data/calibration_line_walks/.
+        speccal / speccal arhg        Ar-Hg lamp lighting the TRIAX entrance slit (lines 696-935 nm)
+        speccal external 785.12 0.2   one line measured on another instrument (the Tiger on the
+                                      spare spectrometer): its wavelength and uncertainty in nm
+        The lines are identified from all the spectra at once and the result is logged;
+        'speccalfit' re-identifies, fits and runs the gate checks. Keep the brightest lines below
+        saturation (65000 counts).'''
         reference = str(reference).lower()
         if reference == 'arhg':
-            catalogue_lines = argon_mercury_lamp_lines(*self.ARGON_MERCURY_CALIBRATION_WINDOW_NM)
-            description = 'Ar-Hg lamp, lines observed on this instrument (reference_lines.ARGON_MERCURY_LAMP_LINES)'
+            catalogue_lines = argon_mercury_lamp_lines()
+            description = 'Ar-Hg lamp (reference_lines.ARGON_MERCURY_LAMP_LINES)'
         elif reference == 'external':
             if wavelength_nm is None or uncertainty_nm is None:
                 self.micro_log.error("speccal external needs a wavelength and its uncertainty in nm, "
@@ -1635,10 +1644,13 @@ class Microscope(Instrument):
                                                         name=f'external {wavelength_nm:.3f}')]
             description = f'external reference {wavelength_nm} +/- {uncertainty_nm} nm'
         else:
-            self.micro_log.error(f"speccal: unknown reference '{reference}'. Use 'arhg' or 'external'.")
+            self.micro_log.error(f"speccal: unknown reference '{reference}'. "
+                                 "Use 'arhg' or 'external'.")
             return None
 
         planning_model = self.calibration_service.wavelength_axis_model
+        instrument = self._describe_instrument_for_calibration()
+        self._calibration_row_band = None
         if self.simulate:
             self._install_simulated_line_lamp(catalogue_lines)
         try:
@@ -1650,6 +1662,7 @@ class Microscope(Instrument):
                 catalogue_lines=catalogue_lines,
                 number_of_pixels=len(self.wavelength_axis),
                 saturation_level=self.CCD_SATURATION_COUNTS,
+                read_frame_conditions=self._calibration_frame_conditions,
                 logger=self.micro_log,
             )
             result = line_walk.run()
@@ -1660,97 +1673,217 @@ class Microscope(Instrument):
 
         os.makedirs(self.line_walk_directory, exist_ok=True)
         timestamp = time.strftime('%Y%m%d_%H%M%S')
-        line_walk_path = os.path.join(self.line_walk_directory, f'linewalk_{timestamp}_{reference}.json')
-        save_line_walk(line_walk_path, result, planning_model, description=description)
+        line_walk_path = os.path.join(self.line_walk_directory,
+                                      f'linewalk_{timestamp}_{reference}.json')
+        save_line_walk(line_walk_path, result, planning_model, description=description,
+                       reference_kind=reference, catalogue_lines=catalogue_lines,
+                       instrument=instrument)
         self.line_walk_session_files.append(line_walk_path)
 
-        for record in result.position_records:
-            for note in record.notes:
-                self.micro_log.debug(f"Line walk at TRIAX {record.measured_steps}: {note}")
-        self.micro_log.info(f"Line walk: {len(result.observations)} line positions saved to {line_walk_path}. "
-                            f"{len(self.line_walk_session_files)} walk(s) this session; 'speccalfit' to fit.")
+        summary = result.identification.summary_lines()
+        self.micro_log.info(f"Line walk: {summary[0]}")
+        for frame in result.identification.frames:
+            if not frame.identified:
+                self.micro_log.info(f"Line walk: {frame.summary()}")
+        self.micro_log.info(f"Line walk saved to {line_walk_path}. "
+                            f"{len(self.line_walk_session_files)} walk(s) this session; "
+                            "'speccalfit' to fit and check.")
         return line_walk_path
 
-    WAVELENGTH_AXIS_FIT_OPTIONS = ('curvature', 'triaxquadratic', 'fixeddispersion')
+    def _describe_instrument_for_calibration(self):
+        '''What a calibration walk records about the set-up, so a bad walk can be traced.'''
+        camera = self.interface.camera
+
+        def read(getter):
+            try:
+                return getter()
+            except Exception:  # a missing reading must not stop the walk; it is recorded as None
+                return None
+
+        return {
+            'software': software_version(self.scriptDir),
+            'simulate': bool(self.simulate),
+            'saturation_level': self.CCD_SATURATION_COUNTS,
+            'camera': {
+                'exposure_s': read(lambda: camera.get_exposure_time(report=False)),
+                'frames_averaged': read(
+                    lambda: self.interface.acq_ctrl.general_parameters['n_frames']),
+                'roi': read(lambda: list(camera.roi)),
+                'sensor_temperature_c': read(camera.hardware.get_temperature),
+                'sensor_set_point_c': read(camera.hardware.get_target_temperature),
+            },
+            'spectrometer': {
+                'triax_steps_before_walk': read(self.interface.spectrometer.get_triax_steps)},
+            'spectrum_rows': 'mean of a fixed band of rows centred on the slit image (first frame)',
+        }
+
+    def _calibration_frame_conditions(self):
+        '''Per-frame conditions the walk records: sensor temperature, the rows of the spectrum.'''
+        try:
+            sensor_temperature_c = self.interface.camera.hardware.get_temperature()
+        except Exception:
+            sensor_temperature_c = None
+        band = getattr(self, '_calibration_row_band', None)
+        return {'sensor_temperature_c': sensor_temperature_c,
+                'row_band': list(band) if band else None}
+
+    WAVELENGTH_AXIS_FIT_OPTIONS = ('curvature', 'triaxquadratic', 'triaxorder=N', 'fixeddispersion',
+                                   'triaxsigma=S')
 
     @ui_callable
     def fit_wavelength_axis_line_walks(self, *fit_options):
-        '''Fit this session's line walks and report against the calibration in use. The master file is not changed.
-        speccalfit                   dispersion that changes with the TRIAX position (the default; right for the Ar-Hg walk)
-        speccalfit curvature         also fit the dispersion curvature across the chip (nm_per_pixel_squared)
-        speccalfit triaxquadratic    TRIAX wavelength quadratic in steps (the drive turns the grating angle)
-        speccalfit curvature triaxquadratic   the full physical model, recommended for the Ar-Hg walk
-        speccalfit fixeddispersion   one nm_per_pixel for every TRIAX position (only for short walks)
-        speccalfit triaxsigma=25     add a 1-sigma TRIAX positioning error (steps) to every point's uncertainty, so reduced chi^2 reflects TRIAX repeatability
-        The report is also saved to data/calibration_fit_reports/.'''
-        fit, current_model = self._fit_session_line_walks(fit_options)
-        if fit is None:
+        '''Fit this session's walks, run the gate checks, report. The master file is not changed.
+        speccalfit                     dispersion changing with the TRIAX position (the default)
+        speccalfit curvature           also fit the dispersion curvature across the chip
+        speccalfit triaxquadratic      TRIAX wavelength quadratic in steps; triaxorder=N for order N
+                                       (the TRIAX-shape gate suggests one)
+        speccalfit curvature triaxorder=3   recommended for the full Ar-Hg walk (2026-11-10 data)
+        speccalfit fixeddispersion     one nm_per_pixel for every TRIAX position (short walks only)
+        speccalfit triaxsigma=25       add a 1-sigma TRIAX error (steps) to every point; chi^2 then
+                                       no longer tests the fit
+        The walks are re-identified from their spectra. The report, with every gate's verdict and
+        advice, is saved
+        to data/calibration_fit_reports/.'''
+        outcome = self._fit_session_line_walks(fit_options)
+        if outcome is None:
             return None
         report_path = new_fit_report_path(self.calibration_fit_report_directory)
-        self._log_fit_report(write_fit_report(report_path, fit, current_model, self.line_walk_session_files,
-                                              number_of_pixels=len(self.wavelength_axis)), report_path)
-        return fit
+        report_text = write_fit_report(report_path, outcome, self.line_walk_session_files)
+        self._log_fit_report(report_text, report_path)
+        return outcome.fit
 
     @ui_callable
     def apply_wavelength_axis_line_walks(self, *fit_options):
-        '''Fit this session's line walks and write the result to the master calibration (the old file is backed up first).
-        Takes the same options as speccalfit. The report, marked APPLIED, is saved to data/calibration_fit_reports/.'''
-        fit, current_model = self._fit_session_line_walks(fit_options)
-        if fit is None:
+        '''Fit this session's walks and, if no gate check fails, write the master calibration.
+        Takes the same options as speccalfit. The master file is backed up first; the report is
+        saved to data/calibration_fit_reports/ either way.'''
+        outcome = self._fit_session_line_walks(fit_options)
+        if outcome is None:
             return None
         report_path = new_fit_report_path(self.calibration_fit_report_directory)
-        fit.model.metadata['fit_report'] = os.path.basename(report_path)
-        backup_path = write_model_to_master(fit.model, self.master_calibration_path, self.calibration_backup_directory)
-        self._log_fit_report(write_fit_report(report_path, fit, current_model, self.line_walk_session_files,
-                                              master_path=self.master_calibration_path, backup_path=backup_path,
-                                              number_of_pixels=len(self.wavelength_axis)), report_path)
-        self.calibration_service._load_wavelength_axis_model(fit.model.to_dict())
+        if outcome.fit is None or outcome.gates_failed:
+            report_text = write_fit_report(report_path, outcome, self.line_walk_session_files)
+            self._log_fit_report(report_text, report_path)
+            failed = [result.name for result in outcome.check_results if result.verdict == 'FAIL']
+            self.micro_log.error(f"Wavelength axis calibration NOT applied: gate check(s) failed: "
+                                 f"{', '.join(failed)}. "
+                                 f"The report says why and what to try: {report_path}")
+            return None
+        outcome.fit.model.metadata['fit_report'] = os.path.basename(report_path)
+        backup_path = write_model_to_master(outcome.fit.model, self.master_calibration_path,
+                                            self.calibration_backup_directory)
+        self._log_fit_report(write_fit_report(report_path, outcome, self.line_walk_session_files,
+                                              master_path=self.master_calibration_path,
+                                              backup_path=backup_path),
+                             report_path)
+        self._use_wavelength_axis_model(outcome.fit.model)
+        self.micro_log.info(f"Wavelength axis calibration applied. Previous master file: "
+                            f"{backup_path}")
+        return outcome.fit
+
+    def _use_wavelength_axis_model(self, model):
+        '''Make a newly written model the one in use: calibration, spectrometer wavelength, axis.'''
+        self.calibration_service._load_wavelength_axis_model(model.to_dict())
         self.calculate_spectrometer_wavelength()
         self.generate_wavelength_axis()
-        self.micro_log.info(f"Wavelength axis calibration applied. Previous master file: {backup_path}")
-        return fit
+
+    def _parse_wavelength_axis_fit_options(self, fit_options):
+        '''speccalfit options -> FitOptions, or None (after logging why) for a bad option.'''
+        options = FitOptions()
+        for option in (str(option).lower() for option in fit_options):
+            name, _, value = option.partition('=')
+            try:
+                if option == 'curvature':
+                    options.curvature = True
+                elif option == 'triaxquadratic':
+                    options.triax_polynomial_order = max(options.triax_polynomial_order, 2)
+                elif name == 'triaxorder' and value:
+                    options.triax_polynomial_order = int(value)
+                    if not 1 <= options.triax_polynomial_order <= 6:
+                        raise ValueError("TRIAX order must be 1 to 6")
+                elif option == 'fixeddispersion':
+                    options.dispersion_change = False
+                elif name == 'triaxsigma' and value:
+                    options.triax_step_uncertainty = float(value)
+                    if options.triax_step_uncertainty < 0:
+                        raise ValueError("triaxsigma must not be negative")
+                else:
+                    raise ValueError("unknown option")
+            except ValueError as error:
+                self.micro_log.error(f"Fit option '{option}': {error}. "
+                                     f"Options: {list(self.WAVELENGTH_AXIS_FIT_OPTIONS)}")
+                return None
+        return options
 
     def _fit_session_line_walks(self, fit_options):
-        '''Fit this session's line walks with the speccalfit options. Returns (fit, current model), or (None, None).'''
-        fit_options = {str(option).lower() for option in fit_options}
-        triax_step_uncertainty = 0.0
-        for option in [option for option in fit_options if option.startswith('triaxsigma=')]:
-            fit_options.discard(option)
-            try:
-                triax_step_uncertainty = float(option.split('=', 1)[1])
-            except ValueError:
-                self.micro_log.error(f"Bad option '{option}'; use e.g. triaxsigma=25 (TRIAX steps, 1 sigma).")
-                return None, None
-            if triax_step_uncertainty < 0:
-                self.micro_log.error("triaxsigma must not be negative.")
-                return None, None
-        unknown_options = fit_options - set(self.WAVELENGTH_AXIS_FIT_OPTIONS)
-        if unknown_options:
-            self.micro_log.error(f"Unknown fit option(s) {sorted(unknown_options)}; "
-                                 f"use any of {list(self.WAVELENGTH_AXIS_FIT_OPTIONS)}.")
-            return None, None
+        '''Re-identify, fit and check this session's walks: a promotion.WalkFitOutcome, or None.'''
+        options = self._parse_wavelength_axis_fit_options(fit_options)
+        if options is None:
+            return None
         if not self.line_walk_session_files:
             self.micro_log.error("No line walks this session. Run 'speccal' (Ar-Hg lamp) or 'speccal external <nm> <uncertainty>'.")
-            return None, None
-        current_model = self.calibration_service.wavelength_axis_model
-        try:
-            fit = fit_line_walk_files(self.line_walk_session_files, reference_pixel=current_model.reference_pixel,
-                                      fit_dispersion_curvature='curvature' in fit_options,
-                                      triax_polynomial_order=2 if 'triaxquadratic' in fit_options else 1,
-                                      fit_dispersion_change_with_triax='fixeddispersion' not in fit_options,
-                                      triax_step_uncertainty=triax_step_uncertainty)
-        except CalibrationFitError as error:
-            self.micro_log.error(f"Cannot fit the line walks: {error}")
-            return None, None
-        return fit, current_model
+            return None
+        return fit_and_check_line_walk_files(
+            self.line_walk_session_files, self.calibration_service.wavelength_axis_model, options,
+            running_in_simulate_mode=self.simulate, number_of_pixels=len(self.wavelength_axis))
 
     def _log_fit_report(self, report_text, report_path):
-        '''Show the summary part of a saved fit report (the per-point residuals stay in the file).'''
+        '''Log a saved report's summary (status, gates, fit); the frame detail stays in the file.'''
         for line in report_text.split('\n'):
-            if line.startswith('residuals'):
+            if line.startswith('identification by walk:') or line.startswith('identification:'):
                 break
             self.micro_log.info(line)
-        self.micro_log.info(f"Fit report saved to {report_path}")
+        self.micro_log.info(f"Report saved to {report_path}")
+
+    @ui_callable
+    def rezero_wavelength_axis(self, mode='apply'):
+        '''Quick re-zero after the TRIAX step count moved (restart, lost steps): about a minute.
+        speccalzero          measure the step shift and, if every gate check passes, store it in
+                             the calibration in use
+        speccalzero check    measure and report only (a daily check)
+        The shape of the calibration is kept; only its TRIAX step offset changes. If the frames
+        disagree, more than the zero has changed and the report says to run the full calibration
+        (speccal, speccalfit, speccalapply).'''
+        mode = str(mode).lower()
+        if mode not in ('apply', 'check'):
+            self.micro_log.error("speccalzero: use 'speccalzero' or 'speccalzero check'.")
+            return None
+        model = self.calibration_service.wavelength_axis_model
+        catalogue_lines = argon_mercury_lamp_lines()
+        instrument = self._describe_instrument_for_calibration()
+        self._calibration_row_band = None
+        if self.simulate:
+            self._install_simulated_line_lamp(catalogue_lines)
+        try:
+            zero_run = run_triax_zero(
+                move_triax_to_steps=self.interface.spectrometer.go_to_steps,
+                read_triax_steps=self.interface.spectrometer.get_triax_steps,
+                acquire_spectrum=self._acquire_calibration_spectrum, model=model,
+                catalogue_lines=catalogue_lines, number_of_pixels=len(self.wavelength_axis),
+                saturation_level=self.CCD_SATURATION_COUNTS,
+                read_frame_conditions=self._calibration_frame_conditions, logger=self.micro_log)
+        finally:
+            if self.simulate:
+                self.interface.camera.simulated_scene.override_scene = None
+        check_results = run_checks(zero_evidence(zero_run, model, instrument, self.simulate,
+                                                 len(self.wavelength_axis)))
+        report_path = new_fit_report_path(self.calibration_fit_report_directory)
+        report_path = report_path.replace('wavelength_axis_fit_', 'triax_zero_')
+        applied_text = None
+        if mode == 'apply' and not any_failed(check_results):
+            corrected = zero_run.measurement.corrected_model(
+                model, report_name=os.path.basename(report_path))
+            backup_path = write_model_to_master(corrected, self.master_calibration_path,
+                                                self.calibration_backup_directory)
+            self._use_wavelength_axis_model(corrected)
+            applied_text = (f"APPLIED to {self.master_calibration_path} "
+                            f"(previous version: {backup_path})")
+        report_text = write_zero_report(report_path, zero_run, check_results, model, applied_text)
+        self._log_fit_report(report_text, report_path)
+        if mode == 'apply' and applied_text is None:
+            self.micro_log.error("TRIAX re-zero NOT applied: a gate check failed. "
+                                 "See the report for what to do.")
+        return zero_run.measurement
 
     @ui_callable
     def export_wavelength_axis_scatter(self, *line_walk_paths):
@@ -1785,18 +1918,32 @@ class Microscope(Instrument):
         self.micro_log.info("Line walk session list cleared.")
 
     def _acquire_calibration_spectrum(self):
-        '''One frame from the camera, collapsed to a spectrum over the rows of the slit image.'''
+        '''One frame, collapsed over a band of rows fixed by the walk's first frame.'''
         image_data = self.interface.acq_ctrl._acquire_one_frame()
         if image_data is None:
             raise RuntimeError("Camera returned no frame during the line walk.")
-        return collapse_image_to_spectrum(image_data, saturation_level=self.CCD_SATURATION_COUNTS)
+        if getattr(self, '_calibration_row_band', None) is None and np.ndim(image_data) >= 2:
+            self._calibration_row_band = slit_image_rows(image_data)
+        return collapse_image_to_spectrum(image_data, saturation_level=self.CCD_SATURATION_COUNTS,
+                                          row_band=getattr(self, '_calibration_row_band', None))
 
     def _install_simulated_line_lamp(self, emitted_lines):
-        '''Simulate mode: the simulated camera images a lamp whose true calibration is independent of the one in use.'''
-        simulated_lamp = SimulatedLineLamp(default_true_model(), emitted_lines,
-                                           number_of_pixels=len(self.wavelength_axis))
+        '''Simulate mode: the camera images a lamp whose true calibration is not the one in use.
+        Every listed line is emitted at a brightness from its NIST intensity, so weak neighbours
+        are there to be mistaken, as on the bench. The lamp is kept as self.simulated_line_lamp
+        (tests shift its TRIAX zero).'''
+        line_amplitudes = None
+        if len(emitted_lines) > 1:
+            line_amplitudes = realistic_line_amplitudes(emitted_lines, brightness_scale=0.6)
+        if getattr(self, 'simulated_line_lamp', None) is None or \
+                self.simulated_line_lamp.emitted_lines != list(emitted_lines):
+            self.simulated_line_lamp = SimulatedLineLamp(
+                default_true_model(), emitted_lines, line_amplitudes=line_amplitudes,
+                line_sigma_pixels=1.2, noise_standard_deviation=8.0,
+                number_of_pixels=len(self.wavelength_axis))
         spectrometer = self.interface.spectrometer
-        self.interface.camera.simulated_scene.override_scene = lambda: simulated_lamp.image(spectrometer.get_triax_steps())
+        self.interface.camera.simulated_scene.override_scene = \
+            lambda: self.simulated_line_lamp.image(spectrometer.get_triax_steps())
 
     @ui_callable
     def read_ldr0(self):

@@ -4,6 +4,127 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## Known issues, to fix before the next merge into develop (found 2026-11-06 to 2026-11-10)
+
+Open issues found by review and bench data. When an issue is fixed, its entry moves into the
+dated section of the change that fixes it.
+
+### PIXIS camera: settings the Tucsen port did not carry over
+
+The Tucsen start-up applied binning, readout resolution, gain, the region of interest (ROI),
+the cooling set point and the fan. The PIXIS port kept only the set point, and that one never
+reached the camera (fixed 2026-11-06, below).
+
+- **ROI never sent to the camera.** `camera.roi = (0, 0, 1024, 100)` exists only in software.
+  The CCD reads all 1024 rows (0.56 s per frame at 2 MHz), every saved point is a full
+  1024x1024 frame (4 MB), and the live view writes one per update.
+- **Frame timeouts do not follow the exposure.** They are fixed at 10, 50 or 100 s per frame
+  depending on the caller, so a longer exposure times out; the custom scan offers up to 128 s.
+- **`setgain` fails** with AttributeError: it calls `set_image_and_gain`, which `PIXISCamera`
+  does not have. The gain stays at the camera default (High).
+- **`setbin` bins both axes.** Horizontal binning shortens the frame while the wavelength axis
+  stays 1024 points long, and the bin factor is passed on as a string.
+- **Commands with no effect:** `camspec` and `camimage` set `acquire_mode`, which nothing
+  reads; `checkfan` and `autotemp` do nothing.
+- **Dead code sized for the Tucsen:** `simulation.py` (`SimulatedCamera`, 2048x148, and its
+  helpers), `Microscope.camera_set_acquisition_time` (uses `self.camera.cam`, which does not
+  exist), `start_camera_ui`.
+- The initial wavelength axis `np.arange(roi[0], roi[2])` is wrong once the ROI has an x offset.
+- `SimulatedPicamDevice` ignores ROI and binning, so the tests cannot catch the `setbin` mismatch.
+- The ADC runs at 2 MHz. The 100 kHz rate has lower read noise; worth testing once the ROI and
+  binning are set, since the readout time then matters much less.
+
+### Wavelength axis calibration: still open
+
+- **The TRIAX drive is not a low-order polynomial in steps.** Over the full Ar-Hg walk the
+  per-position TRIAX offsets sit 0.34 nm rms from a quadratic, 0.10 nm from a cubic and 0.05 nm
+  from order 5 (2026-11-10). `triaxorder=N` and the TRIAX-shape gate (below) handle the smooth
+  part; the remaining ~0.1 nm from one position to the next is the drive itself. A TRIAX position
+  table interpolated between calibration positions would capture it (estimated 0.045 nm from
+  the 2026-11-10 data; a walk with finer TRIAX steps would show whether interpolation holds).
+- **`speccalfit triaxsigma=`** (added 2026-11-10) adds a TRIAX positioning error to each point
+  to bring chi-squared down. It treats an error shared by every line in a frame as independent
+  per line, which hides misidentified lines and model errors alike; the measured repeatability
+  within a session is about 0.03 nm (3 steps), not the 25 steps in the example. It is kept for
+  now, with a gate that says when it was used; decide whether to remove it.
+- **Mercury sits ~0.05 nm off argon** in the same frames (first and second order alike), so
+  mercury is identification-only. If argon and the Raman signal also light the slit
+  differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
+  against a known Raman line once the axis is settled.
+
+## Wavelength axis calibration: lines identified by pattern, gate checks, quick re-zero (2026-11-11)
+
+Branch `feature/robust-line-identification`. Re-identifying the 2026-11-10 Ar-Hg walks found that
+72 of the 91 points in the afternoon fit were a different line from the one recorded, which is
+why reduced chi-squared was in the thousands. The wrong ones were weak neighbours of the lines
+the walk expected:
+
+| recorded as | actually | apart |
+|---|---|---|
+| Ar 811.531 | Hg 404.656 in second order (809.31) | 2.2 nm |
+| Ar 922.450 | Ar 919.464 | 3.0 nm |
+| Ar 738.393 | Ar 737.212 | 1.2 nm |
+| Ar 751.465 | Ar 750.387 | 1.1 nm |
+| Ar 842.465 | Ar 840.821 | 1.6 nm |
+
+What caused it, and what changed:
+
+- **Identification depended on the calibration in use.** Each line's pixel was predicted from
+  it and the nearest peak within 4 px taken. That calibration (the migrated, circular one) put
+  lines 8-37 px from where they landed, by an amount that changed along the walk, so a weak
+  neighbour was often nearer the prediction than the line. Now the lines are identified by
+  pattern over the whole walk (`wavelength_calibration/line_identification.py`): every strong
+  peak in a frame must match a listed line under one offset, the walk is matched as a whole,
+  and each frame's lines must agree with one pixel -> wavelength map to 0.03 nm. A correct
+  identification agrees to ~0.005 nm and a wrong one is ~1 nm off, so a misidentified line
+  cannot pass quietly. The calibration in use only has to be within +/-12 nm.
+- **The line table left out lines that are there.** It now holds every NIST line that can reach
+  the chip during a walk (argon, mercury in first order, mercury from 300-515 nm in second
+  order), for identification. Only confirmed argon lines are fitted: four more than before
+  (703.025, 737.212, 919.464, 935.422), all checked against NIST and against the 2026-11-10
+  frames. The table had Ar 738.393; NIST gives 738.398. Mercury is identification-only (it
+  sits ~0.05 nm off the argon lines on this instrument).
+- **Repeated walks repeated the mistake**, so they looked consistent. They are now compared
+  after correct identification (the walk-agreement gate).
+- **Line-centre uncertainties were 10-1000x too small** for bright lines (background noise
+  only). Each measurement now carries a floor of 0.05 px.
+- **Walks did not record their conditions.** Walk files (format 2) now record the software
+  version, simulate mode, exposure, frames averaged, ROI, sensor temperature and set point, the
+  TRIAX position before the walk, and per frame the time, sensor temperature and the rows the
+  spectrum came from. The row band is fixed by the first frame, so a tilted slit image cannot
+  move lines between frames.
+- **The walk only acquires;** identification runs afterwards, and `speccalfit` re-identifies from
+  the saved spectra, so earlier walks get the new method and table.
+- **The fit is two-stage** when frames have two or more lines: the CCD terms with a free offset
+  per frame, then the TRIAX polynomial through the frame offsets. A TRIAX error the polynomial
+  cannot follow no longer bends the CCD axis (in a simulated walk with a 0.15 nm drive error,
+  the joint fit's CCD axis was 0.11 nm off; the two-stage fit's, 0.001 nm). Several walks get
+  one zero each and share the shape; the latest walk sets the stored zero. `triaxorder=N` sets
+  the TRIAX polynomial order.
+- **Gate checks** (`wavelength_calibration/calibration_checks.py`) run with every fit: PASS,
+  WARN or FAIL, each with its evidence, likely causes and what to try. `speccalapply` (and
+  `python -m wavelength_calibration fit --apply`) refuses on any FAIL. They cover simulated or
+  undocumented walks, camera conditions, an ambiguous identification, unidentified frames,
+  unexplained peaks (with their wavelengths), the CCD axis within frames, per-line bias, the
+  TRIAX shape (with the polynomial order the data supports), walk agreement (a moved zero, a
+  drifting walk), coverage, saturation, fit statistics and the change from the calibration in
+  use. The fit report holds them all, each walk's frame-by-frame identification and every
+  residual.
+- **`speccalzero`: quick re-zero after the TRIAX step count moves** (restart, lost steps). It
+  revisits three of the calibration walk's positions, measures the shift in steps against the
+  TRIAX position table the fit now stores, and if the gates pass stores it as the model's new
+  `triax_step_offset`. If the frames disagree, the shape changed too and the report says to run
+  the full calibration. `speccalzero check` only reports.
+- **The simulator emits every listed line** at a brightness from its NIST intensity (weak
+  neighbours and second-order mercury included), and can add a TRIAX drive error and shift the
+  TRIAX counter, so the tests now meet the bench's difficulties. A replay test runs one of
+  Riley's 2026-11-10 walks (`test_fixtures/`) and checks the misidentified peaks get their real
+  names.
+
+On the 2026-11-10 data, re-identified: the CCD axis agrees to 0.007 nm within frames, the walks
+repeat to ~0.03 nm (3 TRIAX steps) apart from a first walk that drifted by up to 0.19 nm at its
+start, and the TRIAX needs a cubic in steps over the full walk (see "still open" above).
+
 ## `speccalexport`: observed vs expected wavelength CSV (2026-11-10)
 
 New command `speccalexport [files]` writes `spectral_calibration_scatter_<time>.csv` to
@@ -11,6 +132,10 @@ New command `speccalexport [files]` writes `spectral_calibration_scatter_<time>.
 none). One row per line observation: `expected_nm` (lamp line), `observed_nm` (calibration in use applied to
 the fitted pixel and TRIAX position), `error_nm`, uncertainties. For TRIAX repeatability trials, the spread of
 `observed_nm` per `line_name` is the repeatability. Code: `wavelength_calibration/scatter_export.py`.
+
+Also in this change: the headless suite no longer writes its simulated walks into the real
+`data/calibration_line_walks/` folder (two had ended up among the 2026-11-10 bench walks); the
+tests now redirect `line_walk_directory` to a temporary directory.
 
 ## PIXIS camera: acquire on demand, run only for live view (2026-11-06)
 

@@ -475,6 +475,83 @@ def test_spectrometer_wavelength_lands_on_target_pixel():
     assert abs(microscope.wavelength_axis[target_pixel] - 800.0) <= nm_per_triax_step
 
 
+@contextlib.contextmanager
+def temporary_calibration_files(microscope):
+    """Master file, backups, reports and walks in a temporary directory; model in use restored."""
+    import tempfile
+    redirected = ('master_calibration_path', 'calibration_backup_directory',
+                  'calibration_fit_report_directory', 'line_walk_directory')
+    saved = {name: getattr(microscope, name) for name in redirected}
+    original_model_dict = microscope.calibration_service.wavelength_axis_model.to_dict()
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.master_calibration_path = os.path.join(temporary_directory, 'master.json')
+        shutil.copyfile(saved['master_calibration_path'], microscope.master_calibration_path)
+        microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
+        microscope.calibration_fit_report_directory = os.path.join(temporary_directory, 'reports')
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
+        try:
+            run_command('speccalreset')
+            yield temporary_directory
+        finally:
+            for name, value in saved.items():
+                setattr(microscope, name, value)
+            microscope.calibration_service._load_wavelength_axis_model(original_model_dict)
+            microscope.generate_wavelength_axis()
+            run_command('speccalreset')
+
+
+def test_speccalzero_restores_the_axis_after_lost_steps():
+    """
+    Calibrate, then the TRIAX counter slips by 120 steps (simulated lost steps). 'speccalzero check'
+    measures the shift without changing anything; 'speccalzero' stores it, and the axis matches the
+    lamp again.
+    """
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        run_command('speccal arhg')
+        assert run_command('speccalapply curvature triaxquadratic') is not None
+        calibrated = microscope.calibration_service.wavelength_axis_model
+        assert calibrated.metadata['triax_position_offsets_nm'], "applied model has the TRIAX table"
+        lamp = microscope.simulated_line_lamp
+        lamp.triax_counter_error_steps = 120
+        try:
+            measurement = run_command('speccalzero check')
+            assert abs(measurement.step_offset - 120) <= 2
+            assert microscope.calibration_service.wavelength_axis_model.triax_step_offset == \
+                calibrated.triax_step_offset, "check must not change the calibration"
+            run_command('speccalzero')
+            rezeroed = microscope.calibration_service.wavelength_axis_model
+            assert abs(rezeroed.triax_step_offset - (calibrated.triax_step_offset + 120)) <= 2
+            for steps in (95_000, 110_000):
+                true_wavelength = lamp.true_model.wavelength_at(512, steps + 120)
+                assert abs(rezeroed.wavelength_at(512, steps) - true_wavelength) < 0.03
+            reports = os.listdir(microscope.calibration_fit_report_directory)
+            assert sum(name.startswith('triax_zero_') for name in reports) == 2
+        finally:
+            lamp.triax_counter_error_steps = 0
+
+
+def test_speccalapply_refuses_when_a_gate_fails():
+    """A walk recorded in simulate mode must not become a real calibration: refuse, and say why."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        run_command('speccal arhg')
+        with open(microscope.master_calibration_path) as file:
+            master_before = file.read()
+        microscope.simulate = False  # as if a real session had picked up a simulated walk
+        try:
+            assert run_command('speccalapply curvature triaxquadratic') is None
+        finally:
+            microscope.simulate = True
+        with open(microscope.master_calibration_path) as file:
+            assert file.read() == master_before, "the master file must not change"
+        [report_name] = os.listdir(microscope.calibration_fit_report_directory)
+        with open(os.path.join(microscope.calibration_fit_report_directory, report_name)) as file:
+            report = file.read()
+        assert 'NOT APPLIED: a gate check failed' in report and '[FAIL] walk data' in report
+        assert 'SIMULATE mode' in report
+
+
 def test_wavelength_axis_fit_refuses_without_line_walks():
     """speccalfit with no walks this session reports the problem instead of raising."""
     run_command('speccalreset')

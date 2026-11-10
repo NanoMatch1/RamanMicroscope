@@ -1,92 +1,59 @@
 """
 The line walk: step the TRIAX so known lines walk across the CCD, and record
-where each line lands.
+a spectrum at every position.
 
-At each TRIAX position the procedure acquires a spectrum, finds the lines,
-identifies which known line each peak is, fits its centre in pixels and
-records a LineObservation. The observations are what fit_wavelength_axis
-needs; the walk itself knows nothing about fitting.
+The walk only ACQUIRES. Which line is which is decided afterwards, from all
+the spectra at once (line_identification), and the saved file keeps every
+spectrum, so a walk can be re-identified at any time with a better line table
+or method. `speccalfit` always re-identifies from the spectra; the
+identification stored in the file is the record of what was concluded when
+the walk was taken.
 
-Hardware is injected as three plain callables, so the same code runs on the
-bench, in simulate mode and in unit tests:
+Hardware is injected as plain callables, so the same code runs on the bench,
+in simulate mode and in unit tests:
 
     move_triax_to_steps(target_steps)   absolute move, returns when done
     read_triax_steps() -> int           the TRIAX's own position report
     acquire_spectrum() -> 1D array      one value per CCD column
+    read_frame_conditions() -> dict     optional: sensor temperature etc. at each frame
 
 The line catalogue
 ------------------
 `catalogue_lines` must hold EVERY line that can land on the chip, including
-ones that are not used as references (unresolved blends, second- and
-third-order lines). A line the walk doesn't know about can be mistaken for
-a known line nearby. Only lines with usable_as_reference=True are recorded.
+ones that are not used as references (second-order mercury, weak argon,
+blends): a line the identification does not know about can be mistaken for a
+known line nearby (reference_lines module docstring). Only lines with
+usable_as_reference=True are fitted.
 
 Planning
 --------
 The chip spans ~79 nm. The TRIAX slides it across the range of the usable
 lines in steps of 1/samples_per_line of its width, so each line is seen at
-about samples_per_line different places on the chip. With a lamp full of
-lines this takes ~25 positions, instead of one set of positions per line.
-
-Identifying lines
------------------
-The CURRENT calibration predicts where each line should be. Prediction errors
-of tens of pixels are expected (that is why we are calibrating), but the
-slope is close, so the error is mostly a common shift. The shift is found on
-the first spectrum by pattern matching: the shift that lines up the most
-detected peaks with predicted lines (within a few pixels) wins. It is then
-refined from every matched line.
-
-A line is used at a position only if:
-- no other catalogue line is predicted within `minimum_resolved_separation_pixels`
-  (closer lines blend and pull the fitted centre);
-- exactly the nearest detected peak is within `match_tolerance_pixels`, and
-  that peak's nearest predicted line is this one (mutual nearest neighbours);
-- the peak is not saturated (a clipped top biases the fit), and its
-  signal-to-noise passes the threshold.
-The fit window is narrowed to half the distance to the nearest other peak,
-so a neighbour's tail stays out of it. Every rejection is recorded in the
-position's notes.
+about samples_per_line different places on the chip. The plan comes from the
+calibration in use; `planning_margin_nm` extends it at both ends so the
+usable lines are still covered if that calibration is off by a few nm.
 
 Backlash: positions are visited in increasing step order, starting from a
 point `approach_steps` below the first one, so every measurement is reached
-moving in the same direction.
+moving in the same direction. A position the TRIAX does not report reaching
+is skipped (the grating may still be moving).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import datetime
 import json
 import logging
+import os
 
 import numpy as np
 
-from .line_peaks import find_line_peaks, fit_line_peak
+from .line_identification import (IdentificationSettings, SpectrumFrame, identify_single_line_walk,
+                                  identify_walk)
+from .reference_lines import ReferenceLine, argon_mercury_lamp_lines
 from .wavelength_axis_model import LineObservation, WavelengthAxisModel
 
-
-def estimate_pattern_shift(detected_pixels, predicted_pixels, match_tolerance_pixels, largest_shift_pixels):
-    """
-    The common pixel shift that best lines up detected peaks with predicted lines.
-
-    Every (detected - predicted) difference within `largest_shift_pixels` is a
-    candidate shift; the winner matches the most predicted lines within
-    `match_tolerance_pixels`, ties going to the smaller shift. Returns None if
-    nothing matches.
-    """
-    detected_pixels = np.asarray(detected_pixels, dtype=float)
-    predicted_pixels = np.asarray(predicted_pixels, dtype=float)
-    if detected_pixels.size == 0 or predicted_pixels.size == 0:
-        return None
-
-    candidate_shifts = (detected_pixels[:, None] - predicted_pixels[None, :]).ravel()
-    candidate_shifts = candidate_shifts[np.abs(candidate_shifts) <= largest_shift_pixels]
-    best_shift, best_match_count = None, 0
-    for shift in sorted(candidate_shifts, key=abs):
-        distances = np.abs(detected_pixels[:, None] - (predicted_pixels[None, :] + shift))
-        match_count = int(np.sum(distances.min(axis=0) <= match_tolerance_pixels))
-        if match_count > best_match_count:
-            best_shift, best_match_count = float(shift), match_count
-    return best_shift
+LINE_WALK_FORMAT_VERSION = 2
+DEFAULT_SATURATION_LEVEL = 65000.0  # what walks marked saturated columns with, before format 2
 
 
 @dataclass
@@ -101,17 +68,20 @@ class LineWalkPositionRecord:
 
     requested_steps: int
     measured_steps: int
-    detected_pixels: list
-    matched_lines: list
+    detected_pixels: list = field(default_factory=list)
+    matched_lines: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     spectrum: list = field(default_factory=list)
+    status: str = ''
+    recorded_at: str = ''
+    conditions: dict = field(default_factory=dict)
 
 
 @dataclass
 class LineWalkResult:
     observations: list
     position_records: list
-    final_pixel_shift: float
+    identification: object = None  # line_identification.WalkIdentification
 
 
 class LineWalk:
@@ -119,10 +89,9 @@ class LineWalk:
 
     def __init__(self, move_triax_to_steps, read_triax_steps, acquire_spectrum,
                  planning_model, catalogue_lines, number_of_pixels=1024,
-                 samples_per_line=6, approach_steps=2000, minimum_signal_to_noise=10.0,
-                 pattern_tolerance_pixels=3.0, match_tolerance_pixels=4.0, largest_shift_pixels=60.0,
-                 minimum_resolved_separation_pixels=8.0, edge_margin_pixels=15,
-                 saturation_level=None, logger=None):
+                 samples_per_line=6, approach_steps=2000, planning_margin_nm=3.0,
+                 edge_margin_pixels=15, saturation_level=None, read_frame_conditions=None,
+                 identification_settings=None, logger=None):
         self.move_triax_to_steps = move_triax_to_steps
         self.read_triax_steps = read_triax_steps
         self.acquire_spectrum = acquire_spectrum
@@ -131,13 +100,11 @@ class LineWalk:
         self.number_of_pixels = number_of_pixels
         self.samples_per_line = samples_per_line
         self.approach_steps = approach_steps
-        self.minimum_signal_to_noise = minimum_signal_to_noise
-        self.pattern_tolerance_pixels = pattern_tolerance_pixels
-        self.match_tolerance_pixels = match_tolerance_pixels
-        self.largest_shift_pixels = largest_shift_pixels
-        self.minimum_resolved_separation_pixels = minimum_resolved_separation_pixels
+        self.planning_margin_nm = planning_margin_nm
         self.edge_margin_pixels = edge_margin_pixels
         self.saturation_level = saturation_level
+        self.read_frame_conditions = read_frame_conditions or (lambda: {})
+        self.identification_settings = identification_settings or IdentificationSettings()
         self.logger = logger or logging.getLogger('LineWalk')
 
     @property
@@ -149,87 +116,21 @@ class LineWalk:
         usable_wavelengths = [line.apparent_wavelength_nm for line in self.usable_lines]
         if not usable_wavelengths:
             return []
-        chip_width_nm = abs(self.planning_model.nm_per_pixel) * (self.number_of_pixels - 1)
-        edge_margin_nm = abs(self.planning_model.nm_per_pixel) * self.edge_margin_pixels
+        nm_per_pixel = abs(self.planning_model.nm_per_pixel)
+        chip_width_nm = nm_per_pixel * (self.number_of_pixels - 1)
+        edge_margin_nm = nm_per_pixel * self.edge_margin_pixels
         chip_start_step_nm = chip_width_nm / self.samples_per_line
-        first_chip_start_nm = min(usable_wavelengths) - chip_width_nm + edge_margin_nm
-        last_chip_start_nm = max(usable_wavelengths) - edge_margin_nm
+        first_chip_start_nm = (min(usable_wavelengths) - chip_width_nm + edge_margin_nm
+                               - self.planning_margin_nm)
+        last_chip_start_nm = max(usable_wavelengths) - edge_margin_nm + self.planning_margin_nm
         chip_starts_nm = np.arange(first_chip_start_nm, last_chip_start_nm + chip_start_step_nm / 2,
                                    chip_start_step_nm)
         positions = {int(round(self.planning_model.triax_steps_for_wavelength(chip_start_nm, at_pixel=0)))
                      for chip_start_nm in chip_starts_nm}
         return sorted(positions)
 
-    def _predicted_pixels(self, triax_steps):
-        """Predicted pixel of every catalogue line, by the planning model (no shift applied)."""
-        return np.array([self.planning_model.pixel_of_wavelength(line.apparent_wavelength_nm, triax_steps)
-                         for line in self.catalogue_lines])
-
-    def _measure_at_position(self, measured_steps, spectrum, pixel_shift, record):
-        """Identify and fit the usable lines in one spectrum. Returns (observations, prediction offsets)."""
-        detected_pixels = np.array(find_line_peaks(spectrum, minimum_signal_to_noise=self.minimum_signal_to_noise))
-        record.detected_pixels = [int(pixel) for pixel in detected_pixels]
-        predicted_pixels = self._predicted_pixels(measured_steps) + pixel_shift
-
-        observations, prediction_offsets = [], []
-        for line_index, line in enumerate(self.catalogue_lines):
-            predicted_pixel = predicted_pixels[line_index]
-            if not line.usable_as_reference:
-                continue
-            if not (self.edge_margin_pixels <= predicted_pixel < self.number_of_pixels - self.edge_margin_pixels):
-                continue
-
-            other_predicted = np.delete(predicted_pixels, line_index)
-            nearest_other_line_distance = float(np.min(np.abs(other_predicted - predicted_pixel))) \
-                if other_predicted.size else np.inf
-            if nearest_other_line_distance < self.minimum_resolved_separation_pixels:
-                record.notes.append(f"{line.label}: another line within {nearest_other_line_distance:.1f} px, "
-                                    "skipped as unresolved")
-                continue
-
-            if detected_pixels.size == 0:
-                record.notes.append(f"{line.label}: no peaks detected")
-                continue
-            distances_to_detected = np.abs(detected_pixels - predicted_pixel)
-            nearest_detected_index = int(np.argmin(distances_to_detected))
-            peak_pixel = int(detected_pixels[nearest_detected_index])
-            if distances_to_detected[nearest_detected_index] > self.match_tolerance_pixels:
-                record.notes.append(f"{line.label}: no peak within {self.match_tolerance_pixels:.0f} px "
-                                    f"of predicted {predicted_pixel:.0f}")
-                continue
-            if int(np.argmin(np.abs(predicted_pixels - peak_pixel))) != line_index:
-                record.notes.append(f"{line.label}: peak at {peak_pixel} is closer to another line's prediction")
-                continue
-
-            other_detected = np.delete(detected_pixels, nearest_detected_index)
-            nearest_other_peak_distance = float(np.min(np.abs(other_detected - peak_pixel))) \
-                if other_detected.size else np.inf
-            clear_distance_pixels = min(nearest_other_peak_distance, nearest_other_line_distance, 24.0)
-            half_window_pixels = int(np.clip(clear_distance_pixels // 2, 4, 12))
-            if self.saturation_level is not None:
-                window = spectrum[max(0, peak_pixel - half_window_pixels):peak_pixel + half_window_pixels + 1]
-                if np.max(window) >= self.saturation_level:
-                    record.notes.append(f"{line.label}: saturated, skipped (shorten the exposure)")
-                    continue
-
-            peak_fit = fit_line_peak(spectrum, peak_pixel, half_window_pixels=half_window_pixels)
-            if peak_fit is None or peak_fit.signal_to_noise < self.minimum_signal_to_noise:
-                record.notes.append(f"{line.label}: peak fit failed or too weak")
-                continue
-            observations.append(LineObservation(
-                line_name=line.label,
-                apparent_wavelength_nm=line.apparent_wavelength_nm,
-                wavelength_uncertainty_nm=line.wavelength_uncertainty_nm,
-                triax_steps=int(measured_steps),
-                centre_pixel=peak_fit.centre_pixel,
-                centre_uncertainty_pixels=peak_fit.centre_uncertainty_pixels,
-            ))
-            prediction_offsets.append(peak_fit.centre_pixel - (predicted_pixel - pixel_shift))
-            record.matched_lines.append(line.name)
-        return observations, prediction_offsets
-
     def run(self, triax_positions=None):
-        """Walk the TRIAX through `triax_positions` (default: the plan) and collect observations."""
+        """Walk the TRIAX through `triax_positions` (default: the plan), acquire, then identify."""
         if triax_positions is None:
             triax_positions = self.plan_triax_positions()
         triax_positions = sorted(int(position) for position in triax_positions)
@@ -237,65 +138,180 @@ class LineWalk:
             raise ValueError("No TRIAX positions to visit: no usable reference line in the catalogue.")
 
         self.move_triax_to_steps(triax_positions[0] - self.approach_steps)
-
-        pixel_shift = None
-        all_prediction_offsets, observations, position_records = [], [], []
-        for requested_steps in triax_positions:
+        position_records, frames = [], []
+        for position_number, requested_steps in enumerate(triax_positions, start=1):
             self.move_triax_to_steps(requested_steps)
             measured_steps = int(self.read_triax_steps())
-            record = LineWalkPositionRecord(requested_steps=requested_steps, measured_steps=measured_steps,
-                                            detected_pixels=[], matched_lines=[])
+            record = LineWalkPositionRecord(requested_steps=requested_steps,
+                                            measured_steps=measured_steps)
             position_records.append(record)
             if measured_steps != requested_steps:
-                # The TRIAX may still be moving (move timed out): a frame now would smear the lines.
+                record.status = 'SKIPPED'
                 record.notes.append(f"TRIAX reports {measured_steps}, requested {requested_steps}: "
-                                    "position skipped")
+                                    "position skipped (the grating may still be moving)")
                 self.logger.warning(f"Line walk: TRIAX at {measured_steps}, requested {requested_steps}; skipped")
                 continue
             spectrum = np.asarray(self.acquire_spectrum(), dtype=float)
+            record.recorded_at = datetime.datetime.now().isoformat(timespec='seconds')
+            record.conditions = dict(self.read_frame_conditions())
             record.spectrum = [round(float(value), 1) for value in spectrum]
+            frame = SpectrumFrame(label=str(measured_steps), triax_steps=measured_steps,
+                                  spectrum=spectrum, saturation_level=self.saturation_level)
+            frames.append((record, frame))
+            self.logger.info(f"Line walk: position {position_number} of {len(triax_positions)} "
+                             f"(TRIAX {measured_steps}) recorded")
 
-            if pixel_shift is None:
-                detected_pixels = find_line_peaks(spectrum, minimum_signal_to_noise=self.minimum_signal_to_noise)
-                pixel_shift = estimate_pattern_shift(detected_pixels, self._predicted_pixels(measured_steps),
-                                                     self.pattern_tolerance_pixels, self.largest_shift_pixels)
-                if pixel_shift is None:
-                    record.notes.append("no line pattern recognised yet; position not used")
-                    continue
-                self.logger.info(f"Line walk: lines sit {pixel_shift:+.1f} px from where the current "
-                                 "calibration predicts")
-
-            position_observations, prediction_offsets = self._measure_at_position(
-                measured_steps, spectrum, pixel_shift, record)
-            observations.extend(position_observations)
-            all_prediction_offsets.extend(prediction_offsets)
-            if all_prediction_offsets:
-                pixel_shift = float(np.median(all_prediction_offsets))
-            self.logger.info(f"Line walk: TRIAX {measured_steps} -> matched {record.matched_lines or 'nothing'}")
-
-        return LineWalkResult(observations=observations, position_records=position_records,
-                              final_pixel_shift=pixel_shift if pixel_shift is not None else float('nan'))
+        identification = identify_frames(
+            [frame for _, frame in frames], self.catalogue_lines, self.planning_model,
+            self.number_of_pixels, self.identification_settings)
+        for (record, _), frame_result in zip(frames, identification.frames):
+            describe_frame_in_record(record, frame_result)
+        return LineWalkResult(observations=identification.observations,
+                              position_records=position_records, identification=identification)
 
 
-def save_line_walk(path, result, planning_model, description=''):
-    """Write the observations and position records (spectra included) to JSON (the input to the fit)."""
+def identify_frames(frames, catalogue_lines, prior_model, number_of_pixels, settings=None):
+    """Pattern identification for a lamp walk; dominant-peak identification for a one-line walk."""
+    if len(catalogue_lines) == 1:
+        return identify_single_line_walk(frames, catalogue_lines[0], number_of_pixels, settings)
+    return identify_walk(frames, catalogue_lines, prior_model, number_of_pixels, settings)
+
+
+def describe_frame_in_record(record, frame_result):
+    """Copy one frame's identification into its position record (what the file shows a person)."""
+    record.status = frame_result.status
+    record.detected_pixels = [round(peak.centre_pixel, 2) for peak in frame_result.peaks]
+    record.matched_lines = [assignment.line.name for assignment in frame_result.assignments]
+    record.notes = list(frame_result.reasons) + list(frame_result.skipped_lines)
+
+
+def identification_record(identification):
+    """The part of a walk's identification kept in the file (observations are kept separately)."""
+    return {
+        'summary': identification.summary_lines(),
+        'prior_offset_at_mid_walk_nm': identification.trend_offset_nm,
+        'prior_offset_change_over_walk_nm': identification.trend_change_nm,
+        'strong_peaks_explained': identification.trend_score,
+        'strong_peaks_total': identification.strong_peak_total,
+        'runner_up_strong_peaks_explained': identification.runner_up_score,
+        'settings': asdict(identification.settings),
+    }
+
+
+def save_line_walk(path, result, planning_model, description='', reference_kind=None,
+                   catalogue_lines=(), instrument=None):
+    """
+    Write the walk to JSON: every spectrum, the conditions it was taken in, and the identification.
+
+    `reference_kind` says which lines a later re-identification uses (catalogue_for_saved_walk):
+    'arhg' (the current lamp table, so table improvements reach old walks), 'external' (the
+    walk's one line) or 'catalogue' (exactly the `catalogue_lines` stored with the walk).
+    Default: 'external' for one line, 'catalogue' for any other stored list, 'arhg' for none.
+    `instrument` is a dict describing the set-up (software version, simulate mode, camera
+    settings, saturation level, ...); see Microscope._describe_instrument_for_calibration.
+    """
+    catalogue_lines = list(catalogue_lines)
+    if reference_kind is None:
+        if len(catalogue_lines) == 1:
+            reference_kind = 'external'
+        else:
+            reference_kind = 'catalogue' if catalogue_lines else 'arhg'
     contents = {
         'data_type': 'wavelength_axis_line_walk',
+        'format_version': LINE_WALK_FORMAT_VERSION,
         'recorded_on': datetime.datetime.now().isoformat(timespec='seconds'),
         'description': description,
+        'reference_kind': reference_kind,
+        'instrument': instrument or {},
         'planning_model': planning_model.to_dict(),
-        'final_pixel_shift': result.final_pixel_shift,
+        'catalogue_lines': [asdict(line) for line in catalogue_lines],
+        'identification': (identification_record(result.identification)
+                           if result.identification else {}),
         'observations': [observation.as_dict() for observation in result.observations],
-        'position_records': [record.__dict__ for record in result.position_records],
+        'position_records': [asdict(record) for record in result.position_records],
     }
     with open(path, 'w') as file:
         json.dump(contents, file, indent=2)
 
 
-def load_line_walk_observations(path):
-    """Read observations (and the planning model) back from a saved line walk."""
+@dataclass
+class SavedLineWalk:
+    """A line walk file, read back."""
+
+    path: str
+    contents: dict
+    planning_model: WavelengthAxisModel
+    reference_kind: str          # 'arhg', 'external' or 'catalogue' (save_line_walk)
+    frames: list                 # SpectrumFrame, one per recorded position with a spectrum
+    stored_observations: list    # what the walk recorded when it was taken
+
+    @property
+    def label(self):
+        return os.path.basename(str(self.path))
+
+    @property
+    def instrument(self):
+        return self.contents.get('instrument', {})
+
+    @property
+    def format_version(self):
+        return int(self.contents.get('format_version', 1))
+
+    @property
+    def recorded_in_simulate_mode(self):
+        """True or False when the file says; None for files from before format 2 (not recorded)."""
+        return self.instrument.get('simulate') if 'simulate' in self.instrument else None
+
+
+def load_line_walk(path):
+    """Read a saved walk (format 1 or 2)."""
     with open(path) as file:
         contents = json.load(file)
-    observations = [LineObservation(**stored) for stored in contents['observations']]
-    planning_model = WavelengthAxisModel.from_dict(contents['planning_model'])
-    return observations, planning_model, contents
+    saturation_level = contents.get('instrument', {}).get('saturation_level',
+                                                          DEFAULT_SATURATION_LEVEL)
+    frames = [SpectrumFrame(label=str(record['measured_steps']),
+                            triax_steps=int(record['measured_steps']),
+                            spectrum=np.asarray(record['spectrum'], dtype=float),
+                            saturation_level=saturation_level)
+              for record in contents['position_records']
+              if record.get('spectrum') and record['measured_steps'] == record['requested_steps']]
+    reference_kind = contents.get('reference_kind') or \
+        ('external' if str(contents.get('description', '')).startswith('external') else 'arhg')
+    return SavedLineWalk(
+        path=str(path), contents=contents,
+        planning_model=WavelengthAxisModel.from_dict(contents['planning_model']),
+        reference_kind=reference_kind, frames=frames,
+        stored_observations=[LineObservation(**stored) for stored in contents['observations']])
+
+
+def catalogue_for_saved_walk(saved_walk):
+    """The lines to identify a saved walk against: the current lamp table, or the walk's own."""
+    stored_lines = saved_walk.contents.get('catalogue_lines')
+    if saved_walk.reference_kind in ('external', 'catalogue') and stored_lines:
+        return [ReferenceLine(**stored) for stored in stored_lines]
+    if saved_walk.reference_kind == 'external':
+        observation = saved_walk.stored_observations[0]
+        return [ReferenceLine(name=observation.line_name.split(' (')[0],
+                              wavelength_nm=observation.apparent_wavelength_nm,
+                              wavelength_uncertainty_nm=observation.wavelength_uncertainty_nm)]
+    return argon_mercury_lamp_lines()
+
+
+def identify_saved_walk(saved_walk, prior_model=None, number_of_pixels=1024, settings=None):
+    """Re-identify a saved walk from its spectra (prior: the calibration it was planned with)."""
+    return identify_frames(saved_walk.frames, catalogue_for_saved_walk(saved_walk),
+                           prior_model or saved_walk.planning_model, number_of_pixels, settings)
+
+
+def load_line_walk_observations(path):
+    """
+    Observations of a saved walk, RE-IDENTIFIED from its spectra with the current method and
+    line table (files without spectra fall back to the observations stored in them). Returns
+    (observations, planning model, file contents).
+    """
+    saved_walk = load_line_walk(path)
+    if saved_walk.frames:
+        observations = identify_saved_walk(saved_walk).observations
+    else:
+        observations = saved_walk.stored_observations
+    return observations, saved_walk.planning_model, saved_walk.contents

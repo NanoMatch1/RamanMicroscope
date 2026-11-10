@@ -30,12 +30,35 @@ class LinePeakFit:
         return asdict(self)
 
 
-def collapse_image_to_spectrum(image, half_height_rows=10, saturation_level=None):
+@dataclass
+class DetectedPeak:
+    """One peak found in a spectrum, before anyone says which line it is."""
+
+    centre_pixel: float
+    centre_uncertainty_pixels: float  # fit, background noise only: too small for bright lines
+    height_counts: float              # fitted amplitude above the local baseline
+    sigma_pixels: float
+    saturated: bool                   # the peak's window reaches the saturation level
+
+
+def slit_image_rows(image, half_height_rows=10):
+    """(first row, last row + 1) of the band centred on the brightest row of a 2D frame."""
+    image = np.asarray(image, dtype=float)
+    if image.ndim == 3:
+        image = image[:, :, 0]
+    brightest_row = int(np.argmax(image.sum(axis=1)))
+    first_row = max(0, brightest_row - half_height_rows)
+    return first_row, min(image.shape[0], brightest_row + half_height_rows + 1)
+
+
+def collapse_image_to_spectrum(image, half_height_rows=10, saturation_level=None, row_band=None):
     """
     Turn a 2D CCD frame (rows x columns) into a 1D spectrum (one value per column).
 
-    The spectrum is the mean over a band of rows centred on the brightest row,
-    so the band follows the image of the slit wherever it sits on the chip.
+    The spectrum is the mean over a band of rows: `row_band` (first, last + 1)
+    if given, otherwise centred on the brightest row of this frame. A line
+    walk should fix the band from its first frame: if the slit image is
+    tilted on the chip, a band that moves from frame to frame moves the lines.
     A 1D input is returned unchanged.
 
     If `saturation_level` is given, any column with a pixel at or above it
@@ -49,10 +72,9 @@ def collapse_image_to_spectrum(image, half_height_rows=10, saturation_level=None
     if image.ndim == 3:
         image = image[:, :, 0]
 
-    row_totals = image.sum(axis=1)
-    brightest_row = int(np.argmax(row_totals))
-    first_row = max(0, brightest_row - half_height_rows)
-    last_row = min(image.shape[0], brightest_row + half_height_rows + 1)
+    if row_band is None:
+        row_band = slit_image_rows(image, half_height_rows)
+    first_row, last_row = row_band
     band = image[first_row:last_row, :]
     spectrum = band.mean(axis=0)
     if saturation_level is not None:
@@ -139,3 +161,34 @@ def fit_line_peak(spectrum, approximate_pixel, half_window_pixels=12):
         baseline=float(baseline),
         signal_to_noise=float(amplitude / noise_standard_deviation),
     )
+
+
+def find_and_fit_peaks(spectrum, minimum_signal_to_noise=10.0, saturation_level=None,
+                       half_window_pixels=5):
+    """
+    Every peak in a spectrum, fitted, brightest first.
+
+    The fit window is narrowed to half the distance to the nearest other peak
+    (at least 3 px), so a neighbour's tail stays out of it. A peak whose
+    window reaches `saturation_level` is kept, marked saturated: it still
+    helps identify the frame, but its centre is biased and is never used as a
+    measurement. Peaks too close to the chip edge to fit are left out.
+    """
+    spectrum = np.asarray(spectrum, dtype=float)
+    candidate_pixels = find_line_peaks(spectrum, minimum_signal_to_noise=minimum_signal_to_noise)
+    peaks = []
+    for pixel in candidate_pixels:
+        other_pixels = [other for other in candidate_pixels if other != pixel]
+        nearest_other = min((abs(other - pixel) for other in other_pixels), default=np.inf)
+        window = int(max(3, min(half_window_pixels, nearest_other // 2)))
+        fit = fit_line_peak(spectrum, pixel, half_window_pixels=window)
+        if fit is None:
+            continue
+        window_values = spectrum[max(0, pixel - window):pixel + window + 1]
+        saturated = saturation_level is not None and \
+            float(np.max(window_values)) >= saturation_level
+        peaks.append(DetectedPeak(centre_pixel=fit.centre_pixel,
+                                  centre_uncertainty_pixels=fit.centre_uncertainty_pixels,
+                                  height_counts=fit.amplitude, sigma_pixels=fit.sigma_pixels,
+                                  saturated=bool(saturated)))
+    return sorted(peaks, key=lambda peak: -peak.height_counts)

@@ -2,35 +2,42 @@
 Reference spectral lines with wavelengths known independently of the instrument.
 
 Wavelengths are in AIR, in nm, which is the convention for lamp line tables
-and for the rest of this codebase. At the PIXIS dispersion (~0.078 nm per
-pixel) a table error of 0.005 nm is 1/16 of a pixel and is negligible.
+and for the rest of this codebase. At the PIXIS dispersion (~0.077 nm per
+pixel) a table error of 0.005 nm is 1/16 of a pixel.
 
-The lab lamp is an argon-mercury (Ar-Hg) pencil lamp. Wavelengths are from
-its label, or from the NIST Atomic Spectra Database for lines the label
-leaves out; the two agree to 0.005 nm or better.
+The lab lamp is an argon-mercury (Ar-Hg) pencil lamp. Every wavelength below
+is from the NIST Atomic Spectra Database (observed air wavelengths, Ar I and
+Hg I, retrieved 2026-11-10), rounded to 0.001 nm.
 
-The lamp catalogue is what THIS lamp shows on THIS instrument
---------------------------------------------------------------
-Line identification must know every line that can land on the chip, or a
-real line can be mistaken for a known one nearby. The reverse matters as
-much: a catalogue line the lamp does not actually show is a target that an
-unrelated weak peak can be matched to. So ARGON_MERCURY_LAMP_LINES lists the
-lines seen in a real walk (Riley, 2026-11-04, 690-910 nm), not every line in
-the atomic tables:
+Two jobs, two kinds of line
+---------------------------
+1. IDENTIFICATION must know every line that can land on the chip. A line
+   missing from the table is invisible to the identification, so a peak from
+   it can be taken for a listed line nearby. That is how the 2026-11-10 walks
+   went wrong: Hg 404.656 in second order (809.31) was recorded as Ar 811.531,
+   Ar 737.212 as Ar 738.398, Ar 919.464 as Ar 922.450, and so on (CHANGELOG,
+   "Known issues"). So ARGON_MERCURY_LAMP_LINES holds every NIST line that can
+   reach the chip during an Ar-Hg walk (chip edges about 615-1015 nm): argon
+   with NIST relative intensity 50 or more, mercury in first order, and
+   mercury from 300-515 nm in second order.
+2. FITTING uses only lines confirmed on this instrument (`usable_as_reference`):
+   argon lines that were seen, are not blends, and whose table wavelength
+   agrees with the other lines in the same frames to better than 0.01 nm
+   (scratch/check_candidate_line_wavelengths.py, 2026-11-10 data).
 
-- argon, first order: the label lines plus strong unlisted ones (714.704,
-  751.465, 801.479, 810.369, 840.821) that sit close to label lines;
-- Ar 710.748 is on the label but was not seen, so it is left out;
-- mercury: none of the mercury lines expected in second or third order
-  (730.0, 760.96, 809.31, 815.57, 890.2, 906.5 nm) were seen (presumably
-  the lamp envelope or the optics absorb the UV and most of the blue). One weak line at
-  ~871.6 nm matches Hg 435.833 in second order and is kept for
-  identification only;
-- 912.297 and 922.450 were beyond the recorded frames: expected, not yet
-  confirmed.
+Mercury lines are identification-only. On 2026-11-10 every mercury line,
+first order (690.746, 708.190) as well as second order (809.313, 815.567,
+871.667), sat 0.03-0.06 nm away from where the argon lines in the same frames
+put it, while the argon lines agreed to 0.007 nm. The table values are right
+(NIST), so the offset is instrumental, probably mercury and argon lighting
+the entrance slit differently.
 
-When a walk shows a line that is not in the table (or misses one that is),
-edit the table: it is the only place the lamp's lines are defined.
+`relative_intensity` is the NIST relative intensity. It compares lines of the
+same element only (NIST scales differ between spectra) and is used to judge
+whether a weak neighbour can pull a line's fitted centre.
+
+When a walk shows a strong peak that no line here explains, the gate report
+says so with its wavelength: look it up in NIST and add it.
 
 Diffraction orders
 ------------------
@@ -38,7 +45,7 @@ A grating sends wavelength lambda in order m to the same angle as wavelength
 m * lambda in first order (grating equation: m * lambda = d (sin a + sin b)).
 The TRIAX position and the CCD axis are calibrated in first-order terms, so a
 blue mercury line seen in second order appears at twice its wavelength:
-435.833 nm appears at 871.666 nm, among the argon lines. With no
+435.833 nm appears at 871.667 nm, among the argon lines. With no
 order-sorting filter in the beam such lines are present whenever the light
 reaches the TRIAX, so check for them whenever the lamp or optics change.
 """
@@ -55,11 +62,16 @@ class ReferenceLine:
     diffraction_order: int = 1
     wavelength_uncertainty_nm: float = 0.002
     usable_as_reference: bool = True
+    relative_intensity: float = 0.0  # NIST relative intensity, within one element only; 0 = unknown
 
     @property
     def apparent_wavelength_nm(self):
         """Where the line appears on the first-order wavelength scale."""
         return self.wavelength_nm * self.diffraction_order
+
+    @property
+    def element(self):
+        return self.name.split()[0]
 
     @property
     def label(self):
@@ -81,40 +93,56 @@ MERCURY_LINE_WAVELENGTHS_AIR_NM = {
     'Hg 579.066': 579.066,
 }
 
-def _argon(wavelength_nm, usable_as_reference=True):
-    return ReferenceLine(name=f'Ar {wavelength_nm:.3f}', wavelength_nm=wavelength_nm,
-                         usable_as_reference=usable_as_reference)
-
-
-# Every line the lab Ar-Hg lamp shows between 690 and 930 nm (first-order
-# scale); see the module docstring. usable_as_reference=False lines are
-# known to be there but never fitted.
-ARGON_MERCURY_LAMP_LINES = (
-    _argon(696.543),
-    _argon(706.722),
-    _argon(714.704),                               # weak, not on the label
-    _argon(727.294),
-    _argon(738.393),
-    _argon(750.387),
-    _argon(751.465),                               # not on the label; 14 px from 750.387
-    _argon(763.511),                               # brightest line
-    _argon(772.376, usable_as_reference=False),    # unresolved blend with 772.421:
-    _argon(772.421, usable_as_reference=False),    # the fitted centre is a mix of both
-    _argon(794.818),
-    _argon(800.616),
-    _argon(801.479),                               # not on the label; 11 px from 800.616
-    _argon(810.369),                               # not on the label; 15 px from 811.531
-    _argon(811.531),
-    _argon(826.452),
-    _argon(840.821),                               # not on the label; 21 px from 842.465
-    _argon(842.465),
-    _argon(852.144),
-    _argon(866.794),
-    ReferenceLine(name='Hg 435.833', wavelength_nm=435.833, diffraction_order=2,
-                  usable_as_reference=False),      # weak; identity not yet confirmed
-    _argon(912.297),                               # not yet confirmed (beyond recorded frames)
-    _argon(922.450),                               # not yet confirmed (beyond recorded frames)
+# Argon lines fitted as references: seen on this instrument, not blended, and consistent with
+# the other lines in the same frame to < 0.01 nm (2026-11-04 and 2026-11-10 walks).
+CONFIRMED_ARGON_REFERENCE_WAVELENGTHS_NM = (
+    696.543, 703.025, 706.722, 714.704, 727.294, 737.212, 738.398, 750.387, 751.465, 763.511,
+    794.818, 800.616, 801.479, 810.369, 811.531, 826.452, 840.821, 842.465, 852.144, 866.794,
+    912.297, 919.464, 922.450, 935.422,
 )
+
+# NIST ASD Ar I, 600-1030 nm, relative intensity >= 50: (wavelength in air, relative intensity).
+ARGON_LINES_NIST = (
+    (603.213, 70), (641.631, 70), (667.728, 100), (675.283, 150), (687.129, 150),
+    (693.766, 50), (696.543, 10000), (703.025, 150), (706.722, 10000), (706.874, 100),
+    (714.704, 1000), (720.698, 70), (727.294, 2000), (735.329, 70), (737.212, 200),
+    (738.398, 10000), (750.387, 20000), (751.465, 15000), (763.511, 25000), (772.376, 15000),
+    (772.421, 10000), (794.818, 20000), (800.616, 20000), (801.479, 25000), (810.369, 20000),
+    (811.531, 35000), (826.452, 10000), (840.821, 15000), (842.465, 20000), (852.144, 15000),
+    (866.794, 4500), (884.991, 180), (912.297, 35000), (919.464, 550), (922.450, 15000),
+    (929.153, 400), (935.422, 1600), (965.779, 25000), (978.450, 4500), (1005.206, 180),
+)
+
+# NIST ASD Hg I lines that land on the chip: first order 600-1030 nm, and 300-515 nm lines
+# (relative intensity >= 200) in second order.
+MERCURY_FIRST_ORDER_LINES_NIST = (
+    (671.634, 600), (690.746, 1000), (708.190, 1000), (709.186, 800), (1013.975, 1600),
+)
+MERCURY_SECOND_ORDER_PARENT_LINES_NIST = (
+    (302.150, 1200), (302.347, 300), (312.567, 4000), (313.156, 3000), (313.184, 4000),
+    (334.148, 700), (365.016, 9000), (365.484, 3000), (366.289, 500), (366.328, 2000),
+    (404.657, 12000), (407.784, 1000), (435.834, 12000),
+)
+
+
+def _build_argon_mercury_lamp_lines():
+    confirmed = set(CONFIRMED_ARGON_REFERENCE_WAVELENGTHS_NM)
+    lines = [ReferenceLine(name=f'Ar {wavelength_nm:.3f}', wavelength_nm=wavelength_nm,
+                           usable_as_reference=wavelength_nm in confirmed,
+                           relative_intensity=float(intensity))
+             for wavelength_nm, intensity in ARGON_LINES_NIST]
+    lines += [ReferenceLine(name=f'Hg {wavelength_nm:.3f}', wavelength_nm=wavelength_nm,
+                            usable_as_reference=False, relative_intensity=float(intensity))
+              for wavelength_nm, intensity in MERCURY_FIRST_ORDER_LINES_NIST]
+    lines += [ReferenceLine(name=f'Hg {wavelength_nm:.3f}', wavelength_nm=wavelength_nm,
+                            diffraction_order=2, usable_as_reference=False,
+                            relative_intensity=float(intensity))
+              for wavelength_nm, intensity in MERCURY_SECOND_ORDER_PARENT_LINES_NIST]
+    return tuple(sorted(lines, key=lambda line: line.apparent_wavelength_nm))
+
+
+# Every line that can land on the chip during an Ar-Hg walk; see the module docstring.
+ARGON_MERCURY_LAMP_LINES = _build_argon_mercury_lamp_lines()
 
 
 def mercury_lines_in_window(window_start_nm, window_end_nm, diffraction_orders=(1, 2)):
@@ -132,14 +160,16 @@ def mercury_lines_in_window(window_start_nm, window_end_nm, diffraction_orders=(
     return sorted(lines, key=lambda line: line.apparent_wavelength_nm)
 
 
-def argon_mercury_lamp_lines(window_start_nm, window_end_nm):
+def argon_mercury_lamp_lines(window_start_nm=None, window_end_nm=None):
     """
-    The lab Ar-Hg lamp's lines (ARGON_MERCURY_LAMP_LINES) between two first-order wavelengths.
+    The lab Ar-Hg lamp's lines (ARGON_MERCURY_LAMP_LINES), optionally between two first-order
+    wavelengths.
 
-    Lines that should not be used as references (blends, unconfirmed lines)
-    have usable_as_reference=False but are still returned, because line
-    identification needs to know they are there.
+    Identification-only lines (usable_as_reference=False) are always included:
+    line identification needs to know they are there.
     """
+    window_start_nm = -float('inf') if window_start_nm is None else window_start_nm
+    window_end_nm = float('inf') if window_end_nm is None else window_end_nm
     lines = [line for line in ARGON_MERCURY_LAMP_LINES
              if window_start_nm <= line.apparent_wavelength_nm <= window_end_nm]
     return sorted(lines, key=lambda line: line.apparent_wavelength_nm)

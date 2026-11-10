@@ -150,9 +150,14 @@ Two smaller effects of the same geometry come with it:
 In a physical model of the TRIAX (grating equation, 550 mm focal length,
 flat focal plane, steps linear in grating angle), a 690-930 nm walk needs
 all three terms together: with any one or two of them the reduced
-chi-squared stays in the hundreds, and with all three it is ~0.2. For the
-Ar-Hg walk, fit with `speccalfit curvature triaxquadratic` (the dispersion
-term is on by default).
+chi-squared stays in the hundreds, and with all three it is ~0.2.
+
+The real TRIAX departs further from that model than the sine alone: over the
+full walk (87000-121000 steps) the wavelength on the reference pixel is ~0.3
+nm from any quadratic in steps, and needs a cubic to get to ~0.1 nm (2026-11-10
+data, section 3.4). Fit the Ar-Hg walk with `speccalfit curvature
+triaxorder=3` (the dispersion term is on by default); the TRIAX-shape gate
+reports which order the data supports.
 
 **Why the inverse is computed, not fitted.** The old calibrations stored each
 conversion and its inverse (`wl_to_g1` and `g1_to_wl`, ...) as two separately
@@ -164,38 +169,39 @@ exactly.
 ### 3.2 Wavelength references
 
 **Argon-mercury lamp (preferred).** The lab's calibration lamp is an Ar-Hg
-pencil lamp. Its label lists 17 argon lines between 696 and 922 nm, which
-covers the instrument's working range in first order. The wavelengths are
-known to ~0.005 nm, far better than the 0.078 nm a pixel spans.
+pencil lamp. Its argon lines cover the instrument's working range in first
+order, and their wavelengths are known to ~0.001 nm (NIST), far better than
+the 0.077 nm a pixel spans.
 
-The catalogue, `ARGON_MERCURY_LAMP_LINES` in
-`wavelength_calibration/reference_lines.py`, lists the lines this lamp
-**actually shows on this instrument**. It is based on the first bench walk
-(November 2026, 690-910 nm):
+The line table, `ARGON_MERCURY_LAMP_LINES` in
+`wavelength_calibration/reference_lines.py`, has two jobs, so it holds two
+kinds of line:
 
-- **Lines that aren't on the label are in it.** Argon lines at 714.704,
-  751.465, 801.479, 810.369 and 840.821 nm aren't listed on the label, and
-  some sit 11-21 pixels from a listed line. They're in the catalogue so they
-  can't be mistaken for their listed neighbours, and they're good references
-  in their own right.
-- **Lines the lamp doesn't show are left out.** Ar 710.748 is on the label
-  but wasn't seen. A grating also sends wavelength lambda in order m to the
-  same angle as m * lambda in first order, so mercury's blue and UV lines
-  could appear among the argon lines in second and third order (730.0,
-  760.96, 809.31, 815.57 nm, ...). None of them were seen, presumably because
-  the lamp envelope or the optics absorb the UV. A line in the catalogue
-  that isn't really there is a target that an unrelated weak peak can be
-  matched to, so these are out.
-- **One weak line at ~871.6 nm** matches Hg 435.833 in second order. It is
-  kept for identification but not used as a reference until it's confirmed.
-- **772.376 and 772.421 nm are an unresolved pair** (0.6 pixel apart). They
-  look like one line, but the fitted centre would be a brightness-weighted
-  blend, so neither is used.
-- 912.297 and 922.450 nm were beyond the frames recorded so far: expected,
-  not yet confirmed.
+- **Every line that can reach the chip, for identification.** During a walk
+  the chip edges span about 615-1015 nm. The table lists every NIST line in
+  that range: argon (NIST relative intensity 50 or more), mercury in first
+  order, and mercury from 300-515 nm in second order (a grating sends
+  wavelength lambda in order m to the same angle as m * lambda in first
+  order, so Hg 404.657 nm appears at 809.31 nm). A line missing from the
+  table is invisible to the identification, and a peak from it can be taken
+  for a listed line nearby. That is exactly what went wrong on 2026-11-10
+  (section 3.3).
+- **Confirmed lines, for fitting** (`usable_as_reference`). Only argon lines
+  that were seen on this instrument, aren't blends, and agree with the other
+  lines in the same frames to better than 0.01 nm are fitted. Mercury is
+  identification-only: on 2026-11-10 every mercury line, first and second
+  order, sat 0.03-0.06 nm away from where the argon lines in the same frame
+  put it, while the argon lines agreed to 0.007 nm. The NIST values are
+  right, so the offset is instrumental (probably the two gases lighting the
+  entrance slit differently).
+- **Lines too close to separate** (closer than ~0.2 nm) are one peak on this
+  CCD. If one is far brighter than the other (Ar 706.722 and the 100x weaker
+  706.874), it stands for the pair; otherwise the pair is a blend, used for
+  identification only (Ar 772.376 + 772.421).
 
-If a walk shows a line that isn't in the table, or keeps missing one that
-is, edit the table. It's the only place the lamp's lines are defined.
+If the gate report shows a strong peak that no listed line explains, it
+gives the peak's wavelength: look it up in NIST (air wavelengths, and half
+the wavelength for second order) and add it to the table.
 
 Light the TRIAX entrance slit directly with the lamp. That calibrates the
 TRIAX + CCD on their own and keeps the rest of the beam path out of it.
@@ -208,76 +214,123 @@ measurement error: more walk positions don't reduce it, more distinct
 wavelengths do. Enter the spare spectrometer's real accuracy (its
 specification, typically 0.1-0.5 nm), not its display resolution.
 
-### 3.3 The line walk
+### 3.3 The line walk and line identification
 
 The CCD spans ~79 nm. The TRIAX slides it across the range of the reference
-lines in steps of 1/6 of its width (about 25 positions for the Ar-Hg lamp),
-so each line is measured at about six places across the chip. At each
-position the procedure:
+lines in steps of 1/6 of its width (about 26 positions for the Ar-Hg lamp),
+so each line is measured at about six places across the chip. The plan comes
+from the calibration in use, with 3 nm of margin at each end in case that
+calibration is off.
 
-1. acquires a frame and collapses it to a spectrum, using rows around the
-   brightest row (the image of the slit). A column with any saturated pixel
-   in that band is marked as saturated;
-2. finds peaks more than 10 noise standard deviations above the background;
-3. identifies which known line each peak is. The current calibration
-   predicts roughly where every line in the catalogue should be. A common
-   pixel shift is found on the first usable spectrum by pattern matching
-   (the shift that lines up the most peaks with predictions, within 3
-   pixels), then refined from every line matched after that;
-4. fits a Gaussian on a constant background to each identified line, **in
-   pixels**, and records (known wavelength, TRIAX steps, centre pixel,
-   centre uncertainty).
+**The walk only acquires.** At each position it records the spectrum (the
+mean of a band of rows centred on the slit image; the band is fixed by the
+first frame, so a tilted slit image can't move the lines from frame to
+frame), the time, the sensor temperature and the TRIAX position. A column
+with a saturated pixel is marked saturated. If the TRIAX isn't at the
+requested position when read back, the position is skipped. Positions are
+visited in increasing steps after backing off below the first, so backlash
+is the same for every point.
 
-A line is used at a position only if all of these hold, and the reason is
-recorded whenever one fails:
+**Lines are identified from all the spectra at once, by pattern**
+(`wavelength_calibration/line_identification.py`):
 
-- no other catalogue line is predicted within 8 pixels (closer lines blend);
-- the nearest peak is within 4 pixels of the prediction, and that peak's
-  nearest predicted line is this one (mutual nearest neighbours);
-- the peak isn't saturated (a clipped top biases the centre). If a strong
-  line is skipped for saturation, shorten the exposure, or accept losing it
-  if plenty of other lines were measured;
-- the fit succeeds and passes the signal-to-noise threshold.
+1. Every peak in every spectrum is found and fitted (a Gaussian on a
+   constant, in pixels).
+2. For each frame and each wavelength offset of the calibration in use
+   (+/-12 nm), count how many of the frame's strong peaks would then sit
+   within 0.15 nm of a line in the table.
+3. Identify the walk as a whole: the offset may drift linearly along the
+   walk (the calibration in use has a slope error) and each frame may wander
+   0.5 nm from that trend (the TRIAX drive). The trend that explains the
+   most strong peaks over the whole walk wins; frames with few lines are
+   carried by their neighbours. The best identification more than ~1 nm away
+   is reported too: if it explains nearly as many peaks, the identification
+   is ambiguous and the gates say so.
+4. Each frame is refined around the trend, every peak is matched to its
+   mutually nearest line, and a pixel -> wavelength map is fitted to the
+   frame's reference lines. A second pass repeats this with the walk's own
+   map shape, so a frame with only two lines takes its dispersion from its
+   neighbours.
+5. Each frame is checked on its own: every strong peak must be explained,
+   and the lines must agree with one map to 0.03 nm. A correctly identified
+   frame agrees to ~0.005 nm; a misidentified line is ~1 nm off, so a wrong
+   identification cannot pass quietly. A line far off the others (a weak or
+   blended peak) is dropped from that frame with the reason recorded. A frame
+   with one line is used when the rest of the walk fixes the pattern and no
+   other listed line is within reach.
 
-The fit window is narrowed to half the distance to the nearest other peak,
-so a neighbour's tail stays out of it.
+Only confirmed reference lines that are unsaturated, at least 15 pixels from
+the chip edges and not blended with a listed neighbour become measurements.
+Each measurement's centre uncertainty includes a floor of 0.05 pixel: the
+Gaussian fit's own uncertainty ignores photon noise and line shape and is
+10-1000x too small for bright lines.
 
-**The catalogue has to match the lamp.** A line the walk doesn't know about
-can be mistaken for a known one nearby, and a catalogue line the lamp
-doesn't emit can be matched to an unrelated peak. If you change lamps,
-build the new catalogue from a real walk: the saved file keeps every
-spectrum (section 3.5), so you can see exactly what the lamp shows.
+**Why not "the peak nearest the prediction".** The first version predicted
+each line's pixel from the calibration in use and took the nearest peak
+within 4 pixels. That calibration was off by 8-37 pixels, by an amount that
+changed along the walk, so a weak neighbour often sat closer to the
+prediction than the line itself. In the 2026-11-10 walks, 72 of the 91
+recorded lines were the wrong line (for example Hg 404.657 in second order,
+recorded as Ar 811.531), which is why the fit's reduced chi-squared was in
+the thousands. Repeated walks repeated the same mistake, so no consistency
+check across walks could see it. The saved walks are re-identified with the
+new method: `test_wavelength_calibration.py` replays one of them.
 
-The TRIAX visits every position moving in the same direction (increasing
-steps, after first backing off below the first position), so backlash in the
-grating drive is the same for every point. If the TRIAX isn't at the
-requested position when it's read back, that position is skipped rather than
-measured while the grating might still be moving.
+The walk file keeps every spectrum, and `speccalfit` always re-identifies
+from the spectra, so old walks benefit from any later improvement to the
+table or the method.
 
-The current calibration is used only for planning and line identification.
-The fit never sees it.
+### 3.4 Fitting, the gates, and accepting a calibration
 
-### 3.4 Fitting and accepting a calibration
+**The fit has two stages.** First the CCD terms (dispersion, its change with
+TRIAX position, curvature), with a free wavelength offset for every frame.
+Then the TRIAX polynomial through those frame offsets. In a single joint fit,
+any TRIAX error the polynomial can't follow leaks into the shared CCD terms
+and bends the whole axis; with a free offset per frame it can't. Several
+walks are fitted together with one zero per walk, so walks taken before and
+after the TRIAX zero moved still share the shape fit. The stored zero is the
+latest walk's. A walk with one line per frame (an external laser) can't
+separate the two, and is fitted in one stage.
 
-The observations are fitted by weighted least squares. Each point's
-uncertainty combines its reference-wavelength uncertainty with its fitted
-peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
+**The gates.** Every fit runs the checks in
+`wavelength_calibration/calibration_checks.py` and prints a verdict for
+each: PASS, WARN (usable, but look), or FAIL (`speccalapply` refuses). Every
+WARN and FAIL comes with its evidence, the likely causes and what to try.
+Most of them read the residuals split in two:
 
-- **residual rms and max**: a few hundredths of a nm is good for lamp
-  lines. A residual of ~1 nm or more on one line means it was misidentified
-  (mistaken for a neighbour); the report flags it.
-- **reduced chi-squared**: ~1 means the scatter matches the stated
-  uncertainties. Much larger than 1 means the uncertainties are optimistic
-  or the model is missing something. A small rms with a chi-squared in the
-  thousands is what a missing model term looks like (section 3.1). (With
-  Tiger + spare-spectrometer data it varies a lot from run to run, for the
-  shared-error reason above.)
-- **the residual table in the saved report**: residuals that follow a
-  pattern (with TRIAX position, or across the chip) point to a missing
-  model term; one line that is off on its own points to a misidentification.
-- **the change from the current calibration**: the report gives the largest
-  difference across the chip. Expect an offset of up to a few nm the first
-  time (section 2). After that, a large change means something moved.
+- **within each frame** (CCD axis, identification, table wavelengths): on
+  the 2026-11-10 data, correctly identified, ~0.005 nm;
+- **between frames** (TRIAX): what the TRIAX polynomial can't follow.
+
+| Check | What it catches |
+|---|---|
+| walk data | walks recorded in simulate mode, walks without metadata, mixed software versions |
+| instrument conditions | sensor warmer than -30 C or drifting, exposure changed between walks |
+| line identification | an ambiguous pattern match; the calibration in use near the edge of the search range |
+| frames identified | frames that failed, with each frame's reason |
+| unexplained peaks | strong peaks no listed line explains, by wavelength |
+| fit made | not enough identified lines to fit |
+| CCD axis (within-frame) | lines in one frame disagreeing (misidentification, saturation, missing curvature term) |
+| line bias | one line consistently off the others (wrong table value, a blend, another species) |
+| TRIAX shape | the TRIAX polynomial too stiff (the report gives the order the data needs) or the drive itself |
+| walk agreement | the TRIAX zero moving between walks, walks not repeating, a walk drifting as the instrument warms up |
+| coverage | lines seen too rarely, TRIAX ranges with no identified frame |
+| saturation | reference lines lost to saturation, with the exposure used |
+| fit statistics | chi-squared, and what it is measuring |
+| change from calibration in use | a big change (check the grating calibrations afterwards) |
+
+Limits are in `CheckLimits`. A check is one decorated function: write it in
+`calibration_checks.py` and every report runs it.
+
+**What the 2026-11-10 data says** (six afternoon walks, re-identified): the
+CCD axis agrees to 0.007 nm within frames; the walks repeat to 0.03 nm (~3
+TRIAX steps) once the first walk, which drifted by up to 0.19 nm at its
+start, is set aside; and the TRIAX is not a low-order polynomial in steps
+over 87000-121000 steps (rms about a quadratic 0.34 nm, about a cubic 0.10
+nm, order 5 0.05 nm). Use `triaxorder=3` for the full walk. What no
+polynomial follows (about 0.1 nm from one calibration position to the next,
+the same in every walk) is a property of the drive; a TRIAX position table
+would capture it.
 
 ### 3.5 Running it on the instrument
 
@@ -286,39 +339,60 @@ peak-centre uncertainty, converted to nm. Before accepting a fit, look at:
 1. Point the lamp at the TRIAX entrance slit. Narrow the slit: the closest
    pairs used are 11-15 pixels apart and need lines no more than ~5 pixels
    wide.
-2. Set an acquisition time where the brightest lines (763.5 and 811.5 nm)
-   are close to, but below, saturation (`acqtime <seconds>`). Single frames
-   are fine.
-3. Run `speccal` (or `speccal arhg`). The TRIAX slides the chip from ~690
-   to ~930 nm, about 25 positions. Each walk is saved to
-   `data/calibration_line_walks/linewalk_<date>_<time>_arhg.json` and added
-   to this session's list. Set the logging level to DEBUG to see why each
-   skipped line was skipped. The reasons are also saved in the file, with
-   the spectrum from every position.
-4. Run `speccalfit curvature triaxquadratic` and read the report
-   (section 3.4). This is the full model of section 3.1; the dispersion is
-   fitted as changing with the TRIAX position by default. Options can be
-   given in any order: `curvature`, `triaxquadratic`, and
-   `fixeddispersion` (holds the dispersion fixed; only sensible for a walk
-   spanning a few tens of nm).
-5. If it looks right, run `speccalapply` with the same options. This backs
-   up the master file to `calibration/backup/`, writes the new
-   `wavelength_axis` group, and reloads it straight away.
+2. Wait until the sensor is below -30 C. Set an acquisition time where the
+   brightest lines (763.5, 811.5 and 912.3 nm) stay below 65000 counts
+   (`acqtime <seconds>`). Saturated lines are lost as references, and the
+   saturation gate reports how many. Single frames are fine.
+3. Run `speccal` (or `speccal arhg`). The TRIAX slides the chip over the
+   lines from ~696 to ~935 nm, about 26 positions. Each walk is saved to
+   `data/calibration_line_walks/linewalk_<date>_<time>_arhg.json` with every
+   spectrum and the conditions it was taken in (software version, simulate
+   mode, exposure, frames averaged, sensor temperature per frame, TRIAX
+   position before the walk), and added to this session's list. The log
+   gives the identification summary and any frame that wasn't identified,
+   with the reason.
+4. Run `speccalfit curvature triaxorder=3` and read the gate report
+   (section 3.4). Options, in any order: `curvature`; `triaxquadratic` or
+   `triaxorder=N` (the TRIAX-shape gate suggests N); `fixeddispersion`
+   (only for a walk spanning a few tens of nm); `triaxsigma=S` (adds a TRIAX
+   error to every point, after which chi-squared no longer tests the fit;
+   the fit-statistics gate says so).
+5. If no gate fails, run `speccalapply` with the same options. It backs up
+   the master file to `calibration/backup/`, writes the new
+   `wavelength_axis` group, and reloads it straight away. If a gate fails it
+   refuses, and the report says why.
 
 Every `speccalfit` and `speccalapply` saves its report to
-`data/calibration_fit_reports/wavelength_axis_fit_<date>_<time>.txt`. The
-report includes the line walks used, the fitted terms, every point's
-residual, the fitted model, and a status line: `NOT APPLIED`, or `APPLIED`
-with the master file and its backup. An applied model names its report in
-its metadata (`fit_report`), so the calibration in use can always be traced
-back to the fit that produced it.
+`data/calibration_fit_reports/wavelength_axis_fit_<date>_<time>.txt`: the
+status (`NOT APPLIED`, `NOT APPLIED: a gate check failed`, or `APPLIED`
+with the master file and its backup), every gate with its evidence and
+advice, the fitted terms, each walk's frame-by-frame identification, every
+residual, and the model. An applied model names its report in its metadata
+(`fit_report`) and stores the TRIAX position table for the re-zero
+(`triax_position_offsets_nm`).
+
+**After the TRIAX step count moves: `speccalzero`.** If the TRIAX is
+re-initialised or loses steps, every wavelength shifts by the same number
+of steps while the shape of the calibration stays. `speccalzero` revisits
+three of the calibration walk's TRIAX positions (about a minute), measures
+the shift in steps, and, if every gate passes, stores it in the calibration
+in use as `triax_step_offset` (backed up first). Because it goes back to the
+calibration's own positions and knows what the drive did there
+(`triax_position_offsets_nm`), the drive pattern doesn't bias it; a shift of
+more than 10 steps is measured again at the corrected positions. If the
+frames disagree on the shift, more than the zero has changed (optics,
+grating) and the report says to run the full calibration. `speccalzero
+check` measures and reports without changing anything, which makes a quick
+daily check. Its reports are saved as
+`data/calibration_fit_reports/triax_zero_<date>_<time>.txt`.
 
 **With the Tiger and the spare spectrometer:**
 
 1. Tune the Tiger, then read its wavelength on the spare spectrometer.
 2. With the laser reaching the TRIAX (attenuated: the CCD saturates
    easily), run `speccal external <wavelength_nm> <uncertainty_nm>`, e.g.
-   `speccal external 785.12 0.2`.
+   `speccal external 785.12 0.2`. In each frame the laser must be the
+   dominant peak (5x the next) to be used.
 3. Repeat at three or four more Tiger wavelengths spread over the range
    you use. Each walk is added to the session.
 4. `speccalfit`, then `speccalapply`, as above.
@@ -329,11 +403,12 @@ fitted later, outside the application:
 
 ```
 python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json
-python -m wavelength_calibration fit <files> --curvature --triax-quadratic --apply
+python -m wavelength_calibration fit <files> --curvature --triax-order 3 --apply
 ```
 
-These save their report in the same place (`--report-directory` to
-change it). `--fixed-dispersion` is the equivalent of `fixeddispersion`.
+These save their report in the same place (`--report-directory` to change
+it) and refuse `--apply` if a gate fails. `--fixed-dispersion` is the
+equivalent of `fixeddispersion`.
 
 **After applying:** the live laser calibration and all spectra use the new
 axis immediately. If the offset changed by more than a pixel or two, the
@@ -352,41 +427,44 @@ wavelength a pixel reads.
 
 ### 3.6 Simulate mode
 
-In simulate mode, `speccal` runs against a simulated Ar-Hg lamp: every
-catalogue line, at uneven brightness, clipped at the CCD's full scale. The
-lamp has its own "true" calibration, ~2 nm away from the shipped one, so
-you can practise the whole procedure and watch it find the offset. The
-headless test suite runs exactly this workflow
-(`test_wavelength_axis_line_walk_recovers_simulated_truth`).
+In simulate mode, `speccal` runs against a simulated Ar-Hg lamp that emits
+every line in the table at a brightness from its NIST intensity, weak
+neighbours and second-order mercury included, clipped at the CCD's full
+scale. The lamp has its own "true" calibration, ~2.7 nm away from the
+shipped one, so you can practise the whole procedure (`speccal`,
+`speccalfit`, `speccalapply`, `speccalzero`) and watch it find the offset.
+The headless test suite runs these workflows, including a simulated loss of
+120 TRIAX steps recovered by `speccalzero`, and `speccalapply` refusing a
+simulated walk in a real session.
 
 The simulator holding its own truth matters. The older simulated camera
 placed the laser line using the software's own wavelength axis, so in
-simulation every calibration looked perfect.
-
-The truth also has to be physically complete. Until November 2026 the
-simulated spectrometer had a constant dispersion, so the simulated walk
-passed while the first real one gave a reduced chi-squared above 5000
-(section 3.1). Its truth now includes the dispersion change with TRIAX
-position, and `test_fixed_dispersion_cannot_describe_a_wide_walk` checks
-that a fixed-dispersion fit is caught.
-`test_grating_angle_drive_needs_the_full_physical_model` adds the
-sin(grating angle) drive and checks that only the full model recovers it.
-The simulator used by `speccal` in simulate mode doesn't include the
-quadratic drive yet.
+simulation every calibration looked perfect. The truth also has to be
+physically complete, and as messy as the bench: the first line walk passed
+every simulated test while it misidentified most lines on the bench,
+because the simulated lamp only emitted the lines the software expected.
+The unit tests now also give the simulated TRIAX a drive error that is not
+a polynomial in steps (`periodic_triax_drive_error`), a cubic drive, a
+strong line missing from the table, and a changed TRIAX scale, and check
+that each is caught and explained.
 
 ### 3.7 Where the code lives
 
 | File | Role |
 |---|---|
-| `wavelength_calibration/reference_lines.py` | Ar-Hg lamp line catalogue (the lines this lamp shows, blends marked), external references |
-| `wavelength_calibration/line_peaks.py` | peak finding and Gaussian fits, in pixels |
-| `wavelength_calibration/line_walk.py` | the procedure; hardware passed in as three functions |
-| `wavelength_calibration/wavelength_axis_model.py` | the model, its exact inverse, the weighted fit |
-| `wavelength_calibration/promotion.py` | fit saved walks, compare, write the fit report and the master file |
+| `wavelength_calibration/reference_lines.py` | the Ar-Hg line table (every NIST line that can reach the chip; confirmed references marked), external references |
+| `wavelength_calibration/line_peaks.py` | peak finding and Gaussian fits, in pixels; collapsing a frame to a spectrum |
+| `wavelength_calibration/line_identification.py` | identification by pattern over the whole walk, per-frame checks |
+| `wavelength_calibration/line_walk.py` | the walk (hardware passed in as functions), saving, loading and re-identifying walk files |
+| `wavelength_calibration/wavelength_axis_model.py` | the model, its exact inverse, the joint and two-stage fits |
+| `wavelength_calibration/calibration_checks.py` | the gates: registry, residual decomposition, explanations |
+| `wavelength_calibration/promotion.py` | re-identify, fit and check saved walks; the fit report; the master file |
+| `wavelength_calibration/triax_zero.py` | the quick re-zero (`speccalzero`) |
+| `wavelength_calibration/provenance.py` | the software version recorded in each walk |
 | `wavelength_calibration/simulated_line_lamp.py` | lamp + spectrometer simulator |
 | `calibration.py` (`_load_wavelength_axis_model`) | loads the model at startup |
 | `microscope.py` (`speccal*` commands) | connects the procedure to the TRIAX and PIXIS |
-| `test_wavelength_calibration.py` | unit tests, including recovery from a wrong start |
+| `test_wavelength_calibration.py` | unit tests, including the replay of a bench walk (`test_fixtures/`) |
 
 In the master file, `wavelength_axis` replaced the old `camera_calibrations`
 (`pixel_to_wl`, `wl_to_pixel`) and `triax_calibrations` (`triax_to_wl`,
