@@ -17,8 +17,9 @@ from functools import wraps
 
 from datafit.laser_detection import LaserDetection
 from wavelength_calibration.calibration_checks import any_failed, format_check_report, run_checks
+from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
 from wavelength_calibration.line_peaks import collapse_image_to_spectrum, slit_image_rows
-from wavelength_calibration.line_walk import LineWalk, save_line_walk
+from wavelength_calibration.line_walk import DEFAULT_SAMPLES_PER_LINE, LineWalk, save_line_walk
 from wavelength_calibration.promotion import (FitOptions, fit_and_check_line_walk_files,
                                               new_fit_report_path, write_fit_report,
                                               write_model_to_master)
@@ -1620,20 +1621,26 @@ class Microscope(Instrument):
     CCD_SATURATION_COUNTS = 65000  # PIXIS 16-bit ADC full scale is 65535; leave a little margin
 
     @ui_callable
-    def run_wavelength_axis_line_walk(self, reference='arhg', wavelength_nm=None,
-                                      uncertainty_nm=None):
+    def run_wavelength_axis_line_walk(self, reference='arhg', *walk_arguments):
         '''Walk known lines across the CCD with the TRIAX; save every spectrum.
         Saved to data/calibration_line_walks/.
         speccal / speccal arhg        Ar-Hg lamp lighting the TRIAX entrance slit (lines 696-935 nm)
         speccal external 785.12 0.2   one line measured on another instrument (the Tiger on the
                                       spare spectrometer): its wavelength and uncertainty in nm
+        speccal arhg samples=12       a denser walk: each line seen at ~12 places on the chip
+                                      instead of 6 (twice the positions and time)
         The lines are identified from all the spectra at once and the result is logged;
         'speccalfit' re-identifies, fits and runs the gate checks. Keep the brightest lines below
         saturation (65000 counts).'''
         reference = str(reference).lower()
+        samples_per_line, wavelength_nm, uncertainty_nm = \
+            self._parse_line_walk_arguments(walk_arguments)
+        if samples_per_line is None:
+            return None
         if reference == 'arhg':
             catalogue_lines = argon_mercury_lamp_lines()
-            description = 'Ar-Hg lamp (reference_lines.ARGON_MERCURY_LAMP_LINES)'
+            description = (f'Ar-Hg lamp (reference_lines.ARGON_MERCURY_LAMP_LINES), '
+                           f'{samples_per_line} samples per line')
         elif reference == 'external':
             if wavelength_nm is None or uncertainty_nm is None:
                 self.micro_log.error("speccal external needs a wavelength and its uncertainty in nm, "
@@ -1661,6 +1668,7 @@ class Microscope(Instrument):
                 planning_model=planning_model,
                 catalogue_lines=catalogue_lines,
                 number_of_pixels=len(self.wavelength_axis),
+                samples_per_line=samples_per_line,
                 saturation_level=self.CCD_SATURATION_COUNTS,
                 read_frame_conditions=self._calibration_frame_conditions,
                 logger=self.micro_log,
@@ -1689,6 +1697,29 @@ class Microscope(Instrument):
                             f"{len(self.line_walk_session_files)} walk(s) this session; "
                             "'speccalfit' to fit and check.")
         return line_walk_path
+
+    def _parse_line_walk_arguments(self, walk_arguments):
+        '''speccal arguments after the reference -> (samples per line, wavelength, uncertainty).
+        Samples per line is None (after logging why) for a bad argument.'''
+        samples_per_line, numbers = DEFAULT_SAMPLES_PER_LINE, []
+        for argument in walk_arguments:
+            name, _, value = str(argument).lower().partition('=')
+            if name != 'samples':
+                numbers.append(argument)
+                continue
+            try:
+                samples_per_line = int(value)
+            except ValueError:
+                samples_per_line = 0
+            if not 2 <= samples_per_line <= 30:
+                self.micro_log.error(f"speccal: '{argument}': samples must be a whole number "
+                                     "from 2 to 30, e.g. 'speccal arhg samples=12'")
+                return None, None, None
+        if len(numbers) > 2:
+            self.micro_log.error(f"speccal: unexpected arguments {numbers[2:]}")
+            return None, None, None
+        numbers += [None] * (2 - len(numbers))
+        return samples_per_line, numbers[0], numbers[1]
 
     def _describe_instrument_for_calibration(self):
         '''What a calibration walk records about the set-up, so a bad walk can be traced.'''
@@ -1728,7 +1759,7 @@ class Microscope(Instrument):
                 'row_band': list(band) if band else None}
 
     WAVELENGTH_AXIS_FIT_OPTIONS = ('curvature', 'triaxquadratic', 'triaxorder=N', 'fixeddispersion',
-                                   'triaxsigma=S')
+                                   'triaxsigma=S', 'plot')
 
     @ui_callable
     def fit_wavelength_axis_line_walks(self, *fit_options):
@@ -1741,26 +1772,34 @@ class Microscope(Instrument):
         speccalfit fixeddispersion     one nm_per_pixel for every TRIAX position (short walks only)
         speccalfit triaxsigma=25       add a 1-sigma TRIAX error (steps) to every point; chi^2 then
                                        no longer tests the fit
+        speccalfit curvature triaxorder=3 plot   also save a plot of the fit and its residuals
+                                       (a PNG next to the report)
         The walks are re-identified from their spectra. The report, with every gate's verdict and
         advice, is saved
         to data/calibration_fit_reports/.'''
+        plot_requested, fit_options = self._split_plot_option(fit_options)
         outcome = self._fit_session_line_walks(fit_options)
         if outcome is None:
             return None
         report_path = new_fit_report_path(self.calibration_fit_report_directory)
         report_text = write_fit_report(report_path, outcome, self.line_walk_session_files)
         self._log_fit_report(report_text, report_path)
+        if plot_requested:
+            self._plot_wavelength_axis_fit(outcome, report_path)
         return outcome.fit
 
     @ui_callable
     def apply_wavelength_axis_line_walks(self, *fit_options):
         '''Fit this session's walks and, if no gate check fails, write the master calibration.
-        Takes the same options as speccalfit. The master file is backed up first; the report is
-        saved to data/calibration_fit_reports/ either way.'''
+        Takes the same options as speccalfit (including plot). The master file is backed up
+        first; the report is saved to data/calibration_fit_reports/ either way.'''
+        plot_requested, fit_options = self._split_plot_option(fit_options)
         outcome = self._fit_session_line_walks(fit_options)
         if outcome is None:
             return None
         report_path = new_fit_report_path(self.calibration_fit_report_directory)
+        if plot_requested:
+            self._plot_wavelength_axis_fit(outcome, report_path)
         if outcome.fit is None or outcome.gates_failed:
             report_text = write_fit_report(report_path, outcome, self.line_walk_session_files)
             self._log_fit_report(report_text, report_path)
@@ -1780,6 +1819,22 @@ class Microscope(Instrument):
         self.micro_log.info(f"Wavelength axis calibration applied. Previous master file: "
                             f"{backup_path}")
         return outcome.fit
+
+    def _split_plot_option(self, fit_options):
+        '''('plot' was given, the other speccalfit options).'''
+        options = [str(option).lower() for option in fit_options]
+        return 'plot' in options, [option for option in options if option != 'plot']
+
+    def _plot_wavelength_axis_fit(self, outcome, report_path):
+        '''Save the fit and residual plot next to its report; a failed plot is logged only.'''
+        plot_path = os.path.splitext(report_path)[0] + '.png'
+        try:
+            if plot_wavelength_axis_fit(outcome, plot_path, title=os.path.basename(report_path)):
+                self.micro_log.info(f"Fit plot saved to {plot_path}")
+            else:
+                self.micro_log.info("No fit to plot.")
+        except Exception as error:  # the fit and report stand without the picture
+            self.micro_log.error(f"Fit plot could not be drawn ({type(error).__name__}: {error})")
 
     def _use_wavelength_axis_model(self, model):
         '''Make a newly written model the one in use: calibration, spectrometer wavelength, axis.'''

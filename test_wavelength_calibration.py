@@ -483,7 +483,9 @@ from wavelength_calibration.calibration_checks import (FAIL, PASS, WARN, Calibra
                                                        decompose_fit_residuals, run_checks)
 from wavelength_calibration.line_identification import IDENTIFIED, merge_coincident_lines
 from wavelength_calibration.line_walk import identify_saved_walk, load_line_walk
-from wavelength_calibration.promotion import FitOptions, fit_and_check_line_walk_files
+from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
+from wavelength_calibration.promotion import (FitOptions, WalkFitOutcome,
+                                              fit_and_check_line_walk_files)
 from wavelength_calibration.provenance import software_version
 from wavelength_calibration.reference_lines import ReferenceLine
 from wavelength_calibration.simulated_line_lamp import periodic_triax_drive_error
@@ -636,6 +638,22 @@ def test_walks_with_different_triax_zeros_share_the_shape_and_take_the_latest_ze
     for steps in (95_000, 110_000):
         assert outcome.fit.model.wavelength_at(512, steps) == pytest.approx(
             truth.wavelength_at(512, steps + 100), abs=0.02), "the model follows the latest walk"
+
+
+def test_fit_plot_is_saved_for_a_fit_and_skipped_without_one(tmp_path):
+    """speccalfit plot: a PNG of the fit and its residuals; nothing drawn when there is no fit."""
+    walk_path = tmp_path / 'linewalk_plot.json'
+    save_line_walk(walk_path, walk_with(realistic_lamp(), samples_per_line=3), shipped_model(),
+                   reference_kind='arhg', instrument={'simulate': True})
+    outcome = fit_and_check_line_walk_files(
+        [str(walk_path)], shipped_model(), FitOptions(curvature=True, triax_polynomial_order=2),
+        running_in_simulate_mode=True)
+    plot_path = tmp_path / 'fit.png'
+    assert plot_wavelength_axis_fit(outcome, str(plot_path), title='test') == str(plot_path)
+    assert plot_path.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n'
+    no_fit = WalkFitOutcome(fit=None, evidence=outcome.evidence, check_results=[])
+    assert plot_wavelength_axis_fit(no_fit, str(tmp_path / 'none.png')) is None
+    assert not (tmp_path / 'none.png').exists()
 
 
 @functools.lru_cache(maxsize=None)

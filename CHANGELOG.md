@@ -120,6 +120,12 @@ What caused it, and what changed:
   TRIAX counter, so the tests now meet the bench's difficulties. A replay test runs one of
   Riley's 2026-11-10 walks (`test_fixtures/`) and checks the misidentified peaks get their real
   names.
+- **Fit plot: `speccalfit ... plot`** (also `speccalapply`, and `--plot` on the command line)
+  saves a PNG next to the report: the TRIAX map with the fitted polynomial, the TRIAX residual
+  frame by frame, the CCD-axis residual against pixel, and each line's residual. Riley had been
+  plotting the residuals by hand in a spreadsheet to see them.
+- **`speccal arhg samples=N`** sets how many places on the chip each line is seen at (default
+  6). A denser walk shows how the TRIAX behaves between the usual positions.
 
 On the 2026-11-10 data, re-identified: the CCD axis agrees to 0.007 nm within frames, the walks
 repeat to ~0.03 nm (3 TRIAX steps) apart from a first walk that drifted by up to 0.19 nm at its

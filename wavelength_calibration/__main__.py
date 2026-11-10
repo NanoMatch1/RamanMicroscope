@@ -3,6 +3,7 @@ Command line for the wavelength axis calibration, run from the repository root.
 
     python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json
     python -m wavelength_calibration fit <files> --curvature
+    python -m wavelength_calibration fit <files> --plot       # also saves a PNG of the fit
     python -m wavelength_calibration fit <files> --apply      # writes the master file (backed up first)
 
 `fit` re-identifies the lines from the walks' spectra, fits, runs the gate
@@ -16,6 +17,7 @@ import argparse
 import os
 import sys
 
+from .fit_plots import plot_wavelength_axis_fit
 from .promotion import (FitOptions, current_model_from_master, fit_and_check_line_walk_files,
                         new_fit_report_path, write_fit_report, write_model_to_master)
 
@@ -43,6 +45,8 @@ def build_argument_parser():
     fit_parser.add_argument('--master', default=DEFAULT_MASTER_PATH)
     fit_parser.add_argument('--backup-directory', default=DEFAULT_BACKUP_DIRECTORY)
     fit_parser.add_argument('--report-directory', default=DEFAULT_REPORT_DIRECTORY)
+    fit_parser.add_argument('--plot', action='store_true',
+                            help='save a plot of the fit and its residuals next to the report')
     fit_parser.add_argument('--apply', action='store_true', help='write the fitted model into the master file')
     return parser
 
@@ -68,6 +72,10 @@ def run_fit(arguments):
     elif not arguments.apply:
         print("Not applied (use --apply to write it to the master calibration).")
     print(f"Report saved to {report_path}")
+    if arguments.plot and plot_wavelength_axis_fit(
+            outcome, os.path.splitext(report_path)[0] + '.png',
+            title=os.path.basename(report_path)):
+        print(f"Plot saved to {os.path.splitext(report_path)[0] + '.png'}")
     return 0 if outcome.fit is not None else 1
 
 

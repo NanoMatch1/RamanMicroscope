@@ -531,6 +531,23 @@ def test_speccalzero_restores_the_axis_after_lost_steps():
             lamp.triax_counter_error_steps = 0
 
 
+def test_speccal_samples_and_speccalfit_plot():
+    """'speccal arhg samples=N' sets the walk density; 'speccalfit ... plot' saves a PNG beside
+    the report; a bad samples value refuses instead of walking."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        assert run_command('speccal arhg samples=1') is None
+        assert run_command('speccal arhg samples=many') is None
+        line_walk_path = run_command('speccal arhg samples=4')
+        with open(line_walk_path) as file:
+            assert '4 samples per line' in json.load(file)['description']
+        assert run_command('speccalfit curvature triaxquadratic plot') is not None
+        report_files = sorted(os.listdir(microscope.calibration_fit_report_directory))
+        assert len(report_files) == 2, report_files
+        report_name, plot_name = sorted(report_files, key=lambda name: name.endswith('.png'))
+        assert plot_name == os.path.splitext(report_name)[0] + '.png'
+
+
 def test_speccalapply_refuses_when_a_gate_fails():
     """A walk recorded in simulate mode must not become a real calibration: refuse, and say why."""
     microscope = get_interface().microscope

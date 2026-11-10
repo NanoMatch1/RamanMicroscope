@@ -84,14 +84,17 @@ class LineWalkResult:
     identification: object = None  # line_identification.WalkIdentification
 
 
+DEFAULT_SAMPLES_PER_LINE = 6  # each line seen at ~6 places on the chip
+
+
 class LineWalk:
     """Runs the line walk. See the module docstring for the procedure."""
 
     def __init__(self, move_triax_to_steps, read_triax_steps, acquire_spectrum,
                  planning_model, catalogue_lines, number_of_pixels=1024,
-                 samples_per_line=6, approach_steps=2000, planning_margin_nm=3.0,
-                 edge_margin_pixels=15, saturation_level=None, read_frame_conditions=None,
-                 identification_settings=None, logger=None):
+                 samples_per_line=DEFAULT_SAMPLES_PER_LINE, approach_steps=2000,
+                 planning_margin_nm=3.0, edge_margin_pixels=15, saturation_level=None,
+                 read_frame_conditions=None, identification_settings=None, logger=None):
         self.move_triax_to_steps = move_triax_to_steps
         self.read_triax_steps = read_triax_steps
         self.acquire_spectrum = acquire_spectrum

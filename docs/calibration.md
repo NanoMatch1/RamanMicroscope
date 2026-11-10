@@ -350,13 +350,17 @@ would capture it.
    mode, exposure, frames averaged, sensor temperature per frame, TRIAX
    position before the walk), and added to this session's list. The log
    gives the identification summary and any frame that wasn't identified,
-   with the reason.
+   with the reason. `speccal arhg samples=12` walks in half-size steps, so each
+   line is seen at ~12 places on the chip instead of 6 (twice the positions
+   and the time); use it to see how the TRIAX behaves between the usual
+   positions.
 4. Run `speccalfit curvature triaxorder=3` and read the gate report
    (section 3.4). Options, in any order: `curvature`; `triaxquadratic` or
    `triaxorder=N` (the TRIAX-shape gate suggests N); `fixeddispersion`
    (only for a walk spanning a few tens of nm); `triaxsigma=S` (adds a TRIAX
    error to every point, after which chi-squared no longer tests the fit;
-   the fit-statistics gate says so).
+   the fit-statistics gate says so); `plot` (also saves a picture of the
+   fit and its residuals, below).
 5. If no gate fails, run `speccalapply` with the same options. It backs up
    the master file to `calibration/backup/`, writes the new
    `wavelength_axis` group, and reloads it straight away. If a gate fails it
@@ -370,6 +374,23 @@ advice, the fitted terms, each walk's frame-by-frame identification, every
 residual, and the model. An applied model names its report in its metadata
 (`fit_report`) and stores the TRIAX position table for the re-zero
 (`triax_position_offsets_nm`).
+
+**The fit plot** (`speccalfit ... plot`, `speccalapply ... plot`, or
+`--plot` on the command line) is saved next to the report, with the same
+name and `.png`. Its four panels follow the same split as the gates:
+
+- *TRIAX map*: the wavelength each frame puts on the reference pixel, with
+  the fitted TRIAX polynomial (each walk's zero removed, so all walks sit on
+  one curve).
+- *TRIAX residual*: each frame's offset from that curve. A pattern repeated
+  by every walk belongs to the TRIAX drive; one walk off the others is that
+  walk's zero or warm-up.
+- *CCD axis*: each line's residual within its frame, against pixel. A slope
+  or bow across the chip means a CCD term is missing or the dispersion
+  changed; scatter well above 0.01 nm means misidentification or saturation.
+- *Residual by line*: each reference line's within-frame residuals and their
+  mean. One line sitting off the others is a wrong table wavelength or a
+  blend.
 
 **After the TRIAX step count moves: `speccalzero`.** If the TRIAX is
 re-initialised or loses steps, every wavelength shifts by the same number
@@ -404,6 +425,7 @@ fitted later, outside the application:
 ```
 python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json
 python -m wavelength_calibration fit <files> --curvature --triax-order 3 --apply
+python -m wavelength_calibration fit <files> --curvature --triax-order 3 --plot
 ```
 
 These save their report in the same place (`--report-directory` to change
@@ -460,6 +482,7 @@ that each is caught and explained.
 | `wavelength_calibration/calibration_checks.py` | the gates: registry, residual decomposition, explanations |
 | `wavelength_calibration/promotion.py` | re-identify, fit and check saved walks; the fit report; the master file |
 | `wavelength_calibration/triax_zero.py` | the quick re-zero (`speccalzero`) |
+| `wavelength_calibration/fit_plots.py` | the fit and residual plot (`plot` option) |
 | `wavelength_calibration/provenance.py` | the software version recorded in each walk |
 | `wavelength_calibration/simulated_line_lamp.py` | lamp + spectrometer simulator |
 | `calibration.py` (`_load_wavelength_axis_model`) | loads the model at startup |
