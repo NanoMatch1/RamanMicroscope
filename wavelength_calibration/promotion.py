@@ -25,7 +25,8 @@ MASTER_GROUP_NAME = 'wavelength_axis'
 
 
 def fit_line_walk_files(line_walk_paths, reference_pixel=50.0, fit_dispersion_curvature=False,
-                        fit_dispersion_change_with_triax=True, triax_polynomial_order=1):
+                        fit_dispersion_change_with_triax=True, triax_polynomial_order=1,
+                        triax_step_uncertainty=0.0):
     """Combine the observations of one or more saved line walks and fit them."""
     all_observations = []
     for path in line_walk_paths:
@@ -36,6 +37,7 @@ def fit_line_walk_files(line_walk_paths, reference_pixel=50.0, fit_dispersion_cu
         all_observations, reference_pixel=reference_pixel, triax_polynomial_order=triax_polynomial_order,
         fit_dispersion_curvature=fit_dispersion_curvature,
         fit_dispersion_change_with_triax=fit_dispersion_change_with_triax,
+        triax_step_uncertainty=triax_step_uncertainty,
         metadata={'source_line_walks': source_files, 'verified_against_external_reference': True},
     )
 

@@ -210,14 +210,17 @@ def _check_observations_can_determine_model(observations):
 
 def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_order=1,
                         fit_dispersion_curvature=False, fit_dispersion_change_with_triax=False,
-                        metadata=None):
+                        metadata=None, triax_step_uncertainty=0.0):
     """
     Weighted linear least-squares fit of the wavelength axis model.
 
     Each point is weighted by its combined uncertainty in nm: the reference
     wavelength uncertainty and the peak-centre uncertainty converted to nm
     with the dispersion (one refinement pass, since the dispersion is what
-    is being fitted).
+    is being fitted), plus, in quadrature, `triax_step_uncertainty` (1-sigma
+    TRIAX positioning error in steps, converted to nm with the TRIAX slope).
+    It defaults to 0; set it to the measured repeatability so reduced chi^2
+    is meaningful when the TRIAX is the limiting error.
 
     The TRIAX polynomial is fitted in a centred, scaled step variable for
     numerical conditioning (steps are ~1e5) and converted back to raw-step
@@ -253,9 +256,13 @@ def fit_wavelength_axis(observations, reference_pixel=50.0, triax_polynomial_ord
             "take more TRIAX positions so the fit is over-determined and residuals mean something.")
 
     nm_per_pixel_estimate = 0.078
+    # TRIAX positioning noise: a step error moves every line by (nm per step) * error.
+    nm_per_step = abs(float(np.polyfit(triax_steps, apparent_wavelengths - nm_per_pixel_estimate * pixel_offsets, 1)[0]))
+    triax_uncertainties_nm = nm_per_step * triax_step_uncertainty
     for _refinement_pass in range(2):
         total_uncertainties_nm = np.sqrt(wavelength_uncertainties ** 2
-                                         + (nm_per_pixel_estimate * pixel_uncertainties) ** 2)
+                                         + (nm_per_pixel_estimate * pixel_uncertainties) ** 2
+                                         + triax_uncertainties_nm ** 2)
         weighted_design = design_matrix / total_uncertainties_nm[:, None]
         weighted_target = apparent_wavelengths / total_uncertainties_nm
         if np.linalg.matrix_rank(weighted_design) < number_of_parameters:

@@ -4,6 +4,14 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
+## `speccalexport`: observed vs expected wavelength CSV (2026-11-10)
+
+New command `speccalexport [files]` writes `spectral_calibration_scatter_<time>.csv` to
+`data/calibration_fit_reports/` for the session's line walks (or the given walk JSONs; newest saved walk if
+none). One row per line observation: `expected_nm` (lamp line), `observed_nm` (calibration in use applied to
+the fitted pixel and TRIAX position), `error_nm`, uncertainties. For TRIAX repeatability trials, the spread of
+`observed_nm` per `line_name` is the repeatability. Code: `wavelength_calibration/scatter_export.py`.
+
 ## PIXIS camera: acquire on demand, run only for live view (2026-11-06)
 
 Branch `feature/pixis-acquire-on-demand`. The camera streamed from start-up

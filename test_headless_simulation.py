@@ -422,6 +422,8 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
         microscope.master_calibration_path = temporary_master_path
         microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
         microscope.calibration_fit_report_directory = os.path.join(temporary_directory, 'reports')
+        original_line_walk_directory = microscope.line_walk_directory
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
         try:
             run_command('speccalreset')
             line_walk_path = run_command('speccal arhg')
@@ -456,6 +458,7 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
             microscope.master_calibration_path = original_master_path
             microscope.calibration_backup_directory = original_backup_directory
             microscope.calibration_fit_report_directory = original_report_directory
+            microscope.line_walk_directory = original_line_walk_directory
             microscope.calibration_service._load_wavelength_axis_model(original_model_dict)
             microscope.generate_wavelength_axis()
             run_command('speccalreset')
@@ -476,6 +479,31 @@ def test_wavelength_axis_fit_refuses_without_line_walks():
     """speccalfit with no walks this session reports the problem instead of raising."""
     run_command('speccalreset')
     assert run_command('speccalfit') is None
+
+
+def test_speccalexport_writes_observed_vs_expected_csv():
+    """'speccalexport' after a walk writes a CSV whose observed values track the expected ones."""
+    import csv
+    import tempfile
+    microscope = get_interface().microscope
+    original_directory = microscope.calibration_fit_report_directory
+    original_line_walk_directory = microscope.line_walk_directory
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.calibration_fit_report_directory = temporary_directory
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
+        try:
+            run_command('speccalreset')
+            run_command('speccal arhg')
+            export_path = run_command('speccalexport')
+            with open(export_path, newline='') as file:
+                rows = list(csv.DictReader(file))
+        finally:
+            microscope.calibration_fit_report_directory = original_directory
+            microscope.line_walk_directory = original_line_walk_directory
+            run_command('speccalreset')
+    assert len(rows) >= 20
+    assert {'line_name', 'expected_nm', 'observed_nm', 'error_nm'} <= set(rows[0])
+    assert all(abs(float(row['error_nm'])) < 5.0 for row in rows)
 
 
 def test_external_reference_line_walk_needs_wavelength_and_uncertainty():

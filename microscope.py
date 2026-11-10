@@ -21,6 +21,7 @@ from wavelength_calibration.line_walk import LineWalk, save_line_walk
 from wavelength_calibration.promotion import (fit_line_walk_files, new_fit_report_path, write_fit_report,
                                               write_model_to_master)
 from wavelength_calibration.reference_lines import argon_mercury_lamp_lines, externally_measured_line
+from wavelength_calibration.scatter_export import export_scatter_csv, new_export_path
 from wavelength_calibration.simulated_line_lamp import SimulatedLineLamp, default_true_model
 from wavelength_calibration.wavelength_axis_model import CalibrationFitError
 
@@ -676,6 +677,7 @@ class Microscope(Instrument):
             'rldr': self.read_ldr0,
             'speccal': self.run_wavelength_axis_line_walk,
             'speccalfit': self.fit_wavelength_axis_line_walks,
+            'speccalexport': self.export_wavelength_axis_scatter,
             'speccalapply': self.apply_wavelength_axis_line_walks,
             'speccalreset': self.reset_wavelength_axis_line_walks,
             'autocal': self.run_calibration,
@@ -1679,6 +1681,7 @@ class Microscope(Instrument):
         speccalfit triaxquadratic    TRIAX wavelength quadratic in steps (the drive turns the grating angle)
         speccalfit curvature triaxquadratic   the full physical model, recommended for the Ar-Hg walk
         speccalfit fixeddispersion   one nm_per_pixel for every TRIAX position (only for short walks)
+        speccalfit triaxsigma=25     add a 1-sigma TRIAX positioning error (steps) to every point's uncertainty, so reduced chi^2 reflects TRIAX repeatability
         The report is also saved to data/calibration_fit_reports/.'''
         fit, current_model = self._fit_session_line_walks(fit_options)
         if fit is None:
@@ -1710,6 +1713,17 @@ class Microscope(Instrument):
     def _fit_session_line_walks(self, fit_options):
         '''Fit this session's line walks with the speccalfit options. Returns (fit, current model), or (None, None).'''
         fit_options = {str(option).lower() for option in fit_options}
+        triax_step_uncertainty = 0.0
+        for option in [option for option in fit_options if option.startswith('triaxsigma=')]:
+            fit_options.discard(option)
+            try:
+                triax_step_uncertainty = float(option.split('=', 1)[1])
+            except ValueError:
+                self.micro_log.error(f"Bad option '{option}'; use e.g. triaxsigma=25 (TRIAX steps, 1 sigma).")
+                return None, None
+            if triax_step_uncertainty < 0:
+                self.micro_log.error("triaxsigma must not be negative.")
+                return None, None
         unknown_options = fit_options - set(self.WAVELENGTH_AXIS_FIT_OPTIONS)
         if unknown_options:
             self.micro_log.error(f"Unknown fit option(s) {sorted(unknown_options)}; "
@@ -1723,7 +1737,8 @@ class Microscope(Instrument):
             fit = fit_line_walk_files(self.line_walk_session_files, reference_pixel=current_model.reference_pixel,
                                       fit_dispersion_curvature='curvature' in fit_options,
                                       triax_polynomial_order=2 if 'triaxquadratic' in fit_options else 1,
-                                      fit_dispersion_change_with_triax='fixeddispersion' not in fit_options)
+                                      fit_dispersion_change_with_triax='fixeddispersion' not in fit_options,
+                                      triax_step_uncertainty=triax_step_uncertainty)
         except CalibrationFitError as error:
             self.micro_log.error(f"Cannot fit the line walks: {error}")
             return None, None
@@ -1736,6 +1751,32 @@ class Microscope(Instrument):
                 break
             self.micro_log.info(line)
         self.micro_log.info(f"Fit report saved to {report_path}")
+
+    @ui_callable
+    def export_wavelength_axis_scatter(self, *line_walk_paths):
+        '''Export observed vs expected wavelength of the line walks to a CSV (e.g. after a TRIAX repeatability trial).
+        speccalexport            this session's walks (or the newest saved walk if none this session)
+        speccalexport <files>    the given line walk JSON files
+        Observed = wavelength the calibration in use gives the fitted line pixel at its TRIAX position; expected = lamp
+        line wavelength. Saved to data/calibration_fit_reports/ as spectral_calibration_scatter_<time>.csv.'''
+        paths = list(line_walk_paths) or list(self.line_walk_session_files)
+        if not paths and os.path.isdir(self.line_walk_directory):
+            saved = sorted(name for name in os.listdir(self.line_walk_directory)
+                           if name.startswith('linewalk_') and name.endswith('.json'))
+            paths = [os.path.join(self.line_walk_directory, saved[-1])] if saved else []
+        if not paths:
+            self.micro_log.error("No line walks to export. Run 'speccal' first or give line walk file paths.")
+            return None
+        export_path = new_export_path(self.calibration_fit_report_directory)
+        try:
+            rows = export_scatter_csv(paths, self.calibration_service.wavelength_axis_model, export_path)
+        except (OSError, ValueError, KeyError) as error:
+            self.micro_log.error(f"speccalexport: cannot export {paths}: {error}")
+            return None
+        errors = np.array([float(row['error_nm']) for row in rows])
+        self.micro_log.info(f"Exported {len(rows)} observations from {len(paths)} walk(s) to {export_path} "
+                            f"(observed - expected: mean {errors.mean():+.3f} nm, rms {np.sqrt(np.mean(errors ** 2)):.3f} nm)")
+        return export_path
 
     @ui_callable
     def reset_wavelength_axis_line_walks(self):
