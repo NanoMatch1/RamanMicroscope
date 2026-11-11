@@ -498,3 +498,91 @@ def test_live_viewer_cannot_select_rows_of_an_on_chip_binned_frame(qt_applicatio
     viewer._on_use_selection_as_roi()
     assert sent_commands == []
 
+
+# ----------------------------------------------------------------------
+# tools/pixis_dark_noise_check.py
+# ----------------------------------------------------------------------
+
+class DarkScene:
+    """
+    Bias plus dark current with shot noise, for an exposure read from the device; optional
+    light on some rows (a slit image left unblocked), growing with the exposure as light does.
+    The simulated device samples the scene at the start and end of each exposure and averages
+    them, so each frame's scene is made once (keyed on the device's frame number) and returned
+    for both samples: two draws would halve the shot noise.
+    """
+
+    def __init__(self, shape, bias_counts, dark_electrons_per_s, electrons_per_count, seed=5,
+                 lit_rows=None, light_counts_per_s=2.0):
+        self.shape = shape
+        self.bias_counts = bias_counts
+        self.dark_electrons_per_s = dark_electrons_per_s
+        self.electrons_per_count = electrons_per_count
+        self.lit_rows = lit_rows
+        self.light_counts_per_s = light_counts_per_s
+        self.random_generator = np.random.default_rng(seed)
+        self.device = None
+        self.frame_key, self.frame = None, None
+
+    def __call__(self):
+        frame_key = (self.device.acquisition_started_at, self.device.frames_acquired)
+        if frame_key == self.frame_key:
+            return self.frame
+        exposure_s = self.device.exposure_s
+        dark_electrons = self.random_generator.poisson(self.dark_electrons_per_s * exposure_s,
+                                                       self.shape)
+        frame = self.bias_counts + dark_electrons / self.electrons_per_count
+        if self.lit_rows is not None:
+            frame[self.lit_rows[0]:self.lit_rows[1]] += self.light_counts_per_s * exposure_s
+        self.frame_key, self.frame = frame_key, frame
+        return frame
+
+
+def load_dark_noise_tool():
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools',
+                               'pixis_dark_noise_check.py')
+    module_spec = importlib.util.spec_from_file_location('pixis_dark_noise_check', script_path)
+    dark_noise_tool = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(dark_noise_tool)
+    return dark_noise_tool
+
+
+def run_dark_noise_tool_on_simulated_camera(tmp_path, lit_rows=None):
+    """Known read noise (6 counts), dark current (1 e-/s per pixel) and gain (2 e-/count)."""
+    dark_noise_tool = load_dark_noise_tool()
+    scene = DarkScene((200, 256), bias_counts=600.0, dark_electrons_per_s=1.0,
+                      electrons_per_count=2.0, lit_rows=lit_rows)
+
+    def open_simulated_camera(serial):
+        device = SimulatedPicamDevice(scene, exposure_s=0.01, readout_s=0.0, time_scale=0.001,
+                                      sensor_size=(256, 200), read_noise_counts=6.0,
+                                      random_seed=6)
+        scene.device = device
+        return device
+
+    report_path = dark_noise_tool.main(
+        ['--exposures', '0.01', '30', '100', '300', '--roi-rows', '100', '109',
+         '--report-directory', str(tmp_path)], open_camera=open_simulated_camera)
+    with open(report_path.replace('.txt', '.json')) as raw_file:
+        return json.load(raw_file)
+
+
+def test_dark_noise_tool_separates_read_noise_dark_current_and_gain(tmp_path):
+    raw_results = run_dark_noise_tool_on_simulated_camera(tmp_path)
+    full_sensor = raw_results['measurements']['ADC 2.0 MHz, full sensor']
+    model = full_sensor['model']
+    assert model['read_noise_counts'] == pytest.approx(6.0, rel=0.15)
+    assert model['dark_rate_counts_per_s'] == pytest.approx(0.5, rel=0.05)  # 1 e-/s at 2 e-/count
+    assert model['electrons_per_count_estimate'] == pytest.approx(2.0, rel=0.3)
+    assert full_sensor['light_suspects'] == []
+    on_chip = raw_results['measurements']['ADC 2.0 MHz, ROI on-chip']['model']
+    assert on_chip['read_noise_counts'] == pytest.approx(6.0, rel=0.25), \
+        "summed on the chip, the 10 rows are read once"
+    assert on_chip['dark_rate_counts_per_s'] == pytest.approx(10 * 0.5, rel=0.05)
+
+
+def test_dark_noise_tool_reports_light_on_the_sensor(tmp_path):
+    raw_results = run_dark_noise_tool_on_simulated_camera(tmp_path, lit_rows=(90, 110))
+    suspects = raw_results['measurements']['ADC 2.0 MHz, full sensor']['light_suspects']
+    assert suspects and 'rows' in suspects[0]
+

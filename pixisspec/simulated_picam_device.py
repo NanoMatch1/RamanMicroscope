@@ -43,7 +43,8 @@ binned on the chip by summing charge before the read, then clipped at the ADC fu
 as on the CCD. set_roi / get_roi follow pylablib's PicamCamera (the ROI starts as the full
 sensor, as on the lab camera; rows are trimmed to a whole number of bins). An exposure above
 `maximum_exposure_s` is clipped without a word, as pylablib does with a value outside the
-camera's range.
+camera's range. `read_noise_counts` (default 0) is added to every output pixel after the
+binning, once per read, as on the CCD; the scene supplies the light and dark signal.
 """
 
 import collections
@@ -72,7 +73,8 @@ class SimulatedPicamDevice:
 
     def __init__(self, scene, exposure_s=0.05, readout_s=0.02, acquisition_start_delay_s=0.005,
                  default_buffer_frames=100, time_scale=1.0, coldest_sensor_temperature_c=-45.0,
-                 initial_set_point_c=-70.0, sensor_size=(1024, 1024), maximum_exposure_s=None):
+                 initial_set_point_c=-70.0, sensor_size=(1024, 1024), maximum_exposure_s=None,
+                 read_noise_counts=0.0, random_seed=None):
         self.scene = scene
         self.exposure_s = float(exposure_s)
         self.readout_s = float(readout_s)
@@ -84,6 +86,8 @@ class SimulatedPicamDevice:
         self.buffer_frames = default_buffer_frames
         self.sensor_width, self.sensor_height = sensor_size
         self.maximum_exposure_s = maximum_exposure_s
+        self.read_noise_counts = float(read_noise_counts)
+        self.random_generator = np.random.default_rng(random_seed)
         self.attributes = {'Sensor Temperature Set Point': float(initial_set_point_c),
                            'ADC Analog Gain': 'High', 'ADC Speed': 2.0,
                            'ROIs': [(0, self.sensor_width, 1, 0, self.sensor_height, 1)],
@@ -189,7 +193,11 @@ class SimulatedPicamDevice:
         region = sensor_image[vstart:vend, hstart:hend]
         rows, columns = region.shape[0] // vbin, region.shape[1] // hbin
         region = region[:rows * vbin, :columns * hbin]
-        return region.reshape(rows, vbin, columns, hbin).sum(axis=(1, 3))
+        binned = region.reshape(rows, vbin, columns, hbin).sum(axis=(1, 3))
+        if self.read_noise_counts:
+            binned = binned + self.random_generator.normal(0.0, self.read_noise_counts,
+                                                           binned.shape)
+        return binned
 
     # ------------------------------------------------------------------
     # Frame counter, waiting and reading (pylablib ICamera rules)
