@@ -37,6 +37,13 @@ Settings behave as in Picam: a written value is held until it is committed, whic
 does in setup_acquisition() and start_acquisition(). The sensor is cooled instantly to the
 committed set point, but no colder than `coldest_sensor_temperature_c`; below that the
 status reads "Unlocked", as on the lab PIXIS (about -43 C, 2026-11-06).
+
+The scene is the whole sensor (1024 x 1024). Each frame is the ROI cut out of it, with rows
+binned on the chip by summing charge before the read, then clipped at the ADC full scale,
+as on the CCD. set_roi / get_roi follow pylablib's PicamCamera (the ROI starts as the full
+sensor, as on the lab camera; rows are trimmed to a whole number of bins). An exposure above
+`maximum_exposure_s` is clipped without a word, as pylablib does with a value outside the
+camera's range.
 """
 
 import collections
@@ -65,7 +72,7 @@ class SimulatedPicamDevice:
 
     def __init__(self, scene, exposure_s=0.05, readout_s=0.02, acquisition_start_delay_s=0.005,
                  default_buffer_frames=100, time_scale=1.0, coldest_sensor_temperature_c=-45.0,
-                 initial_set_point_c=-70.0):
+                 initial_set_point_c=-70.0, sensor_size=(1024, 1024), maximum_exposure_s=None):
         self.scene = scene
         self.exposure_s = float(exposure_s)
         self.readout_s = float(readout_s)
@@ -75,8 +82,11 @@ class SimulatedPicamDevice:
         self.committed_set_point_c = float(initial_set_point_c)
         self.acquisition_mode = 'sequence'
         self.buffer_frames = default_buffer_frames
+        self.sensor_width, self.sensor_height = sensor_size
+        self.maximum_exposure_s = maximum_exposure_s
         self.attributes = {'Sensor Temperature Set Point': float(initial_set_point_c),
-                           'ADC Analog Gain': 'Low', 'ROIs': [(0, 1024, 1, 0, 100, 1)],
+                           'ADC Analog Gain': 'High', 'ADC Speed': 2.0,
+                           'ROIs': [(0, self.sensor_width, 1, 0, self.sensor_height, 1)],
                            'Time Stamp Resolution': TIME_STAMP_TICKS_PER_SECOND}
         self.frame_buffer = {}
         self.frame_exposure_times = {}
@@ -163,7 +173,7 @@ class SimulatedPicamDevice:
             if self.stop_event.wait(self.readout_s * self.time_scale):
                 return
             mean_scene = (scene_at_exposure_start + scene_at_exposure_end) / 2
-            frame = np.clip(mean_scene, 0, 65535).astype(np.uint16)
+            frame = np.clip(self._read_out_roi(mean_scene), 0, 65535).astype(np.uint16)
             with self.frames_changed:
                 self.frame_buffer[frame_index % self.buffer_frames] = frame
                 self.frame_exposure_times[frame_index % self.buffer_frames] = (
@@ -172,6 +182,14 @@ class SimulatedPicamDevice:
                 self.frames_acquired = frame_index + 1
                 self.frames_changed.notify_all()
             frame_index += 1
+
+    def _read_out_roi(self, sensor_image):
+        """The ROI of a full-sensor image, rows and columns binned by summing (on-chip)."""
+        hstart, hend, vstart, vend, hbin, vbin = self.get_roi()
+        region = sensor_image[vstart:vend, hstart:hend]
+        rows, columns = region.shape[0] // vbin, region.shape[1] // hbin
+        region = region[:rows * vbin, :columns * hbin]
+        return region.reshape(rows, vbin, columns, hbin).sum(axis=(1, 3))
 
     # ------------------------------------------------------------------
     # Frame counter, waiting and reading (pylablib ICamera rules)
@@ -283,7 +301,10 @@ class SimulatedPicamDevice:
 
     def set_attribute_value(self, name, value, truncate=True, error_on_missing=True):
         if name == 'Exposure Time':
-            self.exposure_s = float(value) / 1e3
+            exposure_s = float(value) / 1e3
+            if self.maximum_exposure_s is not None:
+                exposure_s = min(exposure_s, self.maximum_exposure_s)
+            self.exposure_s = exposure_s
         else:
             self.attributes[name] = value
 
@@ -307,11 +328,27 @@ class SimulatedPicamDevice:
         return ('Simulated', 'PIXIS: 1024F (simulated)', '0000000000', 'none')
 
     def get_detector_size(self):
-        return (1024, 1024)
+        """(width, height), as pylablib."""
+        return (self.sensor_width, self.sensor_height)
 
     def get_roi(self):
         x_start, width, x_binning, y_start, height, y_binning = self.attributes['ROIs'][0]
         return x_start, x_start + width, y_start, y_start + height, x_binning, y_binning
+
+    def set_roi(self, hstart=0, hend=None, vstart=0, vend=None, hbin=1, vbin=1):
+        """As pylablib: stops the acquisition, keeps the ROI on the sensor, trims each axis to a
+        whole number of bins, and returns what was set."""
+        self.stop_acquisition()
+        hend = self.sensor_width if hend is None else hend
+        vend = self.sensor_height if vend is None else vend
+        hstart, hend = max(0, int(hstart)), min(self.sensor_width, int(hend))
+        vstart, vend = max(0, int(vstart)), min(self.sensor_height, int(vend))
+        hbin = max(1, min(int(hbin), hend - hstart))
+        vbin = max(1, min(int(vbin), vend - vstart))
+        hend = hstart + (hend - hstart) // hbin * hbin
+        vend = vstart + (vend - vstart) // vbin * vbin
+        self.attributes['ROIs'] = [(hstart, hend - hstart, hbin, vstart, vend - vstart, vbin)]
+        return self.get_roi()
 
     def close(self):
         self.stop_acquisition()

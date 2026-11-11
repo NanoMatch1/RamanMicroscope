@@ -483,10 +483,17 @@ class AcquisitionControl(QObject):
                 raise ValueError(f"Invalid parameter: {key}")
             
     def _construct_metadata(self):
-        '''Constructs the dictionary of metadata to include in the saved file. This includes all parameters in the acquisition control, as well as the current stage position and the current laser wavelength.'''
-        
-        metadata = self.get_all_parameters()
+        '''Constructs the dictionary of metadata to include in the saved file. This includes all
+        parameters in the acquisition control, as well as the current stage position and the
+        current laser wavelength.
+        'camera' holds the readout as the camera reports it: ROI rows and their binning, exposure,
+        gain, ADC speed, sensor temperature (PIXISCamera.describe_readout).'''
 
+        metadata = dict(self.get_all_parameters())
+        try:
+            metadata['camera'] = self.interface.camera.describe_readout()
+        except Exception as error:  # a missing reading must not stop the save
+            metadata['camera'] = {'error': f"readout not recorded: {error}"}
         return metadata
     
 
@@ -783,6 +790,7 @@ class AcquisitionControl(QObject):
         if filename is not None:
             self.general_parameters['filename'] = filename
         self.prepare_acquisition_params()  # ensures acqtime is set correctly at camera level
+        self.interface.microscope.check_roi_for_data_collection()
         self.logger.info("Acquiring single frame...")
         image_data = self._acquire_one_frame()
 
@@ -819,6 +827,7 @@ class AcquisitionControl(QObject):
     def acquire_scan(self, cancel_event, status_callback, progress_callback, timeout=100000):
         """Acquires a confirmed scan sequence. Should only be called from the UI after completing the confirmation dialogue."""
 
+        self.interface.microscope.check_roi_for_data_collection()
         camera_scanner = CameraScanner(self)
         failed_steps = camera_scanner._acquire_scan(cancel_event, status_callback, progress_callback, timeout=timeout)
 

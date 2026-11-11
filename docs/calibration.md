@@ -353,8 +353,11 @@ would capture it.
    brightest lines (763.5, 811.5 and 912.3 nm) stay below 65000 counts
    (`acqtime <seconds>`). Saturated lines are lost as references, and the
    saturation gate reports how many. Single frames are fine.
-3. Run `speccal` (or `speccal arhg`). The TRIAX slides the chip over the
-   lines from ~696 to ~935 nm, about 26 positions. Each walk is saved to
+3. Run `speccal` (or `speccal arhg`). It first takes one frame of the whole
+   sensor, finds the slit image and records where it is (rows, width,
+   tilt); if the camera ROI misses it, an automatic ROI is set. Then the
+   TRIAX slides the chip over the lines from ~696 to ~935 nm, about 26
+   positions. Each walk is saved to
    `data/calibration_line_walks/linewalk_<date>_<time>_arhg.json` with every
    spectrum and the conditions it was taken in (software version, simulate
    mode, exposure, frames averaged, sensor temperature per frame, TRIAX

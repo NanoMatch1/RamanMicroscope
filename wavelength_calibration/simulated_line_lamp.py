@@ -112,12 +112,17 @@ class SimulatedLineLamp:
         return np.clip(self.noiseless_spectrum(triax_steps) + noise, 0, CCD_FULL_SCALE_COUNTS)
 
     def image(self, triax_steps, slit_image_centre_row=None, slit_image_half_height_rows=15):
-        """A 2D frame: the spectrum along columns, the slit image as a Gaussian along rows."""
+        """
+        A 2D frame: the spectrum along columns, the slit image as a Gaussian along rows.
+        `slit_image_centre_row` is one row, or one per column (a tilted slit image).
+        """
         if slit_image_centre_row is None:
             slit_image_centre_row = self.image_height / 2
-        rows = np.arange(self.image_height, dtype=float)
-        row_profile = np.exp(-0.5 * ((rows - slit_image_centre_row) / slit_image_half_height_rows) ** 2)
+        rows = np.arange(self.image_height, dtype=float)[:, None]
+        slit_rows = np.broadcast_to(np.asarray(slit_image_centre_row, dtype=float),
+                                    (self.number_of_pixels,))[None, :]
+        row_profile = np.exp(-0.5 * ((rows - slit_rows) / slit_image_half_height_rows) ** 2)
         line_part = self.noiseless_spectrum(triax_steps) - self.background_level
-        frame = self.background_level + row_profile[:, None] * line_part[None, :]
+        frame = self.background_level + row_profile * line_part[None, :]
         frame += self.random_generator.normal(0.0, self.noise_standard_deviation, frame.shape)
         return np.clip(frame, 0, CCD_FULL_SCALE_COUNTS)

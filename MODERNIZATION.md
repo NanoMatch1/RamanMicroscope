@@ -318,7 +318,9 @@ added `2893573`), plus 35 for the repository safety checks. Untested:
   with no hardware dependency.
 - `datafit/` — fitting functions, entirely pure.
 - `AcquisitionControl` scan-sequence generation.
-- The PyQt GUI (`pytest-qt` would be needed).
+- The PyQt GUI. The live viewer's ROI controls are tested with an offscreen
+  `QApplication` (`test_pixis_camera.py`, no `pytest-qt` needed); the rest of
+  `MainWindow` is not.
 
 ### 3.4 Documentation
 
@@ -347,3 +349,29 @@ machine keeps its real values) and added to `.gitignore`:
   gitignore does not untrack already-tracked files)
 
 `.gitignore` also regained `.venv/` and gained `.vs/`.
+
+---
+
+## Planned work: camera and wavelength calibration
+
+Features and follow-ups agreed or proposed, not yet built. Open defects are in
+`CHANGELOG.md` ("Known issues"); findings behind these are in the lab notebook (RAM-F#).
+
+- **ADC speed option (100 kHz / 2 MHz).** Lower read noise at 100 kHz; the readout of a small
+  ROI is short enough that the slower rate costs little. Compare dark frames on the bench, then
+  add a command and the live viewer box next to the binning one.
+- **Where the camera ROI is stored.** Now `microscope_config.json` (tracked); it is per-rig
+  state like `instrument_state.json` (untracked).
+- **Per-walk dispersion check** in the walk-agreement gate (`calibration_checks.py`): two walks
+  minutes apart differed by ~0.06 % in dispersion on 2026-11-10 and 2026-11-11 (RAM-F1, RAM-F2)
+  and no gate said so.
+- **TRIAX position table** in the wavelength axis model, interpolated between calibration
+  positions, once a walk at `samples=12` shows the drive is smooth between them (RAM-F1).
+- **Remove `speccalfit triaxsigma=`** (kept for now with a WARN gate).
+- **Provenance: code vs data changes.** `software_version()` reports "uncommitted changes" when
+  only the tracked master calibration was rewritten by `speccalapply`; list the changed files,
+  or count only code.
+- **Cosmic-ray rejection** across the frames of a point (`nframe` > 1), for long exposures.
+- **Unused simulators** in `simulation.py` (`SimulatedInstrument`, `SimulatedMonochromator`,
+  `SimulatedLaser`, `SimulatedStageControl`): not used by any test or simulate path.
+

@@ -1,6 +1,7 @@
 """
-Unit tests for the PIXIS camera layer: frame freshness, frame averaging, and waiting for the
-sensor temperature.
+Unit tests for the PIXIS camera layer: frame freshness, frame averaging, waiting for the
+sensor temperature, the region of interest and its binning, frame timeouts that follow the
+exposure, the gain, and the live viewer's ROI selection.
 
 RealHardware's own code runs here against SimulatedPicamDevice (pixisspec/), a stand-in for
 pylablib's PicamCamera whose CCD free-runs on a background thread. The scene it images is a
@@ -25,6 +26,8 @@ from acquisitioncontrol.acqcontrol import CameraScanner
 from pixisspec.pixiscam import PIXISCamera
 from pixisspec.pixis_hardware import RealHardware
 from pixisspec.simulated_picam_device import SimulatedPicamDevice, SimulatedPicamLibError
+from pixisspec.spectral_roi import (AUTOMATIC, MANUAL, SlitImageNotFound, SpectralRoi,
+                                    find_slit_image)
 
 EXPOSURE_S = 0.05
 READOUT_S = 0.02
@@ -352,3 +355,146 @@ def test_grab_frame_safe_gives_up_when_the_temperature_cannot_be_read(fast_tempe
     grab_thread.join(timeout=5)
     assert not grab_thread.is_alive(), "grab_frame_safe is still waiting for a readable temperature"
     assert results == [None] and frames_taken == []
+
+
+# ----------------------------------------------------------------------
+# Region of interest and binning (pixisspec/spectral_roi.py)
+# ----------------------------------------------------------------------
+
+def test_spectral_roi_rows_binning_and_round_trip():
+    roi = SpectralRoi(790, 830)
+    assert roi.camera_roi() == (0, 1024, 790, 830, 1, 1), "columns are never binned"
+    on_chip = roi.with_rows_binned_on_chip('all')
+    assert on_chip.binned_on_chip and on_chip.camera_roi()[-1] == 40
+    moved = on_chip.with_rows(700, 720)
+    assert moved.binned_on_chip and moved.rows_binned_on_chip == 20, "on-chip stays on-chip"
+    assert SpectralRoi.from_dict(moved.as_dict()) == moved
+    with pytest.raises(ValueError):
+        SpectralRoi(800, 1100)
+    with pytest.raises(ValueError):
+        SpectralRoi(800, 810, rows_binned_on_chip=11)
+
+
+def slit_image_frame(centre_row=800.0, tilt_rows_per_1000_columns=0.0, line_columns=(150, 480, 900),
+                     half_height_rows=6.0, seed=1):
+    """A full-sensor frame of three lamp lines on a tilted slit image, with read noise."""
+    rows = np.arange(1024, dtype=float)[:, None]
+    columns = np.arange(1024, dtype=float)[None, :]
+    slit_rows = centre_row + tilt_rows_per_1000_columns / 1000 * (columns - 512)
+    lines = sum(np.exp(-0.5 * ((columns - column) / 1.5) ** 2) for column in line_columns)
+    frame = 400 + 20000 * lines * np.exp(-0.5 * ((rows - slit_rows) / half_height_rows) ** 2)
+    return frame + np.random.default_rng(seed).normal(0, 10, frame.shape)
+
+
+def test_slit_image_is_found_with_its_tilt_and_gives_an_automatic_roi():
+    slit_image = find_slit_image(slit_image_frame(centre_row=800, tilt_rows_per_1000_columns=8))
+    assert abs(slit_image.peak_row - 800) <= 1
+    assert slit_image.tilt_rows_per_1000_columns == pytest.approx(8, abs=1.5)
+    roi = slit_image.roi(margin_rows=3)
+    assert roi.source == AUTOMATIC and roi.rows_binned_on_chip == 1
+    assert roi.first_row <= 800 - 6 - 4 and roi.last_row >= 800 + 6 + 4, roi.describe()
+    assert roi.row_count < 60, "the ROI follows the slit image, not the whole sensor"
+
+
+def test_no_slit_image_on_a_dark_frame():
+    dark = 400 + np.random.default_rng(2).normal(0, 10, (1024, 1024))
+    with pytest.raises(SlitImageNotFound):
+        find_slit_image(dark)
+
+
+def test_roi_rows_are_read_out_and_binned_on_the_chip():
+    """The simulated CCD reads only the ROI rows; on-chip binning sums them (clipped at the ADC
+    full scale); a row count that is not a whole number of bins is trimmed, as pylablib does."""
+    def two_row_values():
+        image = np.full((1024, 1024), 100.0)
+        image[800:810] = 1000.0
+        return image
+    hardware = real_hardware_on_simulated_device(two_row_values)
+    try:
+        assert hardware.set_roi_and_binning(0, 1024, 795, 815, 1, 1) == (0, 1024, 795, 815, 1, 1)
+        frame = hardware.grab_frame()
+        assert frame.shape == (20, 1024)
+        assert hardware.set_roi_and_binning(0, 1024, 795, 815, 1, 20) == (0, 1024, 795, 815, 1, 20)
+        frame = hardware.grab_frame()
+        assert frame.shape == (1, 1024)
+        assert frame[0, 0] == 10 * 100 + 10 * 1000, "charge of all ROI rows summed"
+        assert hardware.set_roi_and_binning(0, 1024, 795, 815, 1, 3)[3] == 813, "trimmed to bins"
+    finally:
+        hardware.close_camera()
+
+
+def test_frames_wait_at_least_the_exposure():
+    """A caller's short timeout must not cut off a long exposure (2026-11 port issue)."""
+    hardware = real_hardware_on_simulated_device(SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE))
+    try:
+        assert hardware.set_exposure_time(120.0)
+        expected_timeout_s = 120.0 + hardware.FRAME_TIMEOUT_MARGIN_S
+        assert hardware.frame_timeout_s(10000) == pytest.approx(expected_timeout_s)
+        assert hardware.set_exposure_time(EXPOSURE_S)
+        assert hardware.grab_frame(timeout=1) is not None, "a 1 ms caller timeout still waits"
+    finally:
+        hardware.close_camera()
+
+
+def test_an_exposure_the_camera_clips_is_reported():
+    hardware = real_hardware_on_simulated_device(SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE))
+    hardware._cam.maximum_exposure_s = 100.0
+    try:
+        assert hardware.set_exposure_time(60.0) is True
+        assert hardware.set_exposure_time(300.0) is False
+    finally:
+        hardware.close_camera()
+
+
+def test_adc_gain_is_set_by_name():
+    hardware = real_hardware_on_simulated_device(SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE))
+    try:
+        assert hardware.set_adc_gain('Medium') is True
+        assert hardware.readout_settings()['adc_analog_gain'] == 'Medium'
+    finally:
+        hardware.close_camera()
+
+
+# ----------------------------------------------------------------------
+# Live viewer: the selected rows become the camera ROI
+# ----------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def qt_application():
+    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+    from PyQt5.QtWidgets import QApplication
+    return QApplication.instance() or QApplication([])
+
+
+def live_viewer_with_roi(spectral_roi, sent_commands):
+    from acquisitioncontrol.pyqtGUI import LiveDataViewer
+    camera = SimpleNamespace(spectral_roi=spectral_roi)
+    interface = SimpleNamespace(logger=logging.getLogger('test_live_viewer'), camera=camera,
+                                microscope=SimpleNamespace(wavelength_axis=np.arange(1024.0)))
+    return LiveDataViewer(interface, send_command=sent_commands.append)
+
+
+def test_live_viewer_selection_sets_the_camera_roi_in_sensor_rows(qt_application, tmp_path,
+                                                                 monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sent_commands = []
+    viewer = live_viewer_with_roi(SpectralRoi(780, 820, source=MANUAL), sent_commands)
+    viewer.update_data(np.zeros((40, 1024)))
+    viewer.region_changed.emit(5, 15)  # frame rows 5..14 selected
+    viewer.btn_use_selection_as_roi.click()
+    assert sent_commands == ['roi 785 794']
+    viewer.combo_binning.activated[str].emit('On-chip binning')
+    assert sent_commands[-1] == 'roi binning onchip'
+
+
+def test_live_viewer_cannot_select_rows_of_an_on_chip_binned_frame(qt_application, tmp_path,
+                                                                   monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sent_commands = []
+    viewer = live_viewer_with_roi(SpectralRoi(780, 820).with_rows_binned_on_chip('all'),
+                                  sent_commands)
+    viewer.update_data(np.zeros((1, 1024)))
+    assert not viewer.btn_use_selection_as_roi.isEnabled()
+    viewer._on_use_selection_as_roi()
+    assert sent_commands == []
+

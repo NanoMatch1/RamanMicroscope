@@ -12,10 +12,12 @@ import os
 import threading
 
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import wraps
 
 from datafit.laser_detection import LaserDetection
+from pixisspec.spectral_roi import (AUTOMATIC, MANUAL, SlitImageNotFound, SpectralRoi,
+                                    find_slit_image)
 from wavelength_calibration.calibration_checks import any_failed, format_check_report, run_checks
 from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
 from wavelength_calibration.line_peaks import collapse_image_to_spectrum, slit_image_rows
@@ -618,8 +620,8 @@ class Microscope(Instrument):
         self.laser_calibrated = False
 
         self.microscope_mode = 'ramanmode'
-        camera_roi = self.interface.camera.roi
-        self.wavelength_axis = np.arange(camera_roi[0], camera_roi[2], 1)
+        camera_roi = self.interface.camera.roi   # (HOffset, VOffset, Width, Height)
+        self.wavelength_axis = np.arange(camera_roi[0], camera_roi[0] + camera_roi[2], 1)
         self.instrument_state = {}
         self.autosave = True
 
@@ -745,15 +747,10 @@ class Microscope(Instrument):
             'caminfo': self.camera_info,
             'temp': self.get_detector_temperature,
             'settemp': self.set_detector_temperature,
-            'autotemp': self.camera_auto_temperature_control,
             'refresh': self.refresh_camera,
             'camclose': self.close_camera,
             'camopen': self.open_camera,
-            'camspec': self.set_acq_spectrum_mode,
-            'camimage': self.set_acq_image_mode,
             'setgain': self.set_camera_gain,
-            # 'closecamera': self.close_camera_connection,
-            'checkfan': self.check_camera_fan_speed,
 
             # laser hardware commands
             'setpower': self.set_laser_power,
@@ -770,8 +767,6 @@ class Microscope(Instrument):
         self.current_wavenumber = None
 
         self.detector_safety = False
-
-        self.acquire_mode = 'spectrum'
 
         self._integrity_checker()  # Validate on init
 
@@ -1397,6 +1392,7 @@ class Microscope(Instrument):
         self.calculate_grating_wavelength()
         self.calculate_monochromator_wavelength()
         self.calculate_spectrometer_wavelength()
+        self.apply_stored_camera_roi()
         self.report_status(initialise=True)
         
         return 'Microscope initialised'
@@ -1598,24 +1594,13 @@ class Microscope(Instrument):
 
     #? camera commands
     @ui_callable
-    def set_camera_gain(self, imagemode, gain):
-        '''Sets the camera gain to the specified value.'''
-        try:
-            imagemode = int(imagemode)
-            gain = int(gain)
-        except ValueError:
-            print("Values for image mode and gain must be integers")
-            return
-
-        self.camera.set_image_and_gain(imagemode, gain)
-        
-
-    def start_camera_ui(self):
-        self.camera.start_ui()
-
-    def camera_set_acquisition_time(self, time):
-        self.acq_time = float(time)*1000 #ms
-        self.camera.cam.set_attribute_value("Exposure Time", self.acq_time)
+    def set_camera_gain(self, gain_name):
+        '''ADC analogue gain: setgain low | medium | high. Higher gain gives more counts per
+        electron (less quantisation for weak signals) and saturates sooner.'''
+        if not self.camera.set_adc_gain(gain_name):
+            self.micro_log.error(f"setgain: the gain was not set to {gain_name!r}.")
+            return None
+        return True
 
     # ── Wavelength axis calibration: TRIAX + PIXIS (docs/calibration.md section 3) ──
 
@@ -1657,11 +1642,13 @@ class Microscope(Instrument):
             return None
 
         planning_model = self.calibration_service.wavelength_axis_model
-        instrument = self._describe_instrument_for_calibration()
         self._calibration_row_band = None
         if self.simulate:
             self._install_simulated_line_lamp(catalogue_lines)
         try:
+            slit_image = self._check_roi_covers_slit_image()
+            instrument = self._describe_instrument_for_calibration()
+            instrument['slit_image'] = slit_image
             line_walk = LineWalk(
                 move_triax_to_steps=self.interface.spectrometer.go_to_steps,
                 read_triax_steps=self.interface.spectrometer.get_triax_steps,
@@ -1722,6 +1709,23 @@ class Microscope(Instrument):
         numbers += [None] * (2 - len(numbers))
         return samples_per_line, numbers[0], numbers[1]
 
+    def _check_roi_covers_slit_image(self):
+        '''Before a lamp walk or re-zero: find the slit image on a full-sensor frame and, if the
+        ROI misses it, set an automatic ROI. Returns the slit image (a dict, for the walk's
+        metadata: drift of the slit image between walks shows up there), or None.'''
+        try:
+            slit_image = self.measure_slit_image()
+        except SlitImageNotFound as error:
+            self.micro_log.warning(f"Slit image not checked ({error}); using the ROI in use: "
+                                   f"{self.camera.spectral_roi.describe()}.")
+            return None
+        roi_in_use = self.camera.spectral_roi
+        if not roi_in_use.contains_rows(slit_image.first_row, slit_image.last_row):
+            self.micro_log.warning(f"The camera ROI ({roi_in_use.describe()}) misses the slit "
+                                   "image; setting an automatic ROI for the calibration.")
+            self._apply_camera_roi(slit_image.roi())
+        return {**asdict(slit_image), 'width_rows': slit_image.width_rows}
+
     def _describe_instrument_for_calibration(self):
         '''What a calibration walk records about the set-up, so a bad walk can be traced.'''
         camera = self.interface.camera
@@ -1740,9 +1744,7 @@ class Microscope(Instrument):
                 'exposure_s': read(lambda: camera.get_exposure_time(report=False)),
                 'frames_averaged': read(
                     lambda: self.interface.acq_ctrl.general_parameters['n_frames']),
-                # The software's ROI attribute, which start-up never sends to the camera: the
-                # frames read are full height (see each frame's 'frame_shape').
-                'roi_setting_in_software': read(lambda: list(camera.roi)),
+                'readout': read(camera.describe_readout),
                 'sensor_temperature_c': read(camera.hardware.get_temperature),
                 'sensor_set_point_c': read(camera.hardware.get_target_temperature),
             },
@@ -1910,11 +1912,13 @@ class Microscope(Instrument):
             return None
         model = self.calibration_service.wavelength_axis_model
         catalogue_lines = argon_mercury_lamp_lines()
-        instrument = self._describe_instrument_for_calibration()
         self._calibration_row_band = None
         if self.simulate:
             self._install_simulated_line_lamp(catalogue_lines)
         try:
+            slit_image = self._check_roi_covers_slit_image()
+            instrument = self._describe_instrument_for_calibration()
+            instrument['slit_image'] = slit_image
             zero_run = run_triax_zero(
                 move_triax_to_steps=self.interface.spectrometer.go_to_steps,
                 read_triax_steps=self.interface.spectrometer.get_triax_steps,
@@ -1996,15 +2000,17 @@ class Microscope(Instrument):
         line_amplitudes = None
         if len(emitted_lines) > 1:
             line_amplitudes = realistic_line_amplitudes(emitted_lines, brightness_scale=0.6)
+        scene = self.interface.camera.simulated_scene
         if getattr(self, 'simulated_line_lamp', None) is None or \
                 self.simulated_line_lamp.emitted_lines != list(emitted_lines):
             self.simulated_line_lamp = SimulatedLineLamp(
                 default_true_model(), emitted_lines, line_amplitudes=line_amplitudes,
                 line_sigma_pixels=1.2, noise_standard_deviation=8.0,
-                number_of_pixels=len(self.wavelength_axis))
+                number_of_pixels=scene.width, image_height=scene.height)
         spectrometer = self.interface.spectrometer
-        self.interface.camera.simulated_scene.override_scene = \
-            lambda: self.simulated_line_lamp.image(spectrometer.get_triax_steps())
+        scene.override_scene = lambda: self.simulated_line_lamp.image(
+            spectrometer.get_triax_steps(),
+            slit_image_centre_row=scene.slit_image_rows_at_columns())
 
     @ui_callable
     def read_ldr0(self):
@@ -2252,31 +2258,6 @@ class Microscope(Instrument):
 
 
     @ui_callable
-    def set_acq_spectrum_mode(self):
-        '''Sets the acquisition mode to spectrum.'''
-        self.camera.acquire_mode = 'spectrum'
-        print('Acquisition mode set to spectrum')
-    
-    @ui_callable
-    def set_acq_image_mode(self):
-        '''Sets the acquisition mode to CCD image.'''
-        self.camera.acquire_mode = 'image'
-        print('Acquisition mode set to image')
-
-    #? camera commands
-
-    # @ui_callable
-    # def close_camera_connection(self):
-    #     '''Closes the camera connection.'''
-    #     self.camera.close_camera()
-
-    @ui_callable
-    def check_camera_fan_speed(self):
-        speed = self.camera.get_fan_speed()
-        self.micro_log.info("Fan Speed: {}".format(speed))
-        return speed
-
-    @ui_callable
     # @debug_return()
     @enforce_response
     def set_acquisition_time(self, value):
@@ -2362,7 +2343,23 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_camera_binning(self, value):
-        self.camera.set_hardware_binning(value)
+        '''On-chip binning of the ROI rows (columns are never binned):
+        setbin 1      no on-chip binning: every ROI row is read out (software binning)
+        setbin all    all ROI rows summed on the CCD (same as 'roi binning onchip')
+        setbin N      groups of N rows summed on the CCD'''
+        value = str(value).lower()
+        if value != 'all':
+            try:
+                value = int(value)
+            except ValueError:
+                self.micro_log.error("setbin: give a whole number of rows, or 'all'.")
+                return None
+        try:
+            roi = self.camera.spectral_roi.with_rows_binned_on_chip(value)
+        except ValueError as error:
+            self.micro_log.error(f"setbin: {error}")
+            return None
+        return self._apply_camera_roi(roi)
 
     @ui_callable
     def refresh_camera(self):
@@ -2422,10 +2419,122 @@ class Microscope(Instrument):
         '''Stops continuous acquisition on the camera.'''
         self.camera.stop_continuous_acquisition()
 
+    # ── Camera region of interest (pixisspec/spectral_roi.py) ──
+
     @ui_callable
-    def set_roi(self, roi:str):
-        '''Sets the region of interest on the camera.'''
-        self.camera.set_roi(roi)
+    def set_roi(self, *arguments):
+        '''Camera region of interest: which sensor rows make the spectrum, and their binning.
+        roi                     report the ROI on the camera
+        roi <first> <last>      read sensor rows first..last (both included), chosen by hand;
+                                the live viewer's 'Use selection as ROI' does the same
+        roi auto [margin]       find the slit image on a full-sensor frame (light on) and read
+                                its rows plus `margin` rows (default 3) each side
+        roi full                read the whole sensor
+        roi binning software    read every ROI row out (the default)
+        roi binning onchip      sum the ROI rows on the CCD: one read per column, least noise
+        The ROI is stored in microscope_config.json and set again at start-up. Before collecting
+        data, choose the rows by hand around the slit image and no wider.'''
+        arguments = [str(argument).lower() for argument in arguments]
+        current = self.camera.spectral_roi
+        try:
+            if not arguments:
+                self.micro_log.info(f"Camera ROI: {current.describe()}")
+                return current
+            if arguments[0] == 'full':
+                return self._apply_camera_roi(SpectralRoi.full_sensor())
+            if arguments[0] == 'auto':
+                margin_rows = int(arguments[1]) if len(arguments) > 1 else 3
+                return self.set_roi_automatically(margin_rows)
+            if arguments[0] == 'binning' and len(arguments) == 2 \
+                    and arguments[1] in ('software', 'onchip'):
+                rows_binned = 1 if arguments[1] == 'software' else 'all'
+                return self._apply_camera_roi(current.with_rows_binned_on_chip(rows_binned))
+            if len(arguments) == 2:
+                first_row, last_row = int(arguments[0]), int(arguments[1])
+                return self._apply_camera_roi(current.with_rows(first_row, last_row + 1, MANUAL))
+        except ValueError as error:
+            self.micro_log.error(f"roi: {error}")
+            return None
+        self.micro_log.error("roi: use 'roi', 'roi <first row> <last row>', 'roi auto', "
+                             "'roi full' or 'roi binning software|onchip'.")
+        return None
+
+    def _apply_camera_roi(self, spectral_roi, store=True):
+        '''Set the ROI on the camera and (by default) store what the camera set in the config.'''
+        applied = self.camera.set_spectral_roi(spectral_roi)
+        if applied is None:
+            self.micro_log.error(f"Camera ROI not changed: the camera refused "
+                                 f"{spectral_roi.describe()}.")
+            return None
+        if store:
+            self.config['camera_roi'] = applied.as_dict()
+            self.write_config()
+        self.micro_log.info(f"Camera ROI: {applied.describe()}")
+        return applied
+
+    def apply_stored_camera_roi(self):
+        '''Start-up: set the ROI stored in the config, or say that the full sensor is read.'''
+        stored = self.config.get('camera_roi')
+        if not stored:
+            self.micro_log.warning(
+                "No camera ROI stored: the whole sensor (1024 rows) is read for every frame. "
+                "Choose the rows around the slit image in the live viewer, or 'roi auto' with "
+                "the lamp or laser on.")
+            return None
+        try:
+            spectral_roi = SpectralRoi.from_dict(stored)
+        except (TypeError, ValueError) as error:
+            self.micro_log.error(f"Stored camera ROI {stored} is not usable ({error}); reading "
+                                 "the whole sensor.")
+            return None
+        return self._apply_camera_roi(spectral_roi, store=False)
+
+    def acquire_full_sensor_frame(self):
+        '''One frame of the whole sensor, unbinned; the ROI in use is set again afterwards.'''
+        roi_in_use = self.camera.spectral_roi
+        self.camera.set_spectral_roi(SpectralRoi.full_sensor())
+        try:
+            return self.camera.grab_frame_safe()
+        finally:
+            self.camera.set_spectral_roi(roi_in_use)
+
+    def measure_slit_image(self):
+        '''Where the slit image lies on the sensor (pixisspec.spectral_roi.SlitImage), from a
+        full-sensor frame; raises SlitImageNotFound if no light stands out.'''
+        frame = self.acquire_full_sensor_frame()
+        if frame is None:
+            raise SlitImageNotFound("the camera returned no frame")
+        slit_image = find_slit_image(frame)
+        self.micro_log.info(f"Slit image: {slit_image.describe()}")
+        return slit_image
+
+    def set_roi_automatically(self, margin_rows=3):
+        '''Set the ROI to the slit image found on a full-sensor frame, plus a margin of rows.'''
+        try:
+            slit_image = self.measure_slit_image()
+        except SlitImageNotFound as error:
+            self.micro_log.error(f"roi auto: {error} (ROI unchanged)")
+            return None
+        roi = slit_image.roi(margin_rows)
+        if self.camera.spectral_roi.binned_on_chip:
+            roi = roi.with_rows_binned_on_chip('all')
+        applied = self._apply_camera_roi(roi)
+        if applied is not None:
+            self.micro_log.info("Automatic ROI set. Before collecting data, check the rows in "
+                                "the live viewer and narrow them by hand to the slit image.")
+        return applied
+
+    def check_roi_for_data_collection(self):
+        '''Warn (once per ROI) when data is taken without an ROI chosen by hand.'''
+        roi = self.camera.spectral_roi
+        if roi.source == MANUAL or getattr(self, '_roi_warned_for', None) == roi:
+            return
+        self._roi_warned_for = roi
+        how_set = 'automatically' if roi.source == AUTOMATIC else 'to the full sensor'
+        self.micro_log.warning(
+            f"Collecting data with a camera ROI set {how_set} ({roi.describe()}). Choose the rows "
+            "by hand in the live viewer around the slit image, so no rows of pure noise are "
+            "binned in.")
     
     @ui_callable
     def camera_info(self):
@@ -2442,15 +2551,6 @@ class Microscope(Instrument):
     @ui_callable
     def set_detector_temperature(self, temperature):
         status = self.interface.camera.set_target_temperature(temperature)
-
-    @ui_callable
-    def camera_auto_temperature_control(self, state):
-        try:
-            state = bool(int(state))
-        except ValueError:
-            print("Invalid state. Must be 0 or 1.")
-            return
-        self.interface.camera.enable_auto_temperature_control(state)
 
     @ui_callable
     def get_laser_motor_positions(self):

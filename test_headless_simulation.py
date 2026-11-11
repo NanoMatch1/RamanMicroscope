@@ -568,6 +568,104 @@ def test_applied_axis_warns_outside_its_fitted_triax_range():
         microscope.calculate_spectrometer_wavelength()
 
 
+@contextlib.contextmanager
+def temporary_camera_roi_config(microscope):
+    """Config file and data directory in a temporary directory; full-sensor ROI afterwards."""
+    import tempfile
+    from pixisspec.spectral_roi import SpectralRoi
+    saved_config_path, saved_data_directory = microscope.config_path, microscope.dataDir
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.config_path = os.path.join(temporary_directory, 'microscope_config.json')
+        shutil.copyfile(saved_config_path, microscope.config_path)
+        microscope.dataDir = temporary_directory
+        os.makedirs(os.path.join(temporary_directory, 'transient_data'))
+        try:
+            yield temporary_directory
+        finally:
+            microscope.config_path, microscope.dataDir = saved_config_path, saved_data_directory
+            microscope.config.pop('camera_roi', None)
+            microscope.camera.set_spectral_roi(SpectralRoi.full_sensor())
+            microscope._roi_warned_for = None
+
+
+def test_camera_roi_automatic_manual_binning_stored_and_recorded():
+    """
+    'roi auto' finds the simulated slit image (rows ~800) and reads only its rows; 'roi <first>
+    <last>' sets rows by hand; 'roi binning onchip' gives one-row frames; the ROI is stored in
+    the config and set again at start-up, and every saved file records the camera readout.
+    """
+    from wavelength_calibration.reference_lines import argon_mercury_lamp_lines
+    microscope = get_interface().microscope
+    camera = microscope.camera
+    with temporary_camera_roi_config(microscope) as temporary_directory:
+        run_command('acqtime 0.1')
+        run_command('nframe 1')
+        assert run_command('roi auto') is None, "no light on the slit: nothing to find"
+        microscope._install_simulated_line_lamp(argon_mercury_lamp_lines())
+        try:
+            automatic = run_command('roi auto')
+        finally:
+            camera.simulated_scene.override_scene = None
+        assert automatic.source == 'automatic'
+        assert automatic.first_row < 800 < automatic.last_row and automatic.row_count < 80
+        assert camera.grab_frame().shape == (automatic.row_count, 1024)
+
+        manual = run_command('roi 790 810')
+        assert (manual.first_row, manual.last_row, manual.source) == (790, 811, 'manual')
+        with open(microscope.config_path) as file:
+            assert json.load(file)['camera_roi']['first_row'] == 790
+
+        on_chip = run_command('roi binning onchip')
+        assert on_chip.binned_on_chip and camera.grab_frame().shape == (1, 1024)
+        assert run_command('setbin 0') is None, "zero rows per bin must refuse"
+        assert run_command('setbin 7').rows_binned_on_chip == 7
+        assert run_command('setbin 1').rows_binned_on_chip == 1
+        assert run_command('setgain medium') is True
+
+        run_command('roi full')
+        assert camera.spectral_roi.row_count == 1024
+        microscope.config['camera_roi'] = manual.as_dict()
+        assert microscope.apply_stored_camera_roi() == manual, "start-up sets the stored ROI"
+
+        run_command('filename headless_roi_test')
+        run_command('acquire')
+        [saved_name] = os.listdir(os.path.join(temporary_directory, 'headless_roi_test'))
+        with np.load(os.path.join(temporary_directory, 'headless_roi_test', saved_name)) as saved:
+            metadata = json.loads(str(saved['metadata']))
+            assert saved['image'].shape == (21, 1024)
+        readout = metadata['camera']
+        assert readout['spectral_roi']['first_row'] == 790
+        assert readout['camera_roi_hstart_hend_vstart_vend_hbin_vbin'] == [0, 1024, 790, 811, 1, 1]
+        assert readout['adc_analog_gain'] == 'Medium'
+
+
+def test_line_walk_moves_an_roi_that_misses_the_slit_image():
+    """A lamp walk checks the slit image first: an ROI that misses it is replaced by an
+    automatic one, and the walk records where the slit image was."""
+    microscope = get_interface().microscope
+    with temporary_camera_roi_config(microscope), temporary_calibration_files(microscope):
+        run_command('roi 100 120')
+        line_walk_path = run_command('speccal arhg samples=3')
+        roi_used = microscope.camera.spectral_roi
+        assert roi_used.source == 'automatic' and roi_used.first_row < 800 < roi_used.last_row
+        with open(line_walk_path) as file:
+            slit_image = json.load(file)['instrument']['slit_image']
+        assert abs(slit_image['peak_row'] - 800) <= 2
+
+
+def test_data_without_a_manual_roi_is_flagged_once():
+    microscope = get_interface().microscope
+    with temporary_camera_roi_config(microscope):
+        run_command('filename headless_roi_test')
+        run_command('acqtime 0.1')
+        run_command('acquire')
+        assert microscope._roi_warned_for == microscope.camera.spectral_roi
+        run_command('roi 790 810')
+        microscope._roi_warned_for = None
+        run_command('acquire')
+        assert microscope._roi_warned_for is None, "a manual ROI raises no warning"
+
+
 def test_speccalapply_refuses_when_a_gate_fails():
     """A walk recorded in simulate mode must not become a real calibration: refuse, and say why."""
     microscope = get_interface().microscope

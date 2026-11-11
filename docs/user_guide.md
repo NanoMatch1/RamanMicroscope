@@ -15,7 +15,7 @@
 9. Ensure lasing at the sample (sulfur test).
 10. Type `run` to initiate the continuous acquisition for focus and alignment. NOTE: The `data_viewer_run_me.py` should be running in a separate window. If not, go to the RamanMicroscope code folder and run this file by double clicking.
 11. In the data viewer UI, ensure the ROI start and end are set to a logical range. Usually 100-2000 respectively. Toggle autoscale as required to view the spectrum and lock/normalise the intensity range. 
-12. Also ensure the Y centre and Y width are set to capture the data. This is the binning on the CCD array, and the data should be centred around pixel 83 with ~10 pixel range. On rare occasions, this can change, so if no peaks are present try widening the Y width value (and click Apply Y ROI) 
+12. Check the camera ROI: the CCD rows that make the spectrum (see **Camera region of interest** below). The application sets the stored ROI at start-up and says so; if the slit image has moved (after any work on the camera or spectrograph), set it again before collecting data.
 13. Upon running, the data viewer should update with live data each frame. The sulfur spectrum should be just barely visible at 1 second acquisition time if you're lucky. If not:
     1. Check the sample is in focus 
     2. **the motors may need to be jogged into alignment**
@@ -187,15 +187,11 @@ Many of these commands are required for maintenance but some have calibration-br
     
 - `temp`: Get camera temperature.
     
-- `roi(x, y, width, height)`: Set region of interest.
+- `roi`: Show the camera region of interest; `roi <first row> <last row>`, `roi auto`, `roi full`, `roi binning software|onchip` set it (below).
     
-- `setbin(binning_level)`: Set pixel binning.
+- `setbin N|all`: Bin N ROI rows on the chip (`1` = none, `all` = every ROI row). Columns are never binned.
     
-- `setgain(value)`: Set camera gain.
-    
-- `camspec`: Switch to spectrum mode.
-    
-- `camimage`: Switch to image mode.
+- `setgain low|medium|high`: ADC analogue gain (more counts per electron at higher gain; saturates sooner).
     
 - `acquire`: Acquire a single frame (if implemented).
     
@@ -203,6 +199,17 @@ Many of these commands are required for maintenance but some have calibration-br
     
 - `stop`: Stop continuous acquisition.
     
+#### Camera region of interest (ROI)
+
+The spectrograph images the entrance slit as a band of rows across the PIXIS; the spectrum runs along the columns. The ROI is the rows that are read out: only they are saved, the readout is faster, and rows that hold only dark current and read noise stay out of the spectrum.
+
+- **During alignment**, `roi auto` (or **Auto ROI** in the live viewer) takes one frame of the whole sensor with the light on, finds the slit image and reads its rows plus 3 each side. It also reports the slit image's tilt across the chip, in rows per 1000 columns, which should be close to zero once the camera is square to the spectrograph. `roi full` reads every row, to see where the light falls.
+- **Before collecting data**, choose the rows by hand: in the live viewer, drag over the slit image in the frame (or type Ymin/Ymax) and press **Use selection as ROI**; or `roi <first row> <last row>`. Take the rows where the slit image is bright and no wider, so no rows of pure noise are added in. Data taken with an automatic or full-sensor ROI is flagged in the log.
+- **Binning** (the box in the live viewer, or `roi binning software|onchip`): *software* reads every ROI row out, so the frame still shows the slit image and cosmic rays; *on-chip* sums the rows on the CCD before the single read of each column, which gives the least read noise for weak signals but a one-row frame, and bright lines saturate sooner (the sum is clipped at 65535 counts).
+- The ROI is stored in `microscope_config.json` and set again at start-up. Every saved file records the ROI and binning the camera reported, with the exposure, gain, ADC speed and sensor temperature (`metadata['camera']`).
+- A lamp calibration (`speccal`, `speccalzero`) checks the slit image first and records it with the walk; if the ROI misses it, it sets an automatic ROI.
+
+Exposures are not limited in the software: a frame is waited for its exposure plus 30 s, so minutes per frame are fine. If the camera cannot take an exposure it says so, and `caminfo` lists its allowed range. For long exposures, consider several frames (`nframe`) rather than one: a cosmic ray then spoils one frame, not the whole point.
 
 ---
 

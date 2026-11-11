@@ -9,30 +9,13 @@ churn, or other non-functional file noise — see git history for that.
 Open issues found by review and bench data. When an issue is fixed, its entry moves into the
 dated section of the change that fixes it.
 
-### PIXIS camera: settings the Tucsen port did not carry over
+### PIXIS camera: still open
 
-The Tucsen start-up applied binning, readout resolution, gain, the region of interest (ROI),
-the cooling set point and the fan. The PIXIS port kept only the set point, and that one never
-reached the camera (fixed 2026-11-06, below).
-
-- **ROI never sent to the camera.** `camera.roi = (0, 0, 1024, 100)` exists only in software.
-  The CCD reads all 1024 rows (0.56 s per frame at 2 MHz), every saved point is a full
-  1024x1024 frame (4 MB), and the live view writes one per update.
-- **Frame timeouts do not follow the exposure.** They are fixed at 10, 50 or 100 s per frame
-  depending on the caller, so a longer exposure times out; the custom scan offers up to 128 s.
-- **`setgain` fails** with AttributeError: it calls `set_image_and_gain`, which `PIXISCamera`
-  does not have. The gain stays at the camera default (High).
-- **`setbin` bins both axes.** Horizontal binning shortens the frame while the wavelength axis
-  stays 1024 points long, and the bin factor is passed on as a string.
-- **Commands with no effect:** `camspec` and `camimage` set `acquire_mode`, which nothing
-  reads; `checkfan` and `autotemp` do nothing.
-- **Dead code sized for the Tucsen:** `simulation.py` (`SimulatedCamera`, 2048x148, and its
-  helpers), `Microscope.camera_set_acquisition_time` (uses `self.camera.cam`, which does not
-  exist), `start_camera_ui`.
-- The initial wavelength axis `np.arange(roi[0], roi[2])` is wrong once the ROI has an x offset.
-- `SimulatedPicamDevice` ignores ROI and binning, so the tests cannot catch the `setbin` mismatch.
-- The ADC runs at 2 MHz. The 100 kHz rate has lower read noise; worth testing once the ROI and
-  binning are set, since the readout time then matters much less.
+- The ADC runs at 2 MHz. The 100 kHz rate has lower read noise; worth comparing on the bench now
+  that the ROI makes the readout time much smaller.
+- The camera ROI is stored in `microscope_config.json`, which is tracked in git, although it
+  belongs to one rig (where its slit image falls). The repository keeps other per-machine state
+  out of git (`.gitignore`, MODERNIZATION.md 3.5); decide where it should live.
 
 ### Wavelength axis calibration: still open
 
@@ -51,6 +34,49 @@ reached the camera (fixed 2026-11-06, below).
   mercury is identification-only. If argon and the Raman signal also light the slit
   differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
   against a known Raman line once the axis is settled.
+
+## PIXIS camera: ROI and binning, timeouts, gain; Tucsen leftovers removed (2026-11-11)
+
+Branch `feature/pixis-camera-settings`. The Tucsen start-up applied binning, gain, the region of
+interest (ROI), the set point and the fan; the PIXIS port kept only the set point (fixed
+2026-11-06). These were found by review and on Riley's walks (the slit image at rows 567-818 of
+frames that were full height although the software said 100 rows).
+
+- **The ROI reaches the camera.** `camera.roi = (0, 0, 1024, 100)` existed only in software: the
+  CCD read all 1024 rows (0.56 s per frame at 2 MHz) and every saved point was a full 1024x1024
+  frame. The ROI is now a `SpectralRoi` (`pixisspec/spectral_roi.py`): sensor rows, all columns,
+  and how many rows are binned on the chip. It is set through pylablib's validated `set_roi`,
+  read back, stored in `microscope_config.json`, and set again at start-up.
+- **ROI by hand or automatically.** `roi <first> <last>`, or the live viewer's new **Use selection
+  as ROI**, sets the rows by hand, as should be done before collecting data; `roi auto` / **Auto
+  ROI** finds the slit image on a full-sensor frame (and reports its tilt), for alignment, when it
+  moves. Data taken without a hand-set ROI is flagged in the log. `speccal` and `speccalzero`
+  check the slit image first, record it with the walk, and set an automatic ROI if the ROI misses
+  it.
+- **Software or on-chip binning** (`roi binning software|onchip`, a box in the live viewer):
+  every ROI row read out, or the rows summed on the CCD for the least read noise.
+- **`setbin` bins rows only** (`setbin N|all`). It binned both axes, which shortened the spectrum
+  while the wavelength axis stayed 1024 points long, and passed the factor on as a string.
+- **Every saved file records the camera readout** (`metadata['camera']`): the ROI as chosen and
+  as the camera reports it, binning, exposure, gain, ADC speed, sensor temperature and set point.
+  Calibration walks record it too.
+- **Frame timeouts follow the exposure.** They were fixed at 10, 50 or 100 s per frame depending
+  on the caller, so a longer exposure timed out; a frame is now waited for at least its exposure
+  plus 30 s. The software sets no upper limit on the exposure; one the camera clips is reported,
+  and `caminfo` lists the camera's allowed range.
+- **`setgain low|medium|high` works.** It failed with AttributeError (`set_image_and_gain` does
+  not exist on `PIXISCamera`), so the gain stayed at the camera default (High).
+- **The initial wavelength axis** used `np.arange(roi[0], roi[2])`, wrong once the ROI has a
+  column offset.
+- **The simulated camera honours the ROI and binning.** The simulated scene is the whole sensor
+  with the slit image at row ~800 (tilt settable), and the simulated device cuts out and bins the
+  ROI as the CCD does, so the tests see what the bench sees.
+- **Removed (Tucsen leftovers; git history keeps them):** the commands `camspec` and `camimage`
+  (they set `acquire_mode`, which nothing read), `checkfan` and `autotemp` (no-ops on the PIXIS);
+  `SimulatedCamera` (2048x148) and the broken `get_simulated_hardware` /
+  `inject_simulated_hardware` in `simulation.py`; `Microscope.camera_set_acquisition_time` (used
+  `self.camera.cam`, which does not exist) and `start_camera_ui`; the fan, image-processing,
+  denoise and resolution stubs and the debugging helpers that mirrored the Tucsen class.
 
 ## Wavelength axis calibration: lines identified by pattern, gate checks, quick re-zero (2026-11-11)
 
