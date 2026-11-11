@@ -360,8 +360,12 @@ Features and follow-ups agreed or proposed, not yet built. Open defects are in
 - **ADC speed option (100 kHz / 2 MHz).** Lower read noise at 100 kHz; the readout of a small
   ROI is short enough that the slower rate costs little. Compare dark frames on the bench, then
   add a command and the live viewer box next to the binning one.
-- **Where the camera ROI is stored.** Now `microscope_config.json` (tracked); it is per-rig
-  state like `instrument_state.json` (untracked).
+- **Untrack the camera ROI.** It is stored in `microscope_config.json` for now (decided
+  2026-11-11), but it is per-rig state (where this camera's slit image falls), like
+  `instrument_state.json`: every ROI change shows as a local edit on the lab PC, and a committed
+  value would tell another rig its slit image is somewhere it is not. Move `camera_roi` to an
+  untracked per-machine file (one path in `Microscope._apply_camera_roi` /
+  `apply_stored_camera_roi`), keeping the tracked config for shared settings.
 - **Per-walk dispersion check** in the walk-agreement gate (`calibration_checks.py`): two walks
   minutes apart differed by ~0.06 % in dispersion on 2026-11-10 and 2026-11-11 (RAM-F1, RAM-F2)
   and no gate said so.

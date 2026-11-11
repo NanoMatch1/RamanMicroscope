@@ -14,8 +14,8 @@ dated section of the change that fixes it.
 - The ADC runs at 2 MHz. The 100 kHz rate has lower read noise; worth comparing on the bench now
   that the ROI makes the readout time much smaller.
 - The camera ROI is stored in `microscope_config.json`, which is tracked in git, although it
-  belongs to one rig (where its slit image falls). The repository keeps other per-machine state
-  out of git (`.gitignore`, MODERNIZATION.md 3.5); decide where it should live.
+  belongs to one rig (where its slit image falls). Kept there for now; to be moved to an
+  untracked per-machine file (MODERNIZATION.md, "Planned work").
 
 ### Wavelength axis calibration: still open
 
