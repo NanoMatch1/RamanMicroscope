@@ -45,6 +45,14 @@ spectrum one way. So:
    ~0.005 nm; a misidentified line is off by ~1 nm, so this check has a margin
    of ~100. A frame with one line is accepted when the rest of the walk fixes
    the pattern and no other listed line is within reach.
+6. Frames the trend does not reach are identified from their neighbours,
+   working outward from the identified frames (_identify_frames_outward).
+   The trend is straight along the walk, but the prior calibration can bend
+   away from it at the ends: on 2026-11-11 it was off by 0.5-1.7 nm in the
+   last frames of every walk, beyond `frame_wander_nm`, so those frames
+   failed and the fit had to extrapolate there (lab notebook RAM-F2). Each
+   such frame is searched within `frame_wander_nm` of the offset its two
+   nearest identified frames predict, and must pass the same checks.
 
 Only lines marked usable_as_reference, unsaturated, away from the chip edges
 and not blended with a listed neighbour become LineObservations. Their centre
@@ -328,15 +336,83 @@ def identify_walk(frames, catalogue_lines, prior_model, number_of_pixels=1024, s
                                      number_of_pixels, settings)
     walk_shape = _walk_map_shape(first_pass.frames, number_of_pixels)
     if walk_shape is None:
+        _identify_frames_outward(first_pass.frames, frames, frames_peaks, catalogue_lines,
+                                 prior_model, number_of_pixels, settings)
         return first_pass
     narrow_settings = replace(settings, search_half_width_nm=2.0, trend_change_limit_nm=1.0,
                               dispersion_scale_limit=0.001)
     second_pass = _identify_walk_once(frames, frames_peaks, catalogue_lines, walk_shape,
                                       number_of_pixels, narrow_settings)
+    _identify_frames_outward(second_pass.frames, frames, frames_peaks, catalogue_lines, walk_shape,
+                             number_of_pixels, narrow_settings)
     return replace(second_pass, trend_offset_nm=first_pass.trend_offset_nm,
                    trend_change_nm=first_pass.trend_change_nm, trend_score=first_pass.trend_score,
                    runner_up_score=first_pass.runner_up_score,
                    runner_up_offset_nm=first_pass.runner_up_offset_nm, settings=settings)
+
+
+def _offset_at_chip_centre(frame_result, prior_model, centre_pixel):
+    """How far the frame's own map sits from the prior calibration, at the chip centre (nm)."""
+    prior_at_centre = float(_prior_wavelengths(prior_model, [centre_pixel],
+                                               frame_result.triax_steps, 0.0, centre_pixel)[0])
+    return frame_result.frame_map_coefficients[0] - prior_at_centre
+
+
+def _predicted_offset(triax_steps, identified_offsets):
+    """
+    The prior's offset at `triax_steps` from the two identified frames nearest to it: a straight
+    line through them (interpolating or extrapolating), or the one frame's offset if only one.
+    """
+    nearest = sorted(identified_offsets, key=lambda steps: abs(steps - triax_steps))[:2]
+    if len(nearest) == 1 or nearest[0] == nearest[1]:
+        return identified_offsets[nearest[0]]
+    slope = ((identified_offsets[nearest[1]] - identified_offsets[nearest[0]])
+             / (nearest[1] - nearest[0]))
+    return identified_offsets[nearest[0]] + slope * (triax_steps - nearest[0])
+
+
+def _identify_frames_outward(frame_results, frames, frames_peaks, catalogue_lines, prior_model,
+                             number_of_pixels, settings):
+    """
+    Step 6 of the module docstring: re-try the frames the walk trend did not reach, nearest to an
+    identified frame first, each from the offset its two nearest identified frames predict.
+    A frame identified this way joins the neighbours of the next. `frame_results` is updated in
+    place.
+    """
+    centre_pixel = _chip_centre(number_of_pixels)
+    line_wavelengths = np.array([line.apparent_wavelength_nm for line in catalogue_lines])
+    retry_statuses = (NOT_IDENTIFIED, TOO_FEW_LINES, INCONSISTENT)
+    tried = set()
+    while True:
+        identified_offsets = {result.triax_steps: _offset_at_chip_centre(result, prior_model,
+                                                                         centre_pixel)
+                              for result in frame_results
+                              if result.identified and result.frame_map_coefficients}
+        if len(identified_offsets) < 2:
+            return
+        candidates = [index for index, result in enumerate(frame_results)
+                      if result.status in retry_statuses and index not in tried]
+        if not candidates:
+            return
+        index = min(candidates, key=lambda index: min(
+            abs(frame_results[index].triax_steps - steps) for steps in identified_offsets))
+        tried.add(index)
+        old_result = frame_results[index]
+        predicted_offset = _predicted_offset(old_result.triax_steps, identified_offsets)
+        retried = _identify_frame(frames[index], old_result.peaks, old_result.strong_peaks,
+                                  predicted_offset, catalogue_lines, line_wavelengths, prior_model,
+                                  centre_pixel, number_of_pixels, settings)
+        if retried.status == TOO_FEW_LINES and retried.single_line_is_unique \
+                and not retried.unexplained_strong_peaks:
+            retried.status = IDENTIFIED
+            _make_observations(retried, catalogue_lines, number_of_pixels, settings)
+        if not retried.identified:
+            continue
+        retried.reasons = [f"identified from its neighbouring frames: "
+                           f"{predicted_offset - old_result.trend_offset_nm:+.2f} nm off the "
+                           f"walk trend (was: {old_result.status})"]
+        frame_results[index] = retried
+        tried = set()  # a new neighbour: frames that failed before may now be reached
 
 
 def _walk_map_shape(frame_results, number_of_pixels):

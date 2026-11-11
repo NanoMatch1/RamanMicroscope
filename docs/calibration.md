@@ -235,7 +235,10 @@ is the same for every point.
 (`wavelength_calibration/line_identification.py`):
 
 1. Every peak in every spectrum is found and fitted (a Gaussian on a
-   constant, in pixels).
+   constant, in pixels). A fit whose centre runs more than 1.5 pixels from
+   the peak it started on is dropped: on broad lines, a bump on a bright
+   line's wing was otherwise fitted as a false peak 2-3 pixels from the line
+   (2026-11-11).
 2. For each frame and each wavelength offset of the calibration in use
    (+/-12 nm), count how many of the frame's strong peaks would then sit
    within 0.15 nm of a line in the table.
@@ -258,6 +261,13 @@ is the same for every point.
    blended peak) is dropped from that frame with the reason recorded. A frame
    with one line is used when the rest of the walk fixes the pattern and no
    other listed line is within reach.
+6. Frames the trend doesn't reach are tried again from their neighbours,
+   working outward from the identified frames: each is searched around the
+   offset its two nearest identified frames predict. The calibration in use
+   can bend away from a straight trend at the ends of the walk (on
+   2026-11-11 it was 0.5-1.7 nm off in the last frames), and without this
+   step those frames failed and the fit extrapolated over them. Such frames
+   pass the same checks, and the report says they were identified this way.
 
 Only confirmed reference lines that are unsaturated, at least 15 pixels from
 the chip edges and not blended with a listed neighbour become measurements.
@@ -314,7 +324,7 @@ Most of them read the residuals split in two:
 | line bias | one line consistently off the others (wrong table value, a blend, another species) |
 | TRIAX shape | the TRIAX polynomial too stiff (the report gives the order the data needs) or the drive itself |
 | walk agreement | the TRIAX zero moving between walks, walks not repeating, a walk drifting as the instrument warms up |
-| coverage | lines seen too rarely, TRIAX ranges with no identified frame |
+| coverage | lines seen too rarely, gaps, unidentified frames at a walk's ends (extrapolated) |
 | saturation | reference lines lost to saturation, with the exposure used |
 | fit statistics | chi-squared, and what it is measuring |
 | change from calibration in use | a big change (check the grating calibrations afterwards) |
@@ -372,8 +382,12 @@ status (`NOT APPLIED`, `NOT APPLIED: a gate check failed`, or `APPLIED`
 with the master file and its backup), every gate with its evidence and
 advice, the fitted terms, each walk's frame-by-frame identification, every
 residual, and the model. An applied model names its report in its metadata
-(`fit_report`) and stores the TRIAX position table for the re-zero
-(`triax_position_offsets_nm`).
+(`fit_report`), stores the TRIAX position table for the re-zero
+(`triax_position_offsets_nm`), and records the TRIAX range it was fitted over
+(`calibrated_triax_drive_steps`). Outside that range the TRIAX polynomial is
+extrapolated, and the application logs a warning whenever the TRIAX is
+there: on 2026-11-11 an order-5 fit was off by up to 1.7 nm within 4000
+steps of its last fitted position.
 
 **The fit plot** (`speccalfit ... plot`, `speccalapply ... plot`, or
 `--plot` on the command line) is saved next to the report, with the same

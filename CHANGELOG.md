@@ -126,6 +126,23 @@ What caused it, and what changed:
   plotting the residuals by hand in a spreadsheet to see them.
 - **`speccal arhg samples=N`** sets how many places on the chip each line is seen at (default
   6). A denser walk shows how the TRIAX behaves between the usual positions.
+- **Fixed: false peaks 2-3 px from bright lines** (Riley's 2026-11-11 walks). On broad lines, a
+  bump on a line's wing was fitted in a 3 px window and the Gaussian climbed the bright line's
+  flank to the window edge. Those false peaks counted as unexplained, failed frames, and in one
+  frame at the chip edge one was taken for Ar 811.531 three pixels from the real line, failing
+  the CCD-axis gate. A fit that runs more than 1.5 px from its starting peak is now dropped.
+- **Fixed: the last frames of a walk were not identified** when the calibration in use bent away
+  from the walk's straight trend there (0.5-1.7 nm on 2026-11-11), so the fit stopped short of the
+  walk's end and extrapolated beyond it. Such frames are now identified from their neighbouring
+  frames. A model also records the TRIAX range it was fitted over
+  (`calibrated_triax_drive_steps`), the coverage gate warns when frames at a walk's ends go
+  unidentified, and the application warns when the TRIAX is outside the fitted range. A
+  calibration applied on 2026-11-11 (fitted before this fix) is off by up to 1.7 nm above ~117000
+  steps; refit and re-apply it.
+- **Walk metadata:** the camera's `roi` was recorded from a software attribute that start-up
+  never sends to the camera, so it read `[0, 0, 1024, 100]` while the frames were full height.
+  It is now recorded as `roi_setting_in_software`, and each frame records the shape the camera
+  actually returned (`frame_shape`).
 
 On the 2026-11-10 data, re-identified: the CCD axis agrees to 0.007 nm within frames, the walks
 repeat to ~0.03 nm (3 TRIAX steps) apart from a first walk that drifted by up to 0.19 nm at its

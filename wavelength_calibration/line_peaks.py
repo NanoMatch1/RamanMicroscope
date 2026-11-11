@@ -164,7 +164,7 @@ def fit_line_peak(spectrum, approximate_pixel, half_window_pixels=12):
 
 
 def find_and_fit_peaks(spectrum, minimum_signal_to_noise=10.0, saturation_level=None,
-                       half_window_pixels=5):
+                       half_window_pixels=5, maximum_centre_shift_pixels=1.5):
     """
     Every peak in a spectrum, fitted, brightest first.
 
@@ -173,6 +173,13 @@ def find_and_fit_peaks(spectrum, minimum_signal_to_noise=10.0, saturation_level=
     window reaches `saturation_level` is kept, marked saturated: it still
     helps identify the frame, but its centre is biased and is never used as a
     measurement. Peaks too close to the chip edge to fit are left out.
+
+    A fit whose centre ends more than `maximum_centre_shift_pixels` from the
+    candidate's own maximum is left out too: it did not find a peak there. A
+    small bump on a bright line's wing is a candidate; with its window
+    narrowed to 3 px the Gaussian climbs the bright line's flank and stops at
+    the window edge, which looked like a satellite line 2-3 px from every
+    bright line in the 2026-11-11 walks (lab notebook RAM-F2).
     """
     spectrum = np.asarray(spectrum, dtype=float)
     candidate_pixels = find_line_peaks(spectrum, minimum_signal_to_noise=minimum_signal_to_noise)
@@ -182,7 +189,7 @@ def find_and_fit_peaks(spectrum, minimum_signal_to_noise=10.0, saturation_level=
         nearest_other = min((abs(other - pixel) for other in other_pixels), default=np.inf)
         window = int(max(3, min(half_window_pixels, nearest_other // 2)))
         fit = fit_line_peak(spectrum, pixel, half_window_pixels=window)
-        if fit is None:
+        if fit is None or abs(fit.centre_pixel - pixel) > maximum_centre_shift_pixels:
             continue
         window_values = spectrum[max(0, pixel - window):pixel + window + 1]
         saturated = saturation_level is not None and \

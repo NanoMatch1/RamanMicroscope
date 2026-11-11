@@ -548,6 +548,26 @@ def test_speccal_samples_and_speccalfit_plot():
         assert plot_name == os.path.splitext(report_name)[0] + '.png'
 
 
+def test_applied_axis_warns_outside_its_fitted_triax_range():
+    """An applied calibration records the TRIAX range it was fitted over and the frame shape the
+    camera returned; the application warns when the TRIAX goes beyond that range."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        line_walk_path = run_command('speccal arhg samples=4')
+        with open(line_walk_path) as file:
+            first_frame_conditions = json.load(file)['position_records'][0]['conditions']
+        assert first_frame_conditions['frame_shape'][-1] == len(microscope.wavelength_axis)
+        assert run_command('speccalapply curvature triaxquadratic') is not None
+        model = microscope.calibration_service.wavelength_axis_model
+        first_steps, last_steps = model.metadata['calibrated_triax_drive_steps']
+        microscope._extrapolation_warned_at = None
+        microscope.calculate_spectrometer_wavelength(steps=(first_steps + last_steps) // 2)
+        assert microscope._extrapolation_warned_at is None, "no warning inside the range"
+        microscope.calculate_spectrometer_wavelength(steps=last_steps + 3000)
+        assert microscope._extrapolation_warned_at == last_steps + 3000
+        microscope.calculate_spectrometer_wavelength()
+
+
 def test_speccalapply_refuses_when_a_gate_fails():
     """A walk recorded in simulate mode must not become a real calibration: refuse, and say why."""
     microscope = get_interface().microscope

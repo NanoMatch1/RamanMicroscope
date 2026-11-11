@@ -12,8 +12,10 @@ method and line table, and gives each walk its own TRIAX zero (the latest walk
 sets the stored one). The fit report holds the gate checks
 (calibration_checks), each walk's frame-by-frame identification and every
 residual, so a failed calibration can be diagnosed from the report alone.
-An applied model names its report in its metadata ('fit_report') and carries
-the TRIAX position table the quick re-zero needs ('triax_position_offsets_nm').
+An applied model names its report in its metadata ('fit_report'), carries
+the TRIAX position table the quick re-zero needs ('triax_position_offsets_nm'),
+and the TRIAX range it was fitted over ('calibrated_triax_drive_steps'), outside
+which the application warns that the axis is extrapolated.
 """
 
 from dataclasses import asdict, dataclass
@@ -26,7 +28,8 @@ from .calibration_checks import (CalibrationEvidence, any_failed, decompose_fit_
                                  format_check_report, run_checks)
 from .line_walk import identify_saved_walk, load_line_walk
 from .triax_zero import POSITION_TABLE_KEY
-from .wavelength_axis_model import CalibrationFitError, WavelengthAxisModel, fit_wavelength_axis
+from .wavelength_axis_model import (CALIBRATED_RANGE_KEY, CalibrationFitError, WavelengthAxisModel,
+                                    fit_wavelength_axis)
 
 MASTER_GROUP_NAME = 'wavelength_axis'
 
@@ -92,6 +95,8 @@ def fit_and_check_line_walk_files(line_walk_paths, current_model, fit_options=No
         fit.model.metadata[POSITION_TABLE_KEY] = {
             str(int(steps)): round(offset, 4)
             for steps, offset in decompose_fit_residuals(fit).position_offsets_nm.items()}
+        fitted_steps = [observation.triax_steps for observation in fit.observations]
+        fit.model.metadata[CALIBRATED_RANGE_KEY] = [int(min(fitted_steps)), int(max(fitted_steps))]
     except CalibrationFitError as error:
         fit_error = str(error)
 

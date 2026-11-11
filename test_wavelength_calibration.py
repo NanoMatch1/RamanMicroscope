@@ -478,10 +478,14 @@ import functools
 import os
 
 from wavelength_calibration.calibration_checks import (FAIL, PASS, WARN, CalibrationEvidence,
-                                                       CheckLimits, check_triax_shape,
-                                                       check_unexplained_peaks, check_walk_data,
-                                                       decompose_fit_residuals, run_checks)
-from wavelength_calibration.line_identification import IDENTIFIED, merge_coincident_lines
+                                                       CheckLimits, check_coverage,
+                                                       check_triax_shape, check_unexplained_peaks,
+                                                       check_walk_data, decompose_fit_residuals,
+                                                       run_checks)
+from wavelength_calibration.line_identification import (IDENTIFIED, NOT_IDENTIFIED,
+                                                        merge_coincident_lines)
+from wavelength_calibration.line_peaks import find_and_fit_peaks
+from wavelength_calibration.wavelength_axis_model import CALIBRATED_RANGE_KEY
 from wavelength_calibration.line_walk import identify_saved_walk, load_line_walk
 from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
 from wavelength_calibration.promotion import (FitOptions, WalkFitOutcome,
@@ -785,3 +789,76 @@ def test_triax_step_offset_shifts_the_model_in_steps_only():
 def test_software_version_is_unknown_outside_a_clone(tmp_path):
     version = software_version(tmp_path)
     assert version['commit'] == 'unknown' and version['branch'] == 'unknown'
+
+
+def test_a_bump_on_a_bright_line_wing_is_not_fitted_as_a_satellite():
+    """
+    2026-11-11 (RAM-F2): a small bump on a broad line's wing became a candidate, its fit window
+    shrank to 3 px, and the Gaussian climbed the bright line to the window edge: a false peak
+    2-3 px from every bright line. Riley's counts around Ar 811.531 (walk 14:24, TRIAX 100858)
+    reproduce it; only the line itself may be reported.
+    """
+    riley_counts_823_to_839 = [391, 393, 463, 487, 465, 602, 1045, 1529, 1639, 1494, 1307, 1045,
+                               775, 610, 512, 435, 391]
+    spectrum = 391.0 + np.random.default_rng(4).normal(0.0, 5.0, 1024)
+    spectrum[823:840] = riley_counts_823_to_839
+    without_check = find_and_fit_peaks(spectrum, maximum_centre_shift_pixels=np.inf)
+    assert len(without_check) == 2, "the test spectrum must reproduce the artefact"
+    peaks = find_and_fit_peaks(spectrum)
+    assert len(peaks) == 1
+    assert peaks[0].centre_pixel == pytest.approx(831.4, abs=0.1)
+
+
+def test_frames_beyond_the_walk_trend_are_identified_from_their_neighbours():
+    """
+    2026-11-11 (RAM-F2): the TRIAX bent away from the walk's smooth trend at its ends (0.5-1.7 nm
+    in the last frames), so those frames failed. Identified outward from their neighbours, every
+    frame with lines must be identified, with the right lines.
+    """
+    def drive_bending_at_the_walk_ends(triax_steps):
+        return 1.7 * ((np.asarray(triax_steps, dtype=float) - 104_000.0) / 17_000.0) ** 8
+
+    lamp = realistic_lamp(drive_error=drive_bending_at_the_walk_ends)
+    result = walk_with(lamp)
+    frames_with_lines = [frame for frame in result.identification.frames
+                         if frame.status != 'NO LINES']
+    assert all(frame.identified for frame in frames_with_lines), \
+        [frame.summary() for frame in frames_with_lines if not frame.identified]
+    assert any('neighbouring frames' in ' '.join(frame.reasons) for frame in frames_with_lines), \
+        "the walk ends must need the outward pass, or the test does not test it"
+    for observation in result.observations:
+        true_pixel = lamp.true_model.pixel_of_wavelength(
+            observation.apparent_wavelength_nm - lamp.triax_drive_error_nm(observation.triax_steps),
+            observation.triax_steps)
+        assert abs(observation.centre_pixel - true_pixel) < 0.3, f"{observation.line_name} is wrong"
+
+
+def test_fitted_range_is_stored_and_an_unfitted_walk_end_is_reported(tmp_path):
+    """The model knows the TRIAX range it was fitted over; frames past it make coverage WARN."""
+    walk_path = tmp_path / 'linewalk_range.json'
+    save_line_walk(walk_path, walk_with(realistic_lamp(), samples_per_line=3), shipped_model(),
+                   reference_kind='arhg', instrument={'simulate': True})
+    outcome = fit_and_check_line_walk_files(
+        [str(walk_path)], shipped_model(), FitOptions(curvature=True, triax_polynomial_order=2),
+        running_in_simulate_mode=True)
+    model = outcome.fit.model
+    first_steps, last_steps = model.metadata[CALIBRATED_RANGE_KEY]
+    assert model.steps_outside_calibrated_range((first_steps + last_steps) / 2) == 0.0
+    assert model.steps_outside_calibrated_range(last_steps + 500) == pytest.approx(500)
+    assert model.steps_outside_calibrated_range(first_steps - 200) == pytest.approx(200)
+    coverage = [result for result in outcome.check_results if result.name == 'coverage'][0]
+    assert coverage.verdict == PASS, coverage.details
+
+    identification = outcome.evidence.identifications[0]
+    last_frame = max(identification.identified_frames, key=lambda frame: frame.triax_steps)
+    last_frame.status = NOT_IDENTIFIED  # as if the walk's last frame had failed
+    kept = [observation for observation in outcome.fit.observations
+            if observation.triax_steps != last_frame.triax_steps]
+    fit_without_end = fit_wavelength_axis(kept, triax_polynomial_order=2,
+                                          fit_dispersion_curvature=True,
+                                          separate_triax_from_ccd=True)
+    coverage = check_coverage(evidence_for(identification, fit=fit_without_end), CheckLimits())
+    assert coverage.verdict == WARN
+    assert 'extrapolated' in coverage.summary
+    assert any(str(last_frame.triax_steps) in detail for detail in coverage.details)
+

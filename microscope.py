@@ -29,6 +29,7 @@ from wavelength_calibration.scatter_export import export_scatter_csv, new_export
 from wavelength_calibration.simulated_line_lamp import (SimulatedLineLamp, default_true_model,
                                                         realistic_line_amplitudes)
 from wavelength_calibration.triax_zero import run_triax_zero, write_zero_report, zero_evidence
+from wavelength_calibration.wavelength_axis_model import CALIBRATED_RANGE_KEY
 
 def enforce_response(func, expected_response=True, callback=None):
     """
@@ -1739,7 +1740,9 @@ class Microscope(Instrument):
                 'exposure_s': read(lambda: camera.get_exposure_time(report=False)),
                 'frames_averaged': read(
                     lambda: self.interface.acq_ctrl.general_parameters['n_frames']),
-                'roi': read(lambda: list(camera.roi)),
+                # The software's ROI attribute, which start-up never sends to the camera: the
+                # frames read are full height (see each frame's 'frame_shape').
+                'roi_setting_in_software': read(lambda: list(camera.roi)),
                 'sensor_temperature_c': read(camera.hardware.get_temperature),
                 'sensor_set_point_c': read(camera.hardware.get_target_temperature),
             },
@@ -1749,14 +1752,16 @@ class Microscope(Instrument):
         }
 
     def _calibration_frame_conditions(self):
-        '''Per-frame conditions the walk records: sensor temperature, the rows of the spectrum.'''
+        '''Per-frame conditions the walk records: sensor temperature, the rows of the spectrum,
+        the shape of the frame the camera returned.'''
         try:
             sensor_temperature_c = self.interface.camera.hardware.get_temperature()
         except Exception:
             sensor_temperature_c = None
         band = getattr(self, '_calibration_row_band', None)
         return {'sensor_temperature_c': sensor_temperature_c,
-                'row_band': list(band) if band else None}
+                'row_band': list(band) if band else None,
+                'frame_shape': getattr(self, '_calibration_frame_shape', None)}
 
     WAVELENGTH_AXIS_FIT_OPTIONS = ('curvature', 'triaxquadratic', 'triaxorder=N', 'fixeddispersion',
                                    'triaxsigma=S', 'plot')
@@ -1977,6 +1982,7 @@ class Microscope(Instrument):
         image_data = self.interface.acq_ctrl._acquire_one_frame()
         if image_data is None:
             raise RuntimeError("Camera returned no frame during the line walk.")
+        self._calibration_frame_shape = [int(size) for size in np.shape(image_data)]
         if getattr(self, '_calibration_row_band', None) is None and np.ndim(image_data) >= 2:
             self._calibration_row_band = slit_image_rows(image_data)
         return collapse_image_to_spectrum(image_data, saturation_level=self.CCD_SATURATION_COUNTS,
@@ -3130,7 +3136,25 @@ class Microscope(Instrument):
             self.spectrometer_position = steps
 
         self.spectrometer_wavelength = self.calibration_service.steps_to_wl({'triax':self.spectrometer_position}) # TODO: rename triax_to_wl to spectrometer_steps_to_wl - requires change to calibration files and will be breaking until otherwise completed
+        self._warn_if_outside_calibrated_range(self.spectrometer_position)
         return self.spectrometer_wavelength
+
+    def _warn_if_outside_calibrated_range(self, triax_steps):
+        '''Warn (once per position) when the TRIAX is beyond the range the axis was fitted over.'''
+        model = getattr(self.calibration_service, 'wavelength_axis_model', None)
+        try:
+            steps_outside = model.steps_outside_calibrated_range(triax_steps) if model else 0.0
+        except (TypeError, ValueError):  # no numeric position (e.g. a failed read)
+            return
+        if not steps_outside or triax_steps == getattr(self, '_extrapolation_warned_at', None):
+            return
+        self._extrapolation_warned_at = triax_steps
+        first_steps, last_steps = model.metadata[CALIBRATED_RANGE_KEY]
+        self.micro_log.warning(
+            f"TRIAX at {triax_steps} steps is {steps_outside:.0f} steps outside the range the "
+            f"wavelength axis was fitted over ({first_steps}..{last_steps}). The axis is "
+            "extrapolated here and can be off by a nm or more; calibrate over this range "
+            "(speccal, speccalfit, speccalapply).")
     
     def report_all_current_positions(self):
         '''Formats and prints the current positions of the microscope.'''

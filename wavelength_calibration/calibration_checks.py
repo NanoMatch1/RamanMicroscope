@@ -632,18 +632,45 @@ def check_coverage(evidence, limits):
                 run = []
             elif frame.status != NO_LINES:
                 run.append(frame.triax_steps)
+    unfitted_ends = _unidentified_walk_ends(evidence.identifications, steps[0], steps[-1])
     if rare:
         details.append(f"seen fewer than {limits.minimum_sightings_per_line} times: "
                        f"{', '.join(rare)}")
     if gaps:
         details.append(f"runs of 2+ unidentified frames: {', '.join(sorted(set(gaps)))}")
-    if not gaps:
+    if unfitted_ends:
+        details.append(f"frames with lines beyond the fitted TRIAX range {steps[0]}..{steps[-1]}, "
+                       f"not identified: {', '.join(unfitted_ends)}")
+    if not gaps and not unfitted_ends:
         return CheckResult('coverage', PASS, "the walk range is covered", details=details)
+    if unfitted_ends:
+        return CheckResult(
+            'coverage', WARN,
+            f"the fit stops at TRIAX {steps[0]}..{steps[-1]}; frames beyond it were not "
+            "identified, so the axis is extrapolated there", details=details,
+            likely_causes=["the calibration in use bends away from the walk at its ends (see "
+                           "'frames identified' for each frame's reason)",
+                           "the lamp lines at the end of the range are weak or saturated"],
+            what_to_try=["read those frames' reasons in the report ('identification by walk')",
+                         "do not rely on the axis outside the fitted range: the model stores it, "
+                         "and the application warns when the TRIAX is beyond it"])
     return CheckResult('coverage', WARN, "part of the TRIAX range has no identified frames",
                        details=details,
                        likely_causes=["the axis is interpolated across the gap; see 'frames "
                                       "identified' for why those frames failed"],
                        what_to_try=["fix the cause and walk again"])
+
+
+def _unidentified_walk_ends(identifications, first_fitted_steps, last_fitted_steps):
+    """'TRIAX a..b' for each run of unidentified frames with lines outside the fitted range."""
+    ends = []
+    for identification in identifications:
+        unidentified = [frame.triax_steps for frame in identification.frames
+                        if frame.status != NO_LINES and not frame.identified]
+        below = sorted(steps for steps in unidentified if steps < first_fitted_steps)
+        above = sorted(steps for steps in unidentified if steps > last_fitted_steps)
+        ends += [f"TRIAX {run[0]}..{run[-1]}" for run in (below, above) if run]
+    return sorted(set(ends))
 
 
 @calibration_check('saturation', applies_to=('fit', 'zero'))

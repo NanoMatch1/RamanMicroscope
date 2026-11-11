@@ -68,6 +68,9 @@ class LineObservation:
         return asdict(self)
 
 
+CALIBRATED_RANGE_KEY = 'calibrated_triax_drive_steps'  # metadata: [first, last] fitted position
+
+
 @dataclass
 class WavelengthAxisModel:
     """Parameters of the wavelength axis; see the module docstring for the equation."""
@@ -95,6 +98,20 @@ class WavelengthAxisModel:
         """Linear dispersion (nm per pixel) at the reference pixel for a TRIAX position."""
         return (self.nm_per_pixel + self.nm_per_pixel_change_per_triax_step
                 * (self.drive_position(triax_steps) - self.dispersion_reference_triax_steps))
+
+    def steps_outside_calibrated_range(self, triax_steps):
+        """
+        How many steps the drive position lies beyond the TRIAX positions the model was fitted
+        over (0 inside, or when the model does not record them). Beyond that range the TRIAX
+        polynomial is extrapolated: on 2026-11-11 an order-5 fit was 0.5-1.7 nm off within 4000
+        steps of its last fitted position (lab notebook RAM-F2).
+        """
+        calibrated_range = self.metadata.get(CALIBRATED_RANGE_KEY)
+        if not calibrated_range:
+            return 0.0
+        drive_steps = float(self.drive_position(triax_steps))
+        first_steps, last_steps = calibrated_range
+        return float(max(first_steps - drive_steps, drive_steps - last_steps, 0.0))
 
     def nm_per_triax_step(self, triax_steps):
         """How far one TRIAX step moves the wavelength on the reference pixel (nm)."""
