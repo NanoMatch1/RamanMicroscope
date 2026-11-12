@@ -121,6 +121,23 @@ def roi_from_camera_readback(camera_roi, previous):
     return SpectralRoi(vstart, vend, vbin, previous.source, previous.set_on)
 
 
+def frame_rows_to_bin(selected_rows, frame_row_count):
+    """
+    The frame rows [first, last) a viewer bins into its spectrum: the selected rows, kept inside
+    the frame, or all of the frame's rows when no selected row is in it. A viewer's selection
+    is in rows of the frame, so when the camera ROI changes (another number of rows, or one row
+    binned on the chip) an old selection can lie outside the new frame; binning no rows gave an
+    empty spectrum (2026-11-12, after 'roi auto').
+    """
+    if selected_rows is None:
+        return 0, frame_row_count
+    first_row = max(0, int(selected_rows[0]))
+    last_row = min(frame_row_count, int(selected_rows[1]))
+    if last_row <= first_row:
+        return 0, frame_row_count
+    return first_row, last_row
+
+
 @dataclass(frozen=True)
 class SlitImage:
     """Where the slit image lies on a full-sensor frame."""
@@ -154,42 +171,161 @@ class SlitImageNotFound(ValueError):
     """The frame shows no slit image (light off or blocked, or the image is off the chip)."""
 
 
-def find_slit_image(frame, first_sensor_row=0, minimum_signal_to_noise=10.0):
+def find_slit_image(frame, first_sensor_row=0, minimum_signal_to_noise=10.0,
+                    maximum_smear_step_fraction=0.5):
     """
-    Locate the slit image on a frame (rows x columns) of the lit slit: lamp lines, laser, or
-    any spectrum. `first_sensor_row` is the sensor row of the frame's first row (0 for a
-    full-sensor frame). Raises SlitImageNotFound if nothing stands out of the noise.
+    Locate the slit image on a frame (rows x columns) of the lit slit: lamp lines or a laser
+    line (light in some columns, not a continuum filling all of them). `first_sensor_row` is
+    the sensor row of the frame's first row (0 for a full-sensor frame). Raises
+    SlitImageNotFound if nothing stands out of the noise, or if the readout smear is too strong
+    against the slit image to place its edges.
 
-    Each column's own background (its median over the rows) is subtracted, the result summed
-    over the columns gives the row profile, and the slit image is the band around its peak down
-    to half the peak. The tilt comes from the centroid row of the brightest columns.
+    Steps:
+    1. Background: each column's median over the rows, then the slope down the rows that all
+       columns share (bias and dark current change from the first row read to the last; on
+       the PIXIS by ~130 counts per pixel at 1 s, 2026-11-12), taken from the darker half of
+       the columns.
+    2. Row profile: the sum of the lit columns only (the dark ones add noise and no signal).
+    3. Noise: from row-to-row differences of the profile, so slow structure (what is left of
+       the slope, readout smear) does not count as noise.
+    4. The slit image is the band around the profile's peak down to half its height, each edge
+       measured from the background on its own side. Readout smear (the PIXIS has no shutter:
+       light keeps landing on the rows while they are shifted out) puts a step in the lit
+       columns' background between the two sides; if the step is more than
+       `maximum_smear_step_fraction` of the slit image's height, the edges cannot be placed
+       and a longer exposure is needed.
+    The tilt comes from the centroid row of the brightest columns.
     """
     frame = np.asarray(frame, dtype=float)
     if frame.ndim != 2 or frame.shape[0] < 5:
         raise SlitImageNotFound(f"need a frame with rows and columns, got shape {frame.shape}")
-    above_background = frame - np.median(frame, axis=0)[None, :]
-    row_profile = np.convolve(above_background.sum(axis=1), np.ones(3) / 3, mode='same')
-    profile_noise = 1.4826 * np.median(np.abs(row_profile - np.median(row_profile)))
+    light = _light_above_background(frame)
+    raw_profile = light[:, _lit_columns(light)].sum(axis=1)
+    row_profile = np.convolve(raw_profile, np.ones(3) / 3, mode='same')
+    # Differences of independent rows have sqrt(2) x their noise; averaging 3 rows divides it
+    # by sqrt(3).
+    profile_noise = 1.4826 * np.median(np.abs(np.diff(raw_profile))) / np.sqrt(6)
     peak_row = int(np.argmax(row_profile))
-    peak = row_profile[peak_row]
-    signal_to_noise = float(peak / max(profile_noise, 1e-9))
+    # First guess of the band from the background either side of the peak, then again with the
+    # background from the rows outside that band only (the first guess counts its wings in). A
+    # side needs 50 rows of its own to count: on a frame of little more than the slit image
+    # (an ROI), the few rows left are its wings, not background.
+    background = _background_either_side(row_profile, peak_row, peak_row + 1)
+    first_row, last_row = _half_height_band(row_profile, peak_row, background)
+    background = _background_either_side(row_profile, first_row, last_row, guard_rows=10,
+                                        minimum_rows=50)
+    first_row, last_row = _half_height_band(row_profile, peak_row, background)
+
+    height = row_profile[peak_row] - max(background)
+    signal_to_noise = float(height / max(profile_noise, 1e-9))
     if signal_to_noise < minimum_signal_to_noise:
         raise SlitImageNotFound(
             f"no slit image: the brightest rows stand only {signal_to_noise:.1f} x the noise "
             f"above the rest (need {minimum_signal_to_noise:.0f}); is the light on and reaching "
             "the spectrograph?")
-    first_row = peak_row
-    while first_row > 0 and row_profile[first_row - 1] >= peak / 2:
-        first_row -= 1
-    last_row = peak_row + 1
-    while last_row < len(row_profile) and row_profile[last_row] >= peak / 2:
-        last_row += 1
+    smear_step = abs(background.after - background.before)
+    if background.both_sides_measured and smear_step > maximum_smear_step_fraction * height:
+        raise SlitImageNotFound(
+            f"the slit image is too faint against the readout smear to find its edges (the "
+            f"background differs by {smear_step / height:.0%} of the slit image's height between "
+            "its two sides: the PIXIS has no shutter, so light lands on the rows while they are "
+            "read out); lengthen the exposure")
 
-    tilt = _slit_image_tilt(above_background, first_row, last_row)
+    tilt = _slit_image_tilt(light, first_row, last_row)
     return SlitImage(peak_row=peak_row + first_sensor_row,
                      first_row=first_row + first_sensor_row,
                      last_row=last_row + first_sensor_row,
                      tilt_rows_per_1000_columns=tilt, signal_to_noise=signal_to_noise)
+
+
+def _light_above_background(frame, row_background_smoothing_rows=25):
+    """
+    The frame less its background: each column's median, then the slope down the rows that all
+    columns share, from the darker half of the columns (smoothed along the rows; it is slow,
+    and every column has it subtracted, so its noise must stay well below a pixel's).
+    """
+    above_column_median = frame - np.median(frame, axis=0)[None, :]
+    column_brightness = _column_brightness(above_column_median)
+    dark_columns = column_brightness <= np.median(column_brightness)
+    row_background = np.median(above_column_median[:, dark_columns], axis=1)
+    if frame.shape[0] > row_background_smoothing_rows:
+        padded = np.pad(row_background, row_background_smoothing_rows // 2, mode='edge')
+        row_background = np.convolve(padded, np.ones(row_background_smoothing_rows)
+                                     / row_background_smoothing_rows, mode='valid')
+    return above_column_median - row_background[:, None]
+
+
+def _column_brightness(above_background, smoothing_rows=15):
+    """How far each column's brightest band of `smoothing_rows` rows stands above the column's
+    median: high in columns crossed by a line, low in dark ones. Averaging the rows first keeps
+    single hot pixels and noise from looking like light."""
+    smoothing_rows = min(smoothing_rows, above_background.shape[0])
+    kernel = np.ones(smoothing_rows) / smoothing_rows
+    smoothed = np.apply_along_axis(lambda column: np.convolve(column, kernel, mode='valid'),
+                                   0, above_background)
+    return smoothed.max(axis=0) - np.median(smoothed, axis=0)
+
+
+def _lit_columns(light, column_signal_fraction=0.3):
+    """Columns at least `column_signal_fraction` as bright as the brightest one."""
+    column_brightness = _column_brightness(light)
+    return column_brightness >= column_signal_fraction * column_brightness.max()
+
+
+@dataclass(frozen=True)
+class _BackgroundEitherSide:
+    """The row profile's background before and after the slit image."""
+
+    before: float
+    after: float
+    both_sides_measured: bool  # False: one side had too few rows, and has the other's value
+
+    def __iter__(self):
+        return iter((self.before, self.after))
+
+
+def _background_either_side(row_profile, first_row, last_row, guard_rows=0, minimum_rows=1):
+    """
+    The profile's median over the rows before `first_row` and after `last_row`, leaving
+    `guard_rows` next to each. A side with fewer than `minimum_rows` rows (the band reaches the
+    frame's edge) takes the other side's value; with neither, the profile's lowest value.
+    """
+    before = row_profile[:max(0, first_row - guard_rows)]
+    after = row_profile[last_row + guard_rows:]
+    before_measured, after_measured = before.size >= minimum_rows, after.size >= minimum_rows
+    if not (before_measured or after_measured):
+        lowest = float(row_profile.min())
+        return _BackgroundEitherSide(lowest, lowest, False)
+    background_before = float(np.median(before)) if before_measured else None
+    background_after = float(np.median(after)) if after_measured else background_before
+    if background_before is None:
+        background_before = background_after
+    return _BackgroundEitherSide(background_before, background_after,
+                                 before_measured and after_measured)
+
+
+def _half_height_band(row_profile, peak_row, background, bridged_gap_rows=15):
+    """
+    [first_row, last_row) around the peak, out to the last rows at half the peak's height
+    above the background on each side. Dust on the slit jaws casts dark rows across the slit
+    image (2026-11-12: a dip to a third of the peak, ~10 rows wide); gaps of up to
+    `bridged_gap_rows` rows below half height are part of the band.
+    """
+    peak = row_profile[peak_row]
+
+    def outermost_row(half_height, step):
+        row = peak_row
+        while True:
+            rows_ahead = [row + step * distance for distance in range(1, bridged_gap_rows + 2)]
+            rows_above = [ahead for ahead in rows_ahead if 0 <= ahead < len(row_profile)
+                          and row_profile[ahead] >= half_height]
+            if not rows_above:
+                return row
+            row = rows_above[0]
+
+    first_row = outermost_row(background.before + (peak - background.before) / 2, -1)
+    last_row = outermost_row(background.after + (peak - background.after) / 2, +1) + 1
+    return first_row, last_row
 
 
 def _slit_image_tilt(above_background, first_row, last_row, column_signal_fraction=0.3):

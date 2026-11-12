@@ -35,6 +35,28 @@ dated section of the change that fixes it.
   differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
   against a known Raman line once the axis is settled.
 
+## PIXIS camera: automatic ROI on real frames, live plotter rows (2026-11-12)
+
+Branch `feature/pixis-camera-settings`, from Riley's first bench test of the ROI commands.
+
+- **`roi auto` finds the slit image at ordinary exposures.** On a 1 s Ar/Hg frame it saw the slit
+  image at 1.8 x the noise (needs 10) where the real figure is ~900: the background climbs ~130
+  counts per pixel from the first row read to the last in every column, and the search took that
+  slow climb for noise. It now removes the climb (from the darker half of the columns), sums only
+  the lit columns, takes the noise from row-to-row differences, places each edge of the slit
+  image against the background on its own side, and bridges dust shadows across the slit image
+  (a ~10-row dip to a third of the peak cut the band in two). On Riley's frames it works from
+  ~0.3 s.
+- **Readout smear is reported instead of guessed through.** The PIXIS has no shutter: lines
+  smear along their columns while the rows are read out (~0.5 s for the full sensor), and the
+  smear does not shrink with the exposure. When the smear step between the two sides of the
+  slit image exceeds half the slit image's height, `roi auto` says to lengthen the exposure.
+- **The live data plotter (`data_viewer_run_me.py`) no longer shows an empty spectrum after the
+  ROI changes.** Its row selection is in rows of the frame; after `roi auto` (or on-chip binning)
+  shrank the frame, the selection lay outside it, the spectrum was empty, and the axis collapsed
+  onto the marker at pixel 50. A frame of a new height now selects all its rows, and a selection
+  outside the frame falls back to all rows.
+
 ## PIXIS camera: ROI and binning, timeouts, gain; Tucsen leftovers removed (2026-11-11)
 
 Branch `feature/pixis-camera-settings`. The Tucsen start-up applied binning, gain, the region of

@@ -27,7 +27,7 @@ from pixisspec.pixiscam import PIXISCamera
 from pixisspec.pixis_hardware import RealHardware
 from pixisspec.simulated_picam_device import SimulatedPicamDevice, SimulatedPicamLibError
 from pixisspec.spectral_roi import (AUTOMATIC, MANUAL, SlitImageNotFound, SpectralRoi,
-                                    find_slit_image)
+                                    find_slit_image, frame_rows_to_bin)
 
 EXPOSURE_S = 0.05
 READOUT_S = 0.02
@@ -400,6 +400,56 @@ def test_no_slit_image_on_a_dark_frame():
     dark = 400 + np.random.default_rng(2).normal(0, 10, (1024, 1024))
     with pytest.raises(SlitImageNotFound):
         find_slit_image(dark)
+
+
+LAMP_LINE_COLUMNS_AND_STRENGTHS = ((183, 0.45), (260, 0.35), (270, 0.35), (385, 0.45),
+                                   (399, 1.0), (593, 0.55), (778, 0.45), (799, 0.6))
+
+
+def lamp_frame_like_2026_11_12(line_peak_counts=500.0, smear_counts=40.0, seed=3):
+    """
+    A full-sensor Ar/Hg lamp frame with what Riley's 2026-11-12 frames showed: a slit image
+    over rows 420-570 with a dust shadow across it at row 480; a background that climbs
+    ~130 counts from the first row to the last in every column; readout smear (no shutter) in
+    the line columns, nothing before the slit image and `smear_counts` x the line after it;
+    read noise 13.6 counts.
+    """
+    rows = np.arange(1024, dtype=float)[:, None]
+    columns = np.arange(1024, dtype=float)[None, :]
+    slit_image_rows = (1 / (1 + np.exp(-(rows - 420) / 3)) / (1 + np.exp((rows - 570) / 3))
+                       * (1 - 0.7 * np.exp(-0.5 * ((rows - 480) / 4) ** 2)))
+
+    lines = sum(strength * np.exp(-0.5 * ((columns - column) / 1.5) ** 2)
+                for column, strength in LAMP_LINE_COLUMNS_AND_STRENGTHS)
+    light = line_peak_counts * slit_image_rows * lines
+    smear = smear_counts * lines * np.clip((rows - 420) / 150, 0, 1)
+    background = 86 + 130 * (1 - np.exp(-rows / 250))
+    return background + light + smear + np.random.default_rng(seed).normal(0, 13.6, light.shape)
+
+
+def test_slit_image_is_found_on_a_lamp_frame_with_background_slope_smear_and_dust():
+    """Riley's 2026-11-12 'roi auto' needed long exposures: the background's climb down the rows
+    was taken for noise (the old search saw 1.8 x the noise on a 1 s frame with S/N ~900)."""
+    slit_image = find_slit_image(lamp_frame_like_2026_11_12(line_peak_counts=150))
+    assert abs(slit_image.first_row - 420) <= 4 and abs(slit_image.last_row - 571) <= 4, \
+        f"the band spans the dust shadow at row 480: {slit_image.describe()}"
+    assert slit_image.signal_to_noise > 20
+    assert abs(slit_image.tilt_rows_per_1000_columns) < 3
+
+
+def test_readout_smear_stronger_than_the_slit_image_asks_for_a_longer_exposure():
+    with pytest.raises(SlitImageNotFound, match='lengthen the exposure'):
+        find_slit_image(lamp_frame_like_2026_11_12(line_peak_counts=60, smear_counts=100))
+
+
+def test_viewer_bins_all_rows_when_its_selection_is_outside_the_frame():
+    """After 'roi auto' shrank the frame, the live plotter's old row selection lay outside it and
+    the spectrum came out empty (2026-11-12)."""
+    assert frame_rows_to_bin((10, 20), 223) == (10, 20)
+    assert frame_rows_to_bin((200, 300), 223) == (200, 223)
+    assert frame_rows_to_bin((495, 505), 223) == (0, 223)
+    assert frame_rows_to_bin((45, 55), 1) == (0, 1), "one row binned on the chip"
+    assert frame_rows_to_bin(None, 1024) == (0, 1024)
 
 
 def test_roi_rows_are_read_out_and_binned_on_the_chip():
