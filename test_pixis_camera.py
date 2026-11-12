@@ -505,6 +505,16 @@ def test_adc_gain_is_set_by_name():
         hardware.close_camera()
 
 
+def test_readout_time_is_recorded_with_the_frame_settings():
+    """Without a shutter the sensor collects light during readout too, so the readout time is
+    needed to know how much light a short exposure really holds."""
+    hardware = real_hardware_on_simulated_device(SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE))
+    try:
+        assert hardware.readout_settings()['readout_time_s'] == pytest.approx(READOUT_S)
+    finally:
+        hardware.close_camera()
+
+
 # ----------------------------------------------------------------------
 # Live viewer: the selected rows become the camera ROI
 # ----------------------------------------------------------------------

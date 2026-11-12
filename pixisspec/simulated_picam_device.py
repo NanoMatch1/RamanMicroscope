@@ -298,6 +298,8 @@ class SimulatedPicamDevice:
     def get_attribute_value(self, name, error_on_missing=True, default=None, enum_as_str=True):
         if name == 'Exposure Time':
             return self.exposure_s * 1e3   # Picam uses milliseconds
+        if name == 'Readout Time Calculation':
+            return self.readout_s * 1e3    # milliseconds, as Picam
         if name == 'Sensor Temperature Reading':
             return max(self.committed_set_point_c, self.coldest_sensor_temperature_c)
         if name == 'Sensor Temperature Status':

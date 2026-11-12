@@ -487,7 +487,7 @@ class AcquisitionControl(QObject):
         parameters in the acquisition control, as well as the current stage position and the
         current laser wavelength.
         'camera' holds the readout as the camera reports it: ROI rows and their binning, exposure,
-        gain, ADC speed, sensor temperature (PIXISCamera.describe_readout).'''
+        readout time, gain, ADC speed, sensor temperature (PIXISCamera.describe_readout).'''
 
         metadata = dict(self.get_all_parameters())
         try:

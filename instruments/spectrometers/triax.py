@@ -6,6 +6,13 @@ from .simulated_triax import SimulatedTriaxSerial
 
 
 class Triax(Instrument):
+    # A TRIAX position repeats only when it is reached from the same side: the drive has
+    # backlash, so the grating angle at a given step count depends on the direction of travel.
+    # The wavelength calibration measures every position going up (the line walk starts
+    # approach_steps=2000 below its first point), so go_to_steps also always arrives going up:
+    # a move down first goes this many steps below the target.
+    APPROACH_STEPS = 2000
+
     def __init__(self, interface, simulate=False):
         super().__init__()
         self.interface = interface
@@ -177,14 +184,25 @@ class Triax(Instrument):
         return response
 
     def go_to_steps(self, target_steps):
-        '''Moves the grating to an absolute position in TRIAX steps and waits for it to arrive. Returns 'S0' on success, 'F0' on failure, None if already there.'''
+        '''Moves the grating to an absolute position in TRIAX steps, always arriving from below
+        as the calibration did (see APPROACH_STEPS), and waits for it to arrive.
+        Returns 'S0' on success, 'F0' on failure, None if already there.'''
         target_steps = int(target_steps)
         triax_steps = self.get_triax_steps()
-        new_steps = target_steps - triax_steps
-        # return if no movement is required
-        if new_steps == 0:
+        if target_steps == triax_steps:
             return
-        
+        if target_steps < triax_steps:
+            approach_from_steps = target_steps - self.APPROACH_STEPS
+            approach_response = self._move_and_wait(approach_from_steps, triax_steps)
+            if approach_response != 'S0':
+                return approach_response
+            triax_steps = approach_from_steps
+        return self._move_and_wait(target_steps, triax_steps)
+
+    def _move_and_wait(self, target_steps, triax_steps):
+        '''One grating move from triax_steps to target_steps, waiting for it to arrive.
+        Returns 'S0' on success, 'F0' on failure, None if the command was not accepted.'''
+        new_steps = target_steps - triax_steps
         self.logger.coms('UNO>g {}>triax'.format(new_steps))
 
         response = self.send_command('mg {}'.format(new_steps))

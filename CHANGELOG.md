@@ -35,6 +35,24 @@ dated section of the change that fixes it.
   differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
   against a known Raman line once the axis is settled.
 
+## TRIAX moves arrive from below; PIXIS readout time recorded (2026-11-12)
+
+Branch `feature/pixis-camera-settings`.
+
+- **`Triax.go_to_steps` always arrives at its target going up**, as the calibration line walk
+  measures every position. A move down first goes `Triax.APPROACH_STEPS` (2000) below the target
+  and comes back up; a move up goes straight there. Before, a move down arrived from above, on
+  the other side of the drive's backlash from the calibration, so `st`/`sall` positions reached
+  that way could sit off the wavelength axis by the backlash (not yet
+  measured). Riley's three walks of 2026-11-12 repeat the TRIAX
+  error to 0.003 nm when approached from below (lab-notebook RAM-F3). `mg` and `sg` remain raw
+  relative moves.
+- **Saved data records the PIXIS readout time** (`readout_time_s` in the `camera` metadata and in
+  a calibration walk's instrument record), the camera's own figure for the current ROI, binning
+  and ADC speed. The PIXIS has no shutter, so the sensor collects light while a frame is read
+  out; at short exposures that adds noticeably to the light in the frame (a "10 ms" on-chip
+  frame held 5.4 times the light of 10 ms on 2026-11-12).
+
 ## PIXIS camera: automatic ROI on real frames, live plotter rows (2026-11-12)
 
 Branch `feature/pixis-camera-settings`, from Riley's first bench test of the ROI commands.

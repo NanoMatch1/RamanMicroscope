@@ -367,8 +367,8 @@ class PIXISCamera(QObject):
         return self.set_spectral_roi(binned_roi)
 
     def describe_readout(self):
-        """For the metadata of saved data: the ROI as chosen and as read back, exposure, gain,
-        ADC speed, sensor temperature."""
+        """For the metadata of saved data: the ROI as chosen and as read back, exposure, readout
+        time, gain, ADC speed, sensor temperature."""
         with self.camera_lock:
             settings = self.hardware.readout_settings()
         return {'spectral_roi': self.spectral_roi.as_dict(),

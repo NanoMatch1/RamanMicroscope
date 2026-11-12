@@ -250,6 +250,35 @@ def test_spectrometer_relative_move_changes_position():
     assert after == before + 500
 
 
+def test_spectrometer_always_arrives_at_a_position_from_below():
+    """The calibration measured every TRIAX position going up, so a move down must overshoot
+    by APPROACH_STEPS and come back up; a move up goes straight there."""
+    spectrometer = get_interface().spectrometer
+    simulated_serial = spectrometer.spectrometer
+    grating_moves = []
+    original_write = simulated_serial.write
+
+    def recording_write(command):
+        if command.startswith('F0,'):
+            grating_moves.append(int(command.split(',')[1]))
+        original_write(command)
+
+    simulated_serial.write = recording_write
+    try:
+        start = run_command('rg')
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert spectrometer.go_to_steps(start - 5000) == 'S0'
+        assert grating_moves == [-5000 - spectrometer.APPROACH_STEPS, spectrometer.APPROACH_STEPS]
+        assert run_command('rg') == start - 5000
+        grating_moves.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert spectrometer.go_to_steps(start) == 'S0'
+        assert grating_moves == [5000]
+        assert run_command('rg') == start
+    finally:
+        simulated_serial.write = original_write
+
+
 def test_spectrometer_slit_is_readable():
     """Entrance slit width should read back as an integer."""
     assert isinstance(run_command('ren'), int)

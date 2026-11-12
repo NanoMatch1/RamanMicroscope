@@ -411,15 +411,23 @@ class RealHardware(CameraHardwareBase):
 
     def readout_settings(self):
         """What a saved frame needs to be interpreted: ROI and binning as set on the camera,
-        exposure, gain, ADC speed, sensor temperature. Unreadable values are None."""
+        exposure, readout time, gain, ADC speed, sensor temperature. Unreadable values are None.
+
+        The PIXIS has no shutter, so the sensor keeps collecting light while a frame is read
+        out: at short exposures a frame holds more light than the exposure alone (a "10 ms"
+        frame on 2026-11-12 held 5.4 times as much), and each line smears along its column.
+        readout_time_s is the camera's own figure for the current ROI, binning and ADC speed
+        (0.58 s for the full sensor at 2 MHz)."""
         def read_attribute(name):
             try:
                 return self._cam.get_attribute_value(name) if self._cam is not None else None
             except Exception:
                 return None
+        readout_time_ms = read_attribute("Readout Time Calculation")
         return {
             'camera_roi_hstart_hend_vstart_vend_hbin_vbin': self.get_roi_on_camera(),
             'exposure_s': self.get_exposure_time(),
+            'readout_time_s': None if readout_time_ms is None else float(readout_time_ms) / 1e3,
             'adc_analog_gain': read_attribute("ADC Analog Gain"),
             'adc_speed_mhz': read_attribute("ADC Speed"),
             'sensor_temperature_c': self.get_temperature(),
