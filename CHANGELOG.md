@@ -4,7 +4,7 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
-## Known issues, to fix before the next merge into develop (found 2026-11-06 to 2026-11-10)
+## Open issues (found 2026-11-06 to 2026-11-12)
 
 Open issues found by review and bench data. When an issue is fixed, its entry moves into the
 dated section of the change that fixes it.
