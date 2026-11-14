@@ -488,7 +488,7 @@ from wavelength_calibration.line_peaks import find_and_fit_peaks
 from wavelength_calibration.wavelength_axis_model import CALIBRATED_RANGE_KEY
 from wavelength_calibration.line_walk import identify_saved_walk, load_line_walk
 from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
-from wavelength_calibration.promotion import (FitOptions, WalkFitOutcome,
+from wavelength_calibration.promotion import (FitOptions, WalkFitOutcome, new_fit_report_path,
                                               fit_and_check_line_walk_files)
 from wavelength_calibration.provenance import software_version
 from wavelength_calibration.reference_lines import ReferenceLine
@@ -862,3 +862,15 @@ def test_fitted_range_is_stored_and_an_unfitted_walk_end_is_reported(tmp_path):
     assert 'extrapolated' in coverage.summary
     assert any(str(last_frame.triax_steps) in detail for detail in coverage.details)
 
+
+
+def test_two_reports_of_one_kind_in_the_same_second_do_not_overwrite(tmp_path):
+    """A TRIAX zero check and the zero that follows it can finish within one second on a fast
+    machine; the second report must get its own name, not replace the first."""
+    import datetime
+    same_second = datetime.datetime(2026, 11, 14, 9, 30, 0)
+    first_path = new_fit_report_path(str(tmp_path), 'triax_zero', now=same_second)
+    open(first_path, 'w').close()
+    second_path = new_fit_report_path(str(tmp_path), 'triax_zero', now=same_second)
+    assert os.path.basename(first_path) == 'triax_zero_20261114_093000.txt'
+    assert os.path.basename(second_path) == 'triax_zero_20261114_093000_2.txt'

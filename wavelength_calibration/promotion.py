@@ -127,16 +127,18 @@ def fit_line_walk_files(line_walk_paths, reference_pixel=50.0, fit_dispersion_cu
     return outcome.fit
 
 
-def new_fit_report_path(report_directory):
-    """A timestamped path for the next fit report (the directory is created)."""
+def new_fit_report_path(report_directory, report_prefix='wavelength_axis_fit', now=None):
+    """A timestamped path for the next report, '<report_prefix>_<YYYYmmdd_HHMMSS>.txt' (the
+    directory is created). A second report of the same kind in the same second gets '_2', '_3'...
+    instead of overwriting the first. now (a datetime) defaults to the current time."""
     os.makedirs(report_directory, exist_ok=True)
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    report_path = os.path.join(report_directory, f'wavelength_axis_fit_{timestamp}.txt')
+    timestamp = (now or datetime.datetime.now()).strftime('%Y%m%d_%H%M%S')
+    report_path = os.path.join(report_directory, f'{report_prefix}_{timestamp}.txt')
     repeat_number = 1
-    while os.path.exists(report_path):  # two fits in the same second must not overwrite
+    while os.path.exists(report_path):
         repeat_number += 1
         report_path = os.path.join(report_directory,
-                                   f'wavelength_axis_fit_{timestamp}_{repeat_number}.txt')
+                                   f'{report_prefix}_{timestamp}_{repeat_number}.txt')
     return report_path
 
 

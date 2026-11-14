@@ -1931,8 +1931,7 @@ class Microscope(Instrument):
                 self.interface.camera.simulated_scene.override_scene = None
         check_results = run_checks(zero_evidence(zero_run, model, instrument, self.simulate,
                                                  len(self.wavelength_axis)))
-        report_path = new_fit_report_path(self.calibration_fit_report_directory)
-        report_path = report_path.replace('wavelength_axis_fit_', 'triax_zero_')
+        report_path = new_fit_report_path(self.calibration_fit_report_directory, 'triax_zero')
         applied_text = None
         if mode == 'apply' and not any_failed(check_results):
             corrected = zero_run.measurement.corrected_model(
