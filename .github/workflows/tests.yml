@@ -43,7 +43,8 @@ jobs:
           echo "Checking $base..HEAD"
           python tools/repo_guard.py range "$base" HEAD
 
-  pytest:
+  pytest-per-version:
+    name: pytest (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -83,4 +84,22 @@ jobs:
           QT_QPA_PLATFORM: offscreen   # no display on a CI runner
           MPLBACKEND: Agg
         run: |
-          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
+          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q
+
+  # The one check the develop ruleset requires ("pytest"). The matrix reports one check per
+  # Python version, named "pytest (3.11)" and so on, so the ruleset would otherwise have to list
+  # every version and be edited whenever the matrix changes. always(): a job skipped because a
+  # job it needs failed would count as passed, so this job runs anyway and fails unless every
+  # version passed.
+  pytest:
+    name: pytest
+    needs: pytest-per-version
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every Python version passed
+        env:
+          PER_VERSION_RESULT: ${{ needs.pytest-per-version.result }}
+        run: |
+          echo "pytest on every Python version: $PER_VERSION_RESULT"
+          test "$PER_VERSION_RESULT" = "success"

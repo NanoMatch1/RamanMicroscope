@@ -1,30 +1,36 @@
 # pixisspec/pixis_hardware.py
 
-import time
-import numpy as np
+from contextlib import contextmanager
+
 from pylablib.devices import PrincetonInstruments
 
 
 class CameraHardwareBase:
-    """Mirror of tucsenspec.camera_hardware.CameraHardwareBase for PIXIS cameras."""
+    """What PIXISCamera needs from a camera backend."""
     def open_stream(self):          raise NotImplementedError
     def close_stream(self):         raise NotImplementedError
     def grab_frame(self):           raise NotImplementedError
+    def acquire_frames(self, frame_count, timeout): raise NotImplementedError
+    def grab_streamed_frame(self, timeout): raise NotImplementedError
     def initialise(self):           raise NotImplementedError
     def set_exposure_time(self, value): raise NotImplementedError
-    def set_image_and_gain(self, img_mode, gain_level): raise NotImplementedError
-    def set_image_processing(self, value): raise NotImplementedError
-    def set_resolution(self, resolution): raise NotImplementedError
-    def set_denoise(self, value):   raise NotImplementedError
-    def set_fan_speed(self, speed): raise NotImplementedError
-    def get_fan_speed(self):        raise NotImplementedError
-    def enable_auto_temperature_control(self, enable): raise NotImplementedError
+    def get_exposure_time(self):    raise NotImplementedError
+    def set_adc_gain(self, gain_name): raise NotImplementedError
     def set_target_temperature(self, target_celsius): raise NotImplementedError
+    def get_target_temperature(self): raise NotImplementedError
     def get_temperature(self):      raise NotImplementedError
-    def set_roi(self, roi_tuple):   raise NotImplementedError
+    def set_roi_and_binning(self, hstart, hend, vstart, vend, hbin, vbin): raise NotImplementedError
+    def get_roi_on_camera(self):    raise NotImplementedError
+    def readout_settings(self):     raise NotImplementedError
     def close_camera(self):         raise NotImplementedError
     def open_camera(self):          raise NotImplementedError
     def uninit_api(self):           raise NotImplementedError
+
+
+def open_pylablib_picam_camera(camera_serial, logger):
+    """Connect to a Princeton Instruments camera through pylablib."""
+    logger.info(f"Available PIXIS cameras: {PrincetonInstruments.list_cameras()}")
+    return PrincetonInstruments.PicamCamera(camera_serial)
 
 
 class RealHardware(CameraHardwareBase):
@@ -32,6 +38,24 @@ class RealHardware(CameraHardwareBase):
     Real hardware interface for Princeton Instruments PIXIS cameras
     using pylablib. Mirrors the structure of tucsenspec.RealHardware
     so that PIXISCamera can use it as a drop-in hardware backend.
+
+    Two ways of taking frames
+    -------------------------
+    ACQUIRE (grab_frame, acquire_frames), the default for everything that records data:
+        an acquisition is started when the frames are requested and stopped once they
+        are read, so every frame is exposed after the request -- after the move that
+        preceded it. The CCD is idle between acquisitions.
+    RUN (open_stream, grab_streamed_frame), for live viewing during alignment only:
+        the CCD free-runs into a ring buffer and the newest frame is returned at once.
+        That frame may have been exposed before the request (measured on the lab PC,
+        2026-11-06: 1.0-1.8 s before it at 0.5 s exposure), which is fine for watching
+        but wrong for data. An acquisition stops a running stream first.
+
+    Frame timeouts
+    --------------
+    A frame is waited for at least its exposure plus FRAME_TIMEOUT_MARGIN_S, whatever timeout
+    the caller passes, so a long exposure (minutes, for weak Raman signals) never times out
+    while it is still exposing. The caller's timeout only matters when it is longer.
 
     Exposure units
     --------------
@@ -41,16 +65,34 @@ class RealHardware(CameraHardwareBase):
     converts internally:
         seconds  →  milliseconds  before writing to the camera
         milliseconds  →  seconds  before returning to the caller
+
+    The pylablib camera object comes from `open_device(serial, logger)`: pylablib's
+    PicamCamera by default, or pixisspec.simulated_picam_device.SimulatedPicamDevice in
+    simulate mode, so the code here runs in tests and simulation as well.
     """
 
     # Serial number of the camera to connect to.
     # Change this to match your physical camera.
     CAMERA_SERIAL = '2712050005'
+    # Ring buffer for both acquire and run; the same parameters mean switching between
+    # them does not make pylablib reallocate the buffer.
+    ACQUISITION_BUFFER_FRAMES = 100
+    # Sensor set point. The PIXIS 1024F here gets to about -43 C (its vacuum is no longer
+    # good enough for the -70 C of the specification), so asking for -50 C runs the cooler
+    # flat out: coldest sensor, least dark current, status "Unlocked". The former -20 C was
+    # the Tucsen's set point, carried over in the port; it held this sensor ~25 C warmer
+    # than it can run (about ten times the dark current).
+    SENSOR_TEMPERATURE_SET_POINT_C = -50.0
+    # Allowance on top of the exposure when waiting for a frame: the readout (0.56 s for the
+    # full sensor at 2 MHz, ~11 s at 100 kHz) plus the start of the acquisition.
+    FRAME_TIMEOUT_MARGIN_S = 30.0
+    ADC_GAIN_NAMES = ('Low', 'Medium', 'High')
 
-    def __init__(self, camera):
+    def __init__(self, camera, open_device=open_pylablib_picam_camera):
         self.camera         = camera
         self.interface      = camera.interface
         self.logger         = camera.logger.getChild('RealHardware')
+        self.open_device    = open_device
         self._stream_open   = False
         self._cam           = None   # pylablib camera object
 
@@ -60,22 +102,18 @@ class RealHardware(CameraHardwareBase):
 
     def initialise(self):
         """
-        Open the camera, apply default settings, and open the stream.
-        Mirrors RealHardware.initialise() in camera_hardware.py.
+        Open the camera and apply default settings. The CCD stays idle until
+        frames are acquired or the live stream is started (run).
         """
         self.open_camera()
         self.set_exposure_time(self.camera.acqtime)   # acqtime is in seconds
-        self.set_target_temperature(-20)
-        self.open_stream()
+        self.set_target_temperature(self.SENSOR_TEMPERATURE_SET_POINT_C)
         self.logger.info("PIXIS camera initialised.")
 
     def open_camera(self):
-        """Connect to the PIXIS camera via pylablib."""
+        """Connect to the PIXIS camera."""
         try:
-            available = PrincetonInstruments.list_cameras()
-            self.logger.info(f"Available PIXIS cameras: {available}")
-
-            self._cam = PrincetonInstruments.PicamCamera(self.CAMERA_SERIAL)
+            self._cam = self.open_device(self.CAMERA_SERIAL, self.logger)
             self.logger.info(f"Connected to PIXIS camera: {self.CAMERA_SERIAL}")
         except Exception as e:
             self.logger.error(f"Failed to open PIXIS camera: {e}")
@@ -91,6 +129,7 @@ class RealHardware(CameraHardwareBase):
                 self.logger.error(f"Error closing PIXIS camera: {e}")
             finally:
                 self._cam = None
+                self._stream_open = False
 
     def uninit_api(self):
         """
@@ -104,7 +143,7 @@ class RealHardware(CameraHardwareBase):
     # ------------------------------------------------------------------
 
     def open_stream(self):
-        """Start acquisition on the PIXIS camera."""
+        """Run mode: start the CCD free-running into the ring buffer (live viewing only)."""
         if self._stream_open:
             self.logger.debug("PIXIS: open_stream() called but stream already open.")
             return
@@ -112,14 +151,14 @@ class RealHardware(CameraHardwareBase):
             self.logger.error("PIXIS: Cannot open stream — camera not connected.")
             return
         try:
-            self._cam.start_acquisition()
+            self._cam.start_acquisition(mode='sequence', nframes=self.ACQUISITION_BUFFER_FRAMES)
             self._stream_open = True
             self.logger.debug("PIXIS stream opened.")
         except Exception as e:
             self.logger.error(f"PIXIS: Failed to open stream: {e}")
 
     def close_stream(self):
-        """Stop acquisition on the PIXIS camera."""
+        """Stop the free-running stream."""
         if not self._stream_open:
             return
         if self._cam is None:
@@ -131,13 +170,24 @@ class RealHardware(CameraHardwareBase):
         except Exception as e:
             self.logger.error(f"PIXIS: Failed to close stream: {e}")
 
+    @contextmanager
+    def _stream_paused(self):
+        """Stop the stream for a settings change; restart it afterwards only if it was running."""
+        was_streaming = self._stream_open
+        self.close_stream()
+        try:
+            yield
+        finally:
+            if was_streaming:
+                self.open_stream()
+
     # ------------------------------------------------------------------
     # Frame acquisition
     # ------------------------------------------------------------------
 
     def grab_frame(self, timeout=50000):
         """
-        Wait for a frame and return it as a numpy array.
+        Acquire one frame exposed after this call (acquire mode).
 
         Parameters
         ----------
@@ -148,19 +198,74 @@ class RealHardware(CameraHardwareBase):
         -------
         np.ndarray or None
         """
+        frames = self.acquire_frames(1, timeout=timeout)
+        return None if frames is None else frames[0]
+
+    def acquire_frames(self, frame_count, timeout=50000):
+        """
+        Acquire `frame_count` frames, all exposed after this call; None on failure.
+
+        A sequence acquisition is started now, the first `frame_count` frames are read,
+        and it is stopped while still running. pylablib's own grab() snaps instead, and
+        with pylablib 1.4.5 its stop_acquisition() can raise
+        PicamError_AcquisitionNotInProgress once a snap has finished by itself (seen on
+        the lab PC, 2026-11-05); stopping a running sequence does not have that problem.
+
+        `timeout` is in milliseconds per frame.
+        """
         if self._cam is None:
-            self.logger.error("PIXIS: grab_frame() called but camera not connected.")
+            self.logger.error("PIXIS: acquire_frames() called but camera not connected.")
             return None
+        if self._stream_open:
+            self.logger.info("PIXIS: stopping the live stream to acquire.")
+            self.close_stream()
         try:
-            timeout_s = timeout / 1000.0
-            self._cam.wait_for_frame(timeout=timeout_s)
+            self._cam.start_acquisition(mode='sequence', nframes=self.ACQUISITION_BUFFER_FRAMES)
+            self._cam.wait_for_frame(since='start', nframes=frame_count,
+                                     timeout=frame_count * self.frame_timeout_s(timeout))
+            frames = self._cam.read_multiple_images(rng=(0, frame_count))
+            if frames is None or len(frames) < frame_count:
+                frames_read = 0 if frames is None else len(frames)
+                self.logger.error(f"PIXIS: acquired {frames_read} of {frame_count} frames.")
+                return None
+            return list(frames)
+        except Exception as e:
+            self.logger.error(f"PIXIS: acquire_frames({frame_count}) failed: {e}")
+            return None
+        finally:
+            try:
+                self._cam.stop_acquisition()
+            except Exception as e:
+                self.logger.warning(f"PIXIS: stopping the acquisition raised: {e}")
+
+    def grab_streamed_frame(self, timeout=50000):
+        """
+        Run mode: the newest frame from the free-running stream, starting the stream if needed.
+
+        Returns at once if a frame is waiting, so the frame may have been exposed before this
+        call. For live viewing only; data must come from grab_frame / acquire_frames.
+        `timeout` is in milliseconds.
+        """
+        if self._cam is None:
+            self.logger.error("PIXIS: grab_streamed_frame() called but camera not connected.")
+            return None
+        if not self._stream_open:
+            self.open_stream()
+        try:
+            self._cam.wait_for_frame(timeout=self.frame_timeout_s(timeout))
             frame = self._cam.read_newest_image()
             if frame is None:
                 self.logger.warning("PIXIS: read_newest_image() returned None.")
             return frame
         except Exception as e:
-            self.logger.error(f"PIXIS: grab_frame() failed: {e}")
+            self.logger.error(f"PIXIS: grab_streamed_frame() failed: {e}")
             return None
+
+    def frame_timeout_s(self, caller_timeout_ms=0):
+        """How long to wait for one frame (s): its exposure plus FRAME_TIMEOUT_MARGIN_S, or the
+        caller's timeout if longer."""
+        exposure_s = self.get_exposure_time() or self.camera.acqtime
+        return max(caller_timeout_ms / 1000.0, exposure_s + self.FRAME_TIMEOUT_MARGIN_S)
 
     # ------------------------------------------------------------------
     # Exposure
@@ -168,15 +273,21 @@ class RealHardware(CameraHardwareBase):
 
     def set_exposure_time(self, value_s):
         """
-        Parameters
-        ----------
-        value_s : float
-            Exposure time in SECONDS — converted to ms for PICAM internally.
+        Set the exposure in SECONDS (Picam takes ms). Returns True if the camera took the value,
+        False otherwise; a value outside the camera's range is clipped by pylablib without a
+        word, so it is read back and a difference is reported.
         """
-        self.close_stream()
-        ms = float(value_s) * 1000.0   # ← correct, keep this
-        self._cam.set_attribute_value("Exposure Time", ms)
-        self.open_stream()
+        if self._cam is None:
+            self.logger.error("PIXIS: set_exposure_time() called but camera not connected.")
+            return False
+        requested_s = float(value_s)
+        with self._stream_paused():
+            self._cam.set_attribute_value("Exposure Time", requested_s * 1000.0)
+        exposure_s = self.get_exposure_time()
+        if exposure_s is not None and abs(exposure_s - requested_s) > 1e-3 * max(1.0, requested_s):
+            self.logger.error(f"PIXIS: asked for a {requested_s:g} s exposure, the camera set "
+                              f"{exposure_s:g} s (outside its range).")
+            return False
         return True
 
     def get_exposure_time(self):
@@ -193,84 +304,35 @@ class RealHardware(CameraHardwareBase):
             return None
 
     # ------------------------------------------------------------------
-    # ROI
+    # ROI and binning
     # ------------------------------------------------------------------
 
-    def set_roi(self, roi_tuple):
+    def set_roi_and_binning(self, hstart, hend, vstart, vend, hbin, vbin):
         """
-        Set the camera ROI.
-
-        Parameters
-        ----------
-        roi_tuple : tuple
-            (HOffset, VOffset, Width, Height) — same convention as Tucsen.
-            Converted to the pylablib ROI named-tuple format internally.
+        Set the region read out and its on-chip binning (pylablib's set_roi, which keeps the ROI
+        on the sensor and trims it to whole bins). Returns what the camera set, as get_roi()'s
+        (hstart, hend, vstart, vend, hbin, vbin), or None if it failed.
         """
         if self._cam is None:
-            self.logger.error("PIXIS: set_roi() called but camera not connected.")
-            return
+            self.logger.error("PIXIS: set_roi_and_binning() called but camera not connected.")
+            return None
         try:
-            self.close_stream()
-
-            h_offset, v_offset, width, height = roi_tuple
-
-            current_rois = self._cam.get_attribute_value("ROIs")
-            roi          = current_rois[0]
-
-            # pylablib ROI namedtuple fields:
-            # (x, width, x_binning, y, height, y_binning)
-            try:
-                new_roi = roi._replace(
-                    x       = h_offset,
-                    width   = width,
-                    y       = v_offset,
-                    height  = height,
-                )
-            except AttributeError:
-                # Fallback: build as plain tuple if _replace unavailable
-                new_roi = (h_offset, width, 1, v_offset, height, 1)
-
-            self._cam.set_attribute_value("ROIs", [new_roi])
-            self.logger.info(f"PIXIS ROI set to {roi_tuple}.")
-            self.open_stream()
+            with self._stream_paused():
+                self._cam.set_roi(hstart, hend, vstart, vend, hbin, vbin)
+            return self.get_roi_on_camera()
         except Exception as e:
-            self.logger.error(f"PIXIS: set_roi() failed: {e}")
+            self.logger.error(f"PIXIS: set_roi_and_binning() failed: {e}")
+            return None
 
-    # ------------------------------------------------------------------
-    # Binning
-    # ------------------------------------------------------------------
-
-    def set_hardware_binning(self, binning_level=1):
-        """
-        Set hardware binning on both axes.
-
-        Parameters
-        ----------
-        binning_level : int
-            Binning factor applied to both X and Y axes.
-        """
+    def get_roi_on_camera(self):
+        """The camera's ROI as (hstart, hend, vstart, vend, hbin, vbin), or None if unreadable."""
         if self._cam is None:
-            self.logger.error("PIXIS: set_hardware_binning() called but camera not connected.")
-            return
+            return None
         try:
-            self.close_stream()
-
-            current_rois = self._cam.get_attribute_value("ROIs")
-            roi          = current_rois[0]
-
-            try:
-                new_roi = roi._replace(
-                    x_binning = binning_level,
-                    y_binning = binning_level,
-                )
-            except AttributeError:
-                new_roi = (0, 1024, binning_level, 0, 1024, binning_level)
-
-            self._cam.set_attribute_value("ROIs", [new_roi])
-            self.logger.info(f"PIXIS binning set to {binning_level}x{binning_level}.")
-            self.open_stream()
+            return tuple(int(value) for value in self._cam.get_roi())
         except Exception as e:
-            self.logger.error(f"PIXIS: set_hardware_binning() failed: {e}")
+            self.logger.error(f"PIXIS: get_roi_on_camera() failed: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # Temperature
@@ -286,6 +348,16 @@ class RealHardware(CameraHardwareBase):
             self.logger.error(f"PIXIS: get_temperature() failed: {e}")
             return None
 
+    def get_target_temperature(self):
+        """Returns the sensor temperature set point in degrees Celsius, or None if unreadable."""
+        if self._cam is None:
+            return None
+        try:
+            return float(self._cam.get_attribute_value("Sensor Temperature Set Point"))
+        except Exception as e:
+            self.logger.error(f"PIXIS: get_target_temperature() failed: {e}")
+            return None
+
     def set_target_temperature(self, target_celsius):
         """
         Set the target sensor temperature.
@@ -298,68 +370,69 @@ class RealHardware(CameraHardwareBase):
             self.logger.error("PIXIS: set_target_temperature() called but camera not connected.")
             return
         try:
-            self._cam.set_attribute_value("Sensor Temperature Set Point", float(target_celsius))
-            self.logger.info(f"PIXIS target temperature set to {target_celsius:.1f} °C.")
+            # Picam keeps written settings until they are committed, and pylablib commits only
+            # when an acquisition is set up or started; commit now so the cooler gets it at once.
+            with self._stream_paused():
+                self._cam.set_attribute_value("Sensor Temperature Set Point", float(target_celsius))
+                self._commit_settings_to_camera()
+            set_point_c = self.get_target_temperature()
+            if set_point_c is not None and abs(set_point_c - float(target_celsius)) > 0.01:
+                # pylablib clips a set point outside the camera's range without saying so
+                self.logger.warning(f"PIXIS: asked for a {target_celsius:.1f} °C set point, "
+                                    f"the camera allows {set_point_c:.1f} °C.")
+            self.logger.info(f"PIXIS target temperature set to {set_point_c} °C.")
         except Exception as e:
             self.logger.error(f"PIXIS: set_target_temperature() failed: {e}")
 
-    def enable_auto_temperature_control(self, enable):
-        """
-        The PIXIS manages its own TEC automatically.
-        This is a stub for interface parity — logs the call but takes no action.
-        """
-        state = "enabled" if enable else "disabled"
-        self.logger.info(f"[PIXIS] Auto temperature control {state} (managed by camera firmware).")
+    def _commit_settings_to_camera(self):
+        """Send written settings to the camera. pylablib commits in setup_acquisition."""
+        self._cam.setup_acquisition(mode='sequence', nframes=self.ACQUISITION_BUFFER_FRAMES)
 
     # ------------------------------------------------------------------
-    # Fan speed — no direct PICAM equivalent
+    # Gain
     # ------------------------------------------------------------------
 
-    def get_fan_speed(self):
-        """
-        The PIXIS has no software-controllable fan speed.
-        Returns a fixed sentinel value (3 = high) for interface parity.
-        """
-        self.logger.debug("[PIXIS] get_fan_speed() — no fan control on PIXIS, returning 3.")
-        return 3
+    def set_adc_gain(self, gain_name):
+        """Set the ADC analogue gain: 'Low', 'Medium' or 'High' (counts per electron rise with
+        it). Returns True if the camera reports the new gain."""
+        if self._cam is None:
+            self.logger.error("PIXIS: set_adc_gain() called but camera not connected.")
+            return False
+        try:
+            with self._stream_paused():
+                self._cam.set_attribute_value("ADC Analog Gain", gain_name)
+                self._commit_settings_to_camera()
+            gain_now = self._cam.get_attribute_value("ADC Analog Gain")
+            self.logger.info(f"PIXIS ADC gain: {gain_now}.")
+            return str(gain_now) == gain_name
+        except Exception as e:
+            self.logger.error(f"PIXIS: set_adc_gain({gain_name!r}) failed: {e}")
+            return False
 
-    def set_fan_speed(self, speed):
-        """Stub — PIXIS fan speed is not software-controllable."""
-        self.logger.debug(f"[PIXIS] set_fan_speed({speed}) — no fan control on PIXIS, ignoring.")
+    def readout_settings(self):
+        """What a saved frame needs to be interpreted: ROI and binning as set on the camera,
+        exposure, readout time, gain, ADC speed, sensor temperature. Unreadable values are None.
 
-    # ------------------------------------------------------------------
-    # Stubs for Tucsen-specific features with no PIXIS equivalent
-    # ------------------------------------------------------------------
-
-    def set_image_and_gain(self, img_mode, gain_level):
-        """
-        PIXIS gain is set via ADC Analog Gain attribute.
-        img_mode is ignored — no direct equivalent on PIXIS.
-        gain_level mapping: 0=Low, 1=Medium, 2=High.
-        """
-        gain_map = {0: "Low", 1: "Medium", 2: "High"}
-        gain_str = gain_map.get(int(gain_level), "Low")
-        if self._cam is not None:
+        The PIXIS has no shutter, so the sensor keeps collecting light while a frame is read
+        out: at short exposures a frame holds more light than the exposure alone (a "10 ms"
+        frame on 2026-11-12 held 5.4 times as much), and each line smears along its column.
+        readout_time_s is the camera's own figure for the current ROI, binning and ADC speed
+        (0.58 s for the full sensor at 2 MHz)."""
+        def read_attribute(name):
             try:
-                self._cam.set_attribute_value("ADC Analog Gain", gain_str)
-                self.logger.info(f"PIXIS ADC gain set to {gain_str}.")
-            except Exception as e:
-                self.logger.error(f"PIXIS: set_image_and_gain() failed: {e}")
-
-    def set_image_processing(self, value):
-        """No image processing pipeline on PIXIS — stub for parity."""
-        self.logger.debug(f"[PIXIS] set_image_processing({value}) — no-op.")
-
-    def set_denoise(self, value):
-        """No denoise capability on PIXIS — stub for parity."""
-        self.logger.debug(f"[PIXIS] set_denoise({value}) — no-op.")
-
-    def set_resolution(self, resolution):
-        """
-        No resolution switching on PIXIS in the Tucsen sense.
-        Stub for parity.
-        """
-        self.logger.debug(f"[PIXIS] set_resolution({resolution}) — no-op.")
+                return self._cam.get_attribute_value(name) if self._cam is not None else None
+            except Exception:
+                return None
+        readout_time_ms = read_attribute("Readout Time Calculation")
+        return {
+            'camera_roi_hstart_hend_vstart_vend_hbin_vbin': self.get_roi_on_camera(),
+            'exposure_s': self.get_exposure_time(),
+            'readout_time_s': None if readout_time_ms is None else float(readout_time_ms) / 1e3,
+            'adc_analog_gain': read_attribute("ADC Analog Gain"),
+            'adc_speed_mhz': read_attribute("ADC Speed"),
+            'sensor_temperature_c': self.get_temperature(),
+            'sensor_set_point_c': self.get_target_temperature(),
+        }
 
     def get_camera_info(self):
         """Return a dict of key camera attributes for logging/debugging."""
@@ -380,167 +453,12 @@ class RealHardware(CameraHardwareBase):
                 info[attr] = self._cam.get_attribute_value(attr)
             except Exception:
                 info[attr] = "unavailable"
+        info["ROI (hstart, hend, vstart, vend, hbin, vbin)"] = self.get_roi_on_camera()
+        try:  # the camera's allowed exposure range, from pylablib's attribute constraints
+            exposure_attribute = self._cam.ca["Exposure Time"]
+            info["Exposure Time range (ms)"] = (exposure_attribute.min, exposure_attribute.max)
+        except Exception:
+            info["Exposure Time range (ms)"] = "unavailable"
         return info
 
 
-# ---------------------------------------------------------------------------
-# Simulated hardware
-# ---------------------------------------------------------------------------
-
-class SimulatedHardware(CameraHardwareBase):
-    """
-    Simulated PIXIS hardware for use when no camera is connected.
-    Mirrors tucsenspec.SimulatedHardware so PIXISCamera behaves
-    identically in simulation mode.
-    """
-
-    def __init__(self, camera):
-        self.camera     = camera
-        self.interface  = camera.interface
-        self.logger     = camera.logger.getChild('SimulatedHardware')
-        self.acqtime    = 0.5          # seconds
-        self.roi        = (0, 0, 1024, 1024)
-        self._temperature = -20.0
-
-    def initialise(self):
-        self.logger.info("[SIM] PIXIS simulated camera initialised.")
-        self.camera.save_transient_spectrum_cb = (
-            self.interface.acq_ctrl.save_spectrum_transient
-        )
-
-    def open_stream(self):
-        self.logger.debug("[SIM] open_stream() called.")
-
-    def close_stream(self):
-        self.logger.debug("[SIM] close_stream() called.")
-
-    def grab_frame(self, timeout=100000):
-        """Return a simulated CCD frame after a short delay."""
-        self.logger.debug("[SIM] grab_frame() called.")
-        time.sleep(min(self.acqtime, 0.1))   # cap sim delay at 100 ms
-        return self._generate_simulated_image()
-
-    def open_camera(self):
-        self.logger.debug("[SIM] open_camera() stub.")
-
-    def close_camera(self):
-        self.logger.debug("[SIM] close_camera() stub.")
-
-    def uninit_api(self):
-        self.logger.debug("[SIM] uninit_api() stub.")
-
-    def set_exposure_time(self, value_s):
-        try:
-            self.acqtime = float(value_s)
-            return True
-        except ValueError:
-            self.logger.error("[SIM] Invalid exposure time value.")
-            return False
-
-    def get_exposure_time(self):
-        return self.acqtime
-
-    def set_roi(self, roi_tuple):
-        self.logger.info(f"[SIM] ROI set to {roi_tuple}.")
-        self.roi = roi_tuple
-
-    def set_hardware_binning(self, binning_level=1):
-        self.logger.debug(f"[SIM] set_hardware_binning({binning_level}) stub.")
-
-    def get_temperature(self):
-        return self._temperature + np.random.uniform(-0.5, 0.5)
-
-    def set_target_temperature(self, target_celsius):
-        self.logger.info(f"[SIM] Target temperature set to {target_celsius} °C.")
-        self._temperature = float(target_celsius)
-
-    def enable_auto_temperature_control(self, enable):
-        state = "enabled" if enable else "disabled"
-        self.logger.debug(f"[SIM] Auto temperature control {state}.")
-
-    def get_fan_speed(self):
-        return 3
-
-    def set_fan_speed(self, speed):
-        self.logger.debug(f"[SIM] set_fan_speed({speed}) stub.")
-
-    def set_image_and_gain(self, img_mode, gain_level):
-        self.logger.debug(f"[SIM] set_image_and_gain({img_mode}, {gain_level}) stub.")
-
-    def set_image_processing(self, value):
-        self.logger.debug(f"[SIM] set_image_processing({value}) stub.")
-
-    def set_denoise(self, value):
-        self.logger.debug(f"[SIM] set_denoise({value}) stub.")
-
-    def set_resolution(self, resolution):
-        self.logger.debug(f"[SIM] set_resolution({resolution}) stub.")
-
-    def get_camera_info(self):
-        return {
-            "Exposure Time"               : self.acqtime * 1000,
-            "Sensor Temperature Reading"  : self.get_temperature(),
-            "Sensor Temperature Set Point": self._temperature,
-            "Sensor Temperature Status"   : "Locked",
-            "ADC Speed"                   : 1.0,
-            "ADC Analog Gain"             : "Low",
-            "Readout Count"               : 1,
-        }
-
-    # ------------------------------------------------------------------
-    # Simulated image generation
-    # ------------------------------------------------------------------
-
-    def _generate_simulated_image(self, width=1024, height=100):
-        """
-        Generate a realistic-looking simulated CCD spectrum image.
-        Mirrors SimulatedHardware._generate_simulated_image() in
-        camera_hardware.py so downstream code sees the same data shape.
-        """
-        background   = 400
-        noise        = np.random.randint(-30, 30, (height, width))
-
-        laser_signal = self._generate_simulated_laser_signal(
-            width=width, height=height
-        )
-
-        image = background + laser_signal + noise
-        image = np.clip(image, 0, 65535).astype(np.uint16)
-        return image
-
-    def _generate_simulated_laser_signal(
-        self, width=1024, height=100,
-        laser_width=3, y_spread=15,
-        peak_height=20000, peak_sigma=0.1
-    ):
-        """Generate a Gaussian laser line on the simulated CCD."""
-        try:
-            laser_on = (
-                self.interface.laser.status == 'ON'
-                and self.interface.laser.current_power >= 3
-            )
-        except Exception:
-            laser_on = False
-
-        if not laser_on:
-            return np.zeros((height, width), dtype=np.float32)
-
-        try:
-            wavelength_axis = self.interface.microscope.wavelength_axis
-            laser_wavelength = (
-                self.interface.microscope.laser_wavelength_calibrated
-                or next(iter(
-                    self.interface.microscope.laser_wavelengths.values()
-                ), 785)
-            )
-            laser_px = int(np.argmin(np.abs(wavelength_axis - laser_wavelength)))
-        except Exception:
-            laser_px = width // 2
-
-        Y, X = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
-        signal = (
-            np.exp(-0.5 * ((X - laser_px)   / laser_width) ** 2) *
-            np.exp(-0.5 * ((Y - height / 2) / y_spread)   ** 2)
-        )
-        scale  = abs(np.random.normal(peak_height, peak_height * peak_sigma))
-        return (signal * scale).astype(np.float32)

@@ -26,8 +26,10 @@ import io
 import os
 import sys
 import atexit
+import json
 import shutil
 import contextlib
+import time
 
 import numpy as np
 
@@ -39,6 +41,8 @@ if REPO_DIR not in sys.path:
 sys.stdin = io.StringIO()
 
 from interface_run_me import Interface
+from pixisspec.pixis_hardware import RealHardware
+from pixisspec.simulated_picam_device import SimulatedPicamDevice
 
 
 # ----------------------------------------------------------------------------
@@ -246,6 +250,35 @@ def test_spectrometer_relative_move_changes_position():
     assert after == before + 500
 
 
+def test_spectrometer_always_arrives_at_a_position_from_below():
+    """The calibration measured every TRIAX position going up, so a move down must overshoot
+    by APPROACH_STEPS and come back up; a move up goes straight there."""
+    spectrometer = get_interface().spectrometer
+    simulated_serial = spectrometer.spectrometer
+    grating_moves = []
+    original_write = simulated_serial.write
+
+    def recording_write(command):
+        if command.startswith('F0,'):
+            grating_moves.append(int(command.split(',')[1]))
+        original_write(command)
+
+    simulated_serial.write = recording_write
+    try:
+        start = run_command('rg')
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert spectrometer.go_to_steps(start - 5000) == 'S0'
+        assert grating_moves == [-5000 - spectrometer.APPROACH_STEPS, spectrometer.APPROACH_STEPS]
+        assert run_command('rg') == start - 5000
+        grating_moves.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert spectrometer.go_to_steps(start) == 'S0'
+        assert grating_moves == [5000]
+        assert run_command('rg') == start
+    finally:
+        simulated_serial.write = original_write
+
+
 def test_spectrometer_slit_is_readable():
     """Entrance slit width should read back as an integer."""
     assert isinstance(run_command('ren'), int)
@@ -309,6 +342,41 @@ def test_single_frame_acquisition_completes():
     run_command('acquire')
 
 
+def test_simulate_mode_runs_the_real_camera_driver():
+    """Simulate mode runs RealHardware itself, on a simulated Picam device, not a stand-in."""
+    camera = get_interface().camera
+    assert isinstance(camera.hardware, RealHardware)
+    assert isinstance(camera.hardware._cam, SimulatedPicamDevice)
+
+
+def test_run_gives_live_frames_and_acquire_stops_it():
+    """`run` streams frames for live viewing; an acquisition stops it, then takes its own frame."""
+    interface = get_interface()
+    camera = interface.camera
+    live_frames = []
+    record_live_frame = lambda image_data, wavelengths: live_frames.append(image_data)
+    original_callback = camera.save_transient_spectrum_cb
+    camera.save_transient_spectrum_cb = record_live_frame
+    try:
+        run_command('nframe 1')
+        run_command('acqtime 0.1')
+        run_command('run')
+        deadline = time.monotonic() + 5
+        while len(live_frames) < 3 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert len(live_frames) >= 3, "run produced no live frames"
+        assert camera.is_running and camera.hardware._stream_open
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            frame = camera.grab_frame()
+        assert frame is not None
+        assert not camera.is_running and not camera.hardware._stream_open
+        assert camera.acquisition_thread is None
+    finally:
+        run_command('stop')
+        camera.save_transient_spectrum_cb = original_callback
+
+
 # ----------------------------------------------------------------------------
 # Microscope orchestration
 # ----------------------------------------------------------------------------
@@ -347,6 +415,341 @@ def test_laser_action_group_is_empty_but_safe():
     interface = get_interface()
     assert interface.microscope.action_groups['laser_wavelength'] == {}
     assert run_command('laserpos') == {}
+
+
+# ----------------------------------------------------------------------------
+# Wavelength axis calibration (TRIAX + PIXIS line walk)
+# ----------------------------------------------------------------------------
+
+def _largest_difference_from_simulated_truth_nm(model, triax_steps_values):
+    from wavelength_calibration.simulated_line_lamp import default_true_model
+    from wavelength_calibration.wavelength_axis_model import largest_axis_difference_nm
+    return largest_axis_difference_nm(model, default_true_model(), triax_steps_values)
+
+
+def test_wavelength_axis_line_walk_recovers_simulated_truth():
+    """
+    The full operator workflow: 'speccal arhg', 'speccalfit curvature', 'speccalapply curvature'.
+
+    In simulate mode the camera images a mercury lamp whose true calibration
+    lives in the simulator and starts ~2 nm away from the shipped one. The
+    procedure must find the truth, and applying it must change the live
+    wavelength axis. The master file is a temporary copy, restored after.
+    """
+    import tempfile
+    from wavelength_calibration.wavelength_axis_model import WavelengthAxisModel
+
+    microscope = get_interface().microscope
+    original_master_path = microscope.master_calibration_path
+    original_backup_directory = microscope.calibration_backup_directory
+    original_report_directory = microscope.calibration_fit_report_directory
+    original_model_dict = microscope.calibration_service.wavelength_axis_model.to_dict()
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        temporary_master_path = os.path.join(temporary_directory, 'master.json')
+        shutil.copyfile(original_master_path, temporary_master_path)
+        microscope.master_calibration_path = temporary_master_path
+        microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
+        microscope.calibration_fit_report_directory = os.path.join(temporary_directory, 'reports')
+        original_line_walk_directory = microscope.line_walk_directory
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
+        try:
+            run_command('speccalreset')
+            line_walk_path = run_command('speccal arhg')
+            assert os.path.exists(line_walk_path)
+
+            fit = run_command('speccalfit curvature')
+            measured_triax_steps = sorted({o.triax_steps for o in fit.observations})
+            assert len(fit.observations) >= 20
+            assert _largest_difference_from_simulated_truth_nm(fit.model, measured_triax_steps) < 0.03
+
+            starting_error_nm = _largest_difference_from_simulated_truth_nm(
+                WavelengthAxisModel.from_dict(original_model_dict), measured_triax_steps)
+            assert starting_error_nm > 1.0
+            assert len(os.listdir(microscope.calibration_fit_report_directory)) == 1, "speccalfit saves a report"
+            assert run_command('speccalfit nonsense') is None, "an unknown option must refuse, not fit"
+
+            run_command('speccalapply curvature')
+            applied_model = microscope.calibration_service.wavelength_axis_model
+            assert _largest_difference_from_simulated_truth_nm(applied_model, measured_triax_steps) < 0.03
+            with open(temporary_master_path) as file:
+                stored_metadata = json.load(file)['wavelength_axis']['metadata']
+            assert stored_metadata['verified_against_external_reference']
+            with open(os.path.join(microscope.calibration_fit_report_directory,
+                                   stored_metadata['fit_report'])) as file:
+                assert 'status: APPLIED' in file.read()
+            assert os.listdir(microscope.calibration_backup_directory)
+
+            run_command('wavelengthaxis')
+            steps = microscope.spectrometer_position
+            assert microscope.wavelength_axis[50] == applied_model.triax_wavelength(steps)
+        finally:
+            microscope.master_calibration_path = original_master_path
+            microscope.calibration_backup_directory = original_backup_directory
+            microscope.calibration_fit_report_directory = original_report_directory
+            microscope.line_walk_directory = original_line_walk_directory
+            microscope.calibration_service._load_wavelength_axis_model(original_model_dict)
+            microscope.generate_wavelength_axis()
+            run_command('speccalreset')
+            if 'line_walk_path' in locals() and os.path.exists(line_walk_path):
+                os.remove(line_walk_path)
+
+
+def test_spectrometer_wavelength_lands_on_target_pixel():
+    """'st' must put the requested wavelength on spectrometer_target_pixel, within one TRIAX step."""
+    microscope = get_interface().microscope
+    target_pixel = microscope.config['spectrometer_target_pixel']
+    run_command('st 800')
+    nm_per_triax_step = microscope.calibration_service.wavelength_axis_model.triax_to_wavelength_coefficients[0]
+    assert abs(microscope.wavelength_axis[target_pixel] - 800.0) <= nm_per_triax_step
+
+
+@contextlib.contextmanager
+def temporary_calibration_files(microscope):
+    """Master file, backups, reports and walks in a temporary directory; model in use restored."""
+    import tempfile
+    redirected = ('master_calibration_path', 'calibration_backup_directory',
+                  'calibration_fit_report_directory', 'line_walk_directory')
+    saved = {name: getattr(microscope, name) for name in redirected}
+    original_model_dict = microscope.calibration_service.wavelength_axis_model.to_dict()
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.master_calibration_path = os.path.join(temporary_directory, 'master.json')
+        shutil.copyfile(saved['master_calibration_path'], microscope.master_calibration_path)
+        microscope.calibration_backup_directory = os.path.join(temporary_directory, 'backup')
+        microscope.calibration_fit_report_directory = os.path.join(temporary_directory, 'reports')
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
+        try:
+            run_command('speccalreset')
+            yield temporary_directory
+        finally:
+            for name, value in saved.items():
+                setattr(microscope, name, value)
+            microscope.calibration_service._load_wavelength_axis_model(original_model_dict)
+            microscope.generate_wavelength_axis()
+            run_command('speccalreset')
+
+
+def test_speccalzero_restores_the_axis_after_lost_steps():
+    """
+    Calibrate, then the TRIAX counter slips by 120 steps (simulated lost steps). 'speccalzero check'
+    measures the shift without changing anything; 'speccalzero' stores it, and the axis matches the
+    lamp again.
+    """
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        run_command('speccal arhg')
+        assert run_command('speccalapply curvature triaxquadratic') is not None
+        calibrated = microscope.calibration_service.wavelength_axis_model
+        assert calibrated.metadata['triax_position_offsets_nm'], "applied model has the TRIAX table"
+        lamp = microscope.simulated_line_lamp
+        lamp.triax_counter_error_steps = 120
+        try:
+            measurement = run_command('speccalzero check')
+            assert abs(measurement.step_offset - 120) <= 2
+            assert microscope.calibration_service.wavelength_axis_model.triax_step_offset == \
+                calibrated.triax_step_offset, "check must not change the calibration"
+            run_command('speccalzero')
+            rezeroed = microscope.calibration_service.wavelength_axis_model
+            assert abs(rezeroed.triax_step_offset - (calibrated.triax_step_offset + 120)) <= 2
+            for steps in (95_000, 110_000):
+                true_wavelength = lamp.true_model.wavelength_at(512, steps + 120)
+                assert abs(rezeroed.wavelength_at(512, steps) - true_wavelength) < 0.03
+            reports = os.listdir(microscope.calibration_fit_report_directory)
+            assert sum(name.startswith('triax_zero_') for name in reports) == 2
+        finally:
+            lamp.triax_counter_error_steps = 0
+
+
+def test_speccal_samples_and_speccalfit_plot():
+    """'speccal arhg samples=N' sets the walk density; 'speccalfit ... plot' saves a PNG beside
+    the report; a bad samples value refuses instead of walking."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        assert run_command('speccal arhg samples=1') is None
+        assert run_command('speccal arhg samples=many') is None
+        line_walk_path = run_command('speccal arhg samples=4')
+        with open(line_walk_path) as file:
+            assert '4 samples per line' in json.load(file)['description']
+        assert run_command('speccalfit curvature triaxquadratic plot') is not None
+        report_files = sorted(os.listdir(microscope.calibration_fit_report_directory))
+        assert len(report_files) == 2, report_files
+        report_name, plot_name = sorted(report_files, key=lambda name: name.endswith('.png'))
+        assert plot_name == os.path.splitext(report_name)[0] + '.png'
+
+
+def test_applied_axis_warns_outside_its_fitted_triax_range():
+    """An applied calibration records the TRIAX range it was fitted over and the frame shape the
+    camera returned; the application warns when the TRIAX goes beyond that range."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        line_walk_path = run_command('speccal arhg samples=4')
+        with open(line_walk_path) as file:
+            first_frame_conditions = json.load(file)['position_records'][0]['conditions']
+        assert first_frame_conditions['frame_shape'][-1] == len(microscope.wavelength_axis)
+        assert run_command('speccalapply curvature triaxquadratic') is not None
+        model = microscope.calibration_service.wavelength_axis_model
+        first_steps, last_steps = model.metadata['calibrated_triax_drive_steps']
+        microscope._extrapolation_warned_at = None
+        microscope.calculate_spectrometer_wavelength(steps=(first_steps + last_steps) // 2)
+        assert microscope._extrapolation_warned_at is None, "no warning inside the range"
+        microscope.calculate_spectrometer_wavelength(steps=last_steps + 3000)
+        assert microscope._extrapolation_warned_at == last_steps + 3000
+        microscope.calculate_spectrometer_wavelength()
+
+
+@contextlib.contextmanager
+def temporary_camera_roi_config(microscope):
+    """Config file and data directory in a temporary directory; full-sensor ROI afterwards."""
+    import tempfile
+    from pixisspec.spectral_roi import SpectralRoi
+    saved_config_path, saved_data_directory = microscope.config_path, microscope.dataDir
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.config_path = os.path.join(temporary_directory, 'microscope_config.json')
+        shutil.copyfile(saved_config_path, microscope.config_path)
+        microscope.dataDir = temporary_directory
+        os.makedirs(os.path.join(temporary_directory, 'transient_data'))
+        try:
+            yield temporary_directory
+        finally:
+            microscope.config_path, microscope.dataDir = saved_config_path, saved_data_directory
+            microscope.config.pop('camera_roi', None)
+            microscope.camera.set_spectral_roi(SpectralRoi.full_sensor())
+            microscope._roi_warned_for = None
+
+
+def test_camera_roi_automatic_manual_binning_stored_and_recorded():
+    """
+    'roi auto' finds the simulated slit image (rows ~800) and reads only its rows; 'roi <first>
+    <last>' sets rows by hand; 'roi binning onchip' gives one-row frames; the ROI is stored in
+    the config and set again at start-up, and every saved file records the camera readout.
+    """
+    from wavelength_calibration.reference_lines import argon_mercury_lamp_lines
+    microscope = get_interface().microscope
+    camera = microscope.camera
+    with temporary_camera_roi_config(microscope) as temporary_directory:
+        run_command('acqtime 0.1')
+        run_command('nframe 1')
+        assert run_command('roi auto') is None, "no light on the slit: nothing to find"
+        microscope._install_simulated_line_lamp(argon_mercury_lamp_lines())
+        try:
+            automatic = run_command('roi auto')
+        finally:
+            camera.simulated_scene.override_scene = None
+        assert automatic.source == 'automatic'
+        assert automatic.first_row < 800 < automatic.last_row and automatic.row_count < 80
+        assert camera.grab_frame().shape == (automatic.row_count, 1024)
+
+        manual = run_command('roi 790 810')
+        assert (manual.first_row, manual.last_row, manual.source) == (790, 811, 'manual')
+        with open(microscope.config_path) as file:
+            assert json.load(file)['camera_roi']['first_row'] == 790
+
+        on_chip = run_command('roi binning onchip')
+        assert on_chip.binned_on_chip and camera.grab_frame().shape == (1, 1024)
+        assert run_command('setbin 0') is None, "zero rows per bin must refuse"
+        assert run_command('setbin 7').rows_binned_on_chip == 7
+        assert run_command('setbin 1').rows_binned_on_chip == 1
+        assert run_command('setgain medium') is True
+
+        run_command('roi full')
+        assert camera.spectral_roi.row_count == 1024
+        microscope.config['camera_roi'] = manual.as_dict()
+        assert microscope.apply_stored_camera_roi() == manual, "start-up sets the stored ROI"
+
+        run_command('filename headless_roi_test')
+        run_command('acquire')
+        [saved_name] = os.listdir(os.path.join(temporary_directory, 'headless_roi_test'))
+        with np.load(os.path.join(temporary_directory, 'headless_roi_test', saved_name)) as saved:
+            metadata = json.loads(str(saved['metadata']))
+            assert saved['image'].shape == (21, 1024)
+        readout = metadata['camera']
+        assert readout['spectral_roi']['first_row'] == 790
+        assert readout['camera_roi_hstart_hend_vstart_vend_hbin_vbin'] == [0, 1024, 790, 811, 1, 1]
+        assert readout['adc_analog_gain'] == 'Medium'
+
+
+def test_line_walk_moves_an_roi_that_misses_the_slit_image():
+    """A lamp walk checks the slit image first: an ROI that misses it is replaced by an
+    automatic one, and the walk records where the slit image was."""
+    microscope = get_interface().microscope
+    with temporary_camera_roi_config(microscope), temporary_calibration_files(microscope):
+        run_command('roi 100 120')
+        line_walk_path = run_command('speccal arhg samples=3')
+        roi_used = microscope.camera.spectral_roi
+        assert roi_used.source == 'automatic' and roi_used.first_row < 800 < roi_used.last_row
+        with open(line_walk_path) as file:
+            slit_image = json.load(file)['instrument']['slit_image']
+        assert abs(slit_image['peak_row'] - 800) <= 2
+
+
+def test_data_without_a_manual_roi_is_flagged_once():
+    microscope = get_interface().microscope
+    with temporary_camera_roi_config(microscope):
+        run_command('filename headless_roi_test')
+        run_command('acqtime 0.1')
+        run_command('acquire')
+        assert microscope._roi_warned_for == microscope.camera.spectral_roi
+        run_command('roi 790 810')
+        microscope._roi_warned_for = None
+        run_command('acquire')
+        assert microscope._roi_warned_for is None, "a manual ROI raises no warning"
+
+
+def test_speccalapply_refuses_when_a_gate_fails():
+    """A walk recorded in simulate mode must not become a real calibration: refuse, and say why."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        run_command('speccal arhg')
+        with open(microscope.master_calibration_path) as file:
+            master_before = file.read()
+        microscope.simulate = False  # as if a real session had picked up a simulated walk
+        try:
+            assert run_command('speccalapply curvature triaxquadratic') is None
+        finally:
+            microscope.simulate = True
+        with open(microscope.master_calibration_path) as file:
+            assert file.read() == master_before, "the master file must not change"
+        [report_name] = os.listdir(microscope.calibration_fit_report_directory)
+        with open(os.path.join(microscope.calibration_fit_report_directory, report_name)) as file:
+            report = file.read()
+        assert 'NOT APPLIED: a gate check failed' in report and '[FAIL] walk data' in report
+        assert 'SIMULATE mode' in report
+
+
+def test_wavelength_axis_fit_refuses_without_line_walks():
+    """speccalfit with no walks this session reports the problem instead of raising."""
+    run_command('speccalreset')
+    assert run_command('speccalfit') is None
+
+
+def test_speccalexport_writes_observed_vs_expected_csv():
+    """'speccalexport' after a walk writes a CSV whose observed values track the expected ones."""
+    import csv
+    import tempfile
+    microscope = get_interface().microscope
+    original_directory = microscope.calibration_fit_report_directory
+    original_line_walk_directory = microscope.line_walk_directory
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        microscope.calibration_fit_report_directory = temporary_directory
+        microscope.line_walk_directory = os.path.join(temporary_directory, 'walks')
+        try:
+            run_command('speccalreset')
+            run_command('speccal arhg')
+            export_path = run_command('speccalexport')
+            with open(export_path, newline='') as file:
+                rows = list(csv.DictReader(file))
+        finally:
+            microscope.calibration_fit_report_directory = original_directory
+            microscope.line_walk_directory = original_line_walk_directory
+            run_command('speccalreset')
+    assert len(rows) >= 20
+    assert {'line_name', 'expected_nm', 'observed_nm', 'error_nm'} <= set(rows[0])
+    assert all(abs(float(row['error_nm'])) < 5.0 for row in rows)
+
+
+def test_external_reference_line_walk_needs_wavelength_and_uncertainty():
+    """'speccal external' without numbers must refuse, not walk with a made-up wavelength."""
+    assert run_command('speccal external') is None
 
 
 # ----------------------------------------------------------------------------

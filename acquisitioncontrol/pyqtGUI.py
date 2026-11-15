@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QFormLayout, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGroupBox, QPlainTextEdit,
     QFrame, QCheckBox, QSplitter, QMessageBox, QSizePolicy, 
-    QProgressBar, QSlider
+    QProgressBar, QSlider, QComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QMetaObject, QTimer, pyqtSlot
 import json
@@ -137,11 +137,27 @@ class PersistentSettings:
 
 
 class LiveDataViewer(QWidget):
-    region_changed = pyqtSignal(int, int)
+    """
+    The latest frame and the spectrum binned from a selection of its rows.
 
-    def __init__(self, interface, parent=None):
+    Dragging over the image (or the Ymin/Ymax boxes) selects the rows the spectrum is binned
+    from, in software, for display. 'Use selection as ROI' makes those rows the camera's region
+    of interest, so only they are read out and saved: the way to set the ROI by hand before
+    collecting data. 'Auto ROI' finds the slit image on a full-sensor frame (handy during
+    alignment, when it moves), 'Full sensor' reads every row, and the binning box chooses
+    software binning (every ROI row read out) or on-chip binning (rows summed on the CCD, least
+    read noise). Each of these sends the same 'roi' command as the command line, through
+    `send_command`.
+    """
+
+    region_changed = pyqtSignal(int, int)
+    BINNING_CHOICES = {'Software binning': 'roi binning software',
+                       'On-chip binning': 'roi binning onchip'}
+
+    def __init__(self, interface, parent=None, send_command=None):
         super().__init__(parent)
         self.interface = interface
+        self.send_command = send_command or (lambda command: None)
         self.logger = interface.logger.getChild("LiveDataViewer")
         self.logger.info("Initializing LiveDataViewer")
         self.current_image = None
@@ -188,6 +204,25 @@ class LiveDataViewer(QWidget):
         ctrl.addWidget(self.edit_ymax)
         ctrl.addWidget(self.btn_reset_span)
         layout.addLayout(ctrl)
+
+        roi_controls = QHBoxLayout()
+        self.lbl_camera_roi = QLabel("Camera ROI: -")
+        self.btn_use_selection_as_roi = QPushButton("Use selection as ROI")
+        self.btn_auto_roi = QPushButton("Auto ROI")
+        self.btn_full_sensor = QPushButton("Full sensor")
+        self.combo_binning = QComboBox()
+        self.combo_binning.addItems(list(self.BINNING_CHOICES))
+        self.btn_use_selection_as_roi.clicked.connect(self._on_use_selection_as_roi)
+        self.btn_auto_roi.clicked.connect(lambda: self.send_command('roi auto'))
+        self.btn_full_sensor.clicked.connect(lambda: self.send_command('roi full'))
+        self.combo_binning.activated[str].connect(
+            lambda choice: self.send_command(self.BINNING_CHOICES[choice]))
+        roi_controls.addWidget(self.lbl_camera_roi, stretch=1)
+        roi_controls.addWidget(self.btn_use_selection_as_roi)
+        roi_controls.addWidget(self.btn_auto_roi)
+        roi_controls.addWidget(self.btn_full_sensor)
+        roi_controls.addWidget(self.combo_binning)
+        layout.addLayout(roi_controls)
 
         self.image_fig = Figure()
         self.image_ax = self.image_fig.add_subplot(111)
@@ -240,6 +275,36 @@ class LiveDataViewer(QWidget):
         if self.current_image is not None:
             self.region_changed.emit(0, self.current_image.shape[0])
 
+    def selected_sensor_rows(self):
+        """(first, last) sensor rows, both included, of the rows selected in the frame; None if
+        the frame has no rows to choose from (all ROI rows binned on the chip)."""
+        camera = self.interface.camera
+        spectral_roi = camera.spectral_roi
+        if spectral_roi.binned_on_chip:
+            return None
+        frame_rows = (self.current_image.shape[0] if self.current_image is not None
+                      else spectral_roi.row_count // spectral_roi.rows_binned_on_chip)
+        first_frame_row = max(0, min(int(self.sel_y0), frame_rows - 1))
+        last_frame_row = max(first_frame_row + 1, min(int(self.sel_y1 or frame_rows), frame_rows))
+        rows_per_frame_row = spectral_roi.rows_binned_on_chip
+        return (spectral_roi.first_row + first_frame_row * rows_per_frame_row,
+                spectral_roi.first_row + last_frame_row * rows_per_frame_row - 1)
+
+    def _on_use_selection_as_roi(self):
+        sensor_rows = self.selected_sensor_rows()
+        if sensor_rows is None:
+            self.logger.warning("The frame is one row (on-chip binning): switch to software "
+                                "binning or the full sensor to choose rows.")
+            return
+        self.send_command(f"roi {sensor_rows[0]} {sensor_rows[1]}")
+
+    def _show_camera_roi(self):
+        spectral_roi = self.interface.camera.spectral_roi
+        self.lbl_camera_roi.setText(f"Camera ROI: {spectral_roi.describe()}")
+        choice = 'On-chip binning' if spectral_roi.rows_binned_on_chip > 1 else 'Software binning'
+        self.combo_binning.setCurrentText(choice)
+        self.btn_use_selection_as_roi.setEnabled(not spectral_roi.binned_on_chip)
+
     def _on_region_changed(self, y0, y1):
         self.sel_y0, self.sel_y1 = y0, y1
         self.edit_ymin.setText(str(y0))
@@ -251,9 +316,12 @@ class LiveDataViewer(QWidget):
 
     def update_data(self, image_data: np.ndarray, wavelength_axis=None):
         try:
+            new_frame_shape = self.current_image is None or \
+                self.current_image.shape[0] != image_data.shape[0]
             self.current_image = image_data
-            if self.sel_y1 is None:
-                self.sel_y1 = image_data.shape[0]
+            if self.sel_y1 is None or new_frame_shape:  # a new ROI: select all of its rows
+                self.sel_y0, self.sel_y1 = 0, image_data.shape[0]
+            self._show_camera_roi()
 
             self.image_ax.clear()
             self.image_ax.imshow(image_data, aspect='auto')
@@ -1020,7 +1088,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, 1)
 
         plot_layout = QVBoxLayout()
-        self.live_viewer = LiveDataViewer(self.interface)
+        self.live_viewer = LiveDataViewer(self.interface, send_command=self.send_cli_command)
 
         plot_layout.insertWidget(1, self.live_viewer)
 

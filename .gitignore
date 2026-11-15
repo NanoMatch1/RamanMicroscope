@@ -27,3 +27,6 @@ acquisitioncontrol/viewer_settings.json
 viewer_settings.json
 instrument_errors.log
 transient/
+
+# ── Personal scratch space (bench screenshots, one-off analysis) ─────────
+scratch/

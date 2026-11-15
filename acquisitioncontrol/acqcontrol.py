@@ -13,6 +13,12 @@ from PyQt5.QtCore import QObject, pyqtSignal
 # from ..instruments.instrument_base import heartbeat
 from instruments.util_decorators import heartbeat
 
+
+def average_frames(frames):
+    """Mean of the frames, each weighted equally, as float32."""
+    return np.mean([frame.astype(np.float32) for frame in frames], axis=0)
+
+
 class ScanSequenceGenerator:
 
     def __init__(self, acq_ctrl):
@@ -157,7 +163,7 @@ class CameraScanner:
 
         try:
             # self.camera.open_stream()
-            image_data = None
+            acquired_frames = []
             n_frames = self.acq_ctrl.general_parameters['n_frames']
 
             for frame_idx in range(n_frames):
@@ -169,10 +175,10 @@ class CameraScanner:
                     print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                     return None
 
-                image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
+                acquired_frames.append(new_frame)
 
 
-            return image_data
+            return average_frames(acquired_frames)
         
         # finally:
         except Exception as e:
@@ -247,7 +253,7 @@ class CameraScanner:
                 command(change)
 
         # 2) Acquire frames and average
-        image_data = None
+        acquired_frames = []
         n_frames = self.acq_ctrl.general_parameters['n_frames']
         for frame_idx in range(n_frames):
             self.interface.heartbeat()  # Update heartbeat to keep watchdog active during long scans
@@ -259,10 +265,10 @@ class CameraScanner:
                 print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                 return False, None
 
-            image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
+            acquired_frames.append(new_frame)
 
 
-        return True, image_data
+        return True, average_frames(acquired_frames)
 
     def _retry_frame(self, timeout, retries):
         """
@@ -286,7 +292,7 @@ class CameraScanner:
             for acqtime in acqtimelist:
                 self.microscope.set_acquisition_time(acqtime)
                 
-                image_data = None
+                acquired_frames = []
                 n_frames = self.acq_ctrl.general_parameters['n_frames']
 
                 for frame_idx in range(n_frames):
@@ -298,9 +304,10 @@ class CameraScanner:
                         print(f"Step failed at frame {frame_idx + 1}/{n_frames}")
                         return None
 
-                    image_data = new_frame.astype(np.float32) if frame_idx == 0 else (image_data + new_frame.astype(np.float32)) / 2
+                    acquired_frames.append(new_frame)
 
 
+                image_data = average_frames(acquired_frames)
                 # Save the image data to a file
                 self.acq_ctrl.save_spectrum_transient(
                     image_data,
@@ -476,10 +483,17 @@ class AcquisitionControl(QObject):
                 raise ValueError(f"Invalid parameter: {key}")
             
     def _construct_metadata(self):
-        '''Constructs the dictionary of metadata to include in the saved file. This includes all parameters in the acquisition control, as well as the current stage position and the current laser wavelength.'''
-        
-        metadata = self.get_all_parameters()
+        '''Constructs the dictionary of metadata to include in the saved file. This includes all
+        parameters in the acquisition control, as well as the current stage position and the
+        current laser wavelength.
+        'camera' holds the readout as the camera reports it: ROI rows and their binning, exposure,
+        readout time, gain, ADC speed, sensor temperature (PIXISCamera.describe_readout).'''
 
+        metadata = dict(self.get_all_parameters())
+        try:
+            metadata['camera'] = self.interface.camera.describe_readout()
+        except Exception as error:  # a missing reading must not stop the save
+            metadata['camera'] = {'error': f"readout not recorded: {error}"}
         return metadata
     
 
@@ -776,6 +790,7 @@ class AcquisitionControl(QObject):
         if filename is not None:
             self.general_parameters['filename'] = filename
         self.prepare_acquisition_params()  # ensures acqtime is set correctly at camera level
+        self.interface.microscope.check_roi_for_data_collection()
         self.logger.info("Acquiring single frame...")
         image_data = self._acquire_one_frame()
 
@@ -812,6 +827,7 @@ class AcquisitionControl(QObject):
     def acquire_scan(self, cancel_event, status_callback, progress_callback, timeout=100000):
         """Acquires a confirmed scan sequence. Should only be called from the UI after completing the confirmation dialogue."""
 
+        self.interface.microscope.check_roi_for_data_collection()
         camera_scanner = CameraScanner(self)
         failed_steps = camera_scanner._acquire_scan(cancel_event, status_callback, progress_callback, timeout=timeout)
 

@@ -1,14 +1,4 @@
 {
-    "camera_calibrations": {
-        "pixel_to_wl": [
-            0.07755452095074758,
-            764.3529343298214
-        ],
-        "wl_to_pixel": [
-            12.894154818325534,
-            -9855.685071090125
-        ]
-    },
     "manual_g1": {
         "g1_to_wl": [
             -7.378438347460316e-05,
@@ -97,16 +87,18 @@
             0.0
         ]
     },
-    "triax_calibrations": {
-        "triax_to_wl": [
-            -7.360667013085869e-22,
+    "wavelength_axis": {
+        "reference_pixel": 50.0,
+        "triax_to_wavelength_coefficients": [
             0.009096028148595274,
             -170.88512284432366
         ],
-        "wl_to_triax": [
-            9.9710552277773e-16,
-            109.9380942608933,
-            18786.784743043234
-        ]
+        "nm_per_pixel": 0.07755452095074758,
+        "nm_per_pixel_squared": 0.0,
+        "metadata": {
+            "migrated_on": "2026-11-03",
+            "verified_against_external_reference": false,
+            "provenance": "Migrated from camera_calibrations (PIXIS slope, set via tools/Calibrationgenerator.py, which is circular) and triax_calibrations (2025-07-31). The slope matches the pixel pitch; the offset was never measured on the PIXIS. Replace with a line walk (docs/calibration.md section 3)."
+        }
     }
 }

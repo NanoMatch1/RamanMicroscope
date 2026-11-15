@@ -6,6 +6,13 @@ from .simulated_triax import SimulatedTriaxSerial
 
 
 class Triax(Instrument):
+    # A TRIAX position repeats only when it is reached from the same side: the drive has
+    # backlash, so the grating angle at a given step count depends on the direction of travel.
+    # The wavelength calibration measures every position going up (the line walk starts
+    # approach_steps=2000 below its first point), so go_to_steps also always arrives going up:
+    # a move down first goes this many steps below the target.
+    APPROACH_STEPS = 2000
+
     def __init__(self, interface, simulate=False):
         super().__init__()
         self.interface = interface
@@ -155,30 +162,54 @@ class Triax(Instrument):
         response = self.send_command('mg {}'.format(position))
         return response
     
-    def go_to_wavelength(self, wavelength, steps_correction=1910):
-        '''Moves the spectrometer to the specified wavelength. Steps correction is an artificial adjustment to push the laser closer to 100 to prevent the laser from being too far to the left. #TODO recalibrate for pixel 100, not 50'''
+    def go_to_wavelength(self, wavelength, target_pixel=None):
+        '''Moves the spectrometer so the specified wavelength lands on target_pixel of the CCD.
+        target_pixel defaults to spectrometer_target_pixel in microscope_config.json (100): close to the
+        short-wavelength edge, so a laser line leaves the rest of the chip for the Stokes spectrum.
+        See docs/calibration.md section 3.5.'''
         try:
             wavelength = float(wavelength)
         except ValueError:
             self.logger.info('Invalid input')
             return
-        
-        triax_steps = self.get_triax_steps() 
-        
-        target_steps = round(self.interface.microscope.calibration_service.wl_to_triax(wavelength)) - steps_correction
-        # 
-        new_steps = target_steps - triax_steps
-        # return if no movement is required
-        if new_steps == 0:
+
+        microscope = self.interface.microscope
+        if target_pixel is None:
+            target_pixel = microscope.config.get('spectrometer_target_pixel', 100)
+        wavelength_axis_model = microscope.calibration_service.wavelength_axis_model
+        target_steps = round(wavelength_axis_model.triax_steps_for_wavelength(wavelength, at_pixel=float(target_pixel)))
+        response = self.go_to_steps(target_steps)
+        if response == 'S0':
+            self.logger.info('Triax moved to {} nm'.format(wavelength))
+        return response
+
+    def go_to_steps(self, target_steps):
+        '''Moves the grating to an absolute position in TRIAX steps, always arriving from below
+        as the calibration did (see APPROACH_STEPS), and waits for it to arrive.
+        Returns 'S0' on success, 'F0' on failure, None if already there.'''
+        target_steps = int(target_steps)
+        triax_steps = self.get_triax_steps()
+        if target_steps == triax_steps:
             return
-        
+        if target_steps < triax_steps:
+            approach_from_steps = target_steps - self.APPROACH_STEPS
+            approach_response = self._move_and_wait(approach_from_steps, triax_steps)
+            if approach_response != 'S0':
+                return approach_response
+            triax_steps = approach_from_steps
+        return self._move_and_wait(target_steps, triax_steps)
+
+    def _move_and_wait(self, target_steps, triax_steps):
+        '''One grating move from triax_steps to target_steps, waiting for it to arrive.
+        Returns 'S0' on success, 'F0' on failure, None if the command was not accepted.'''
+        new_steps = target_steps - triax_steps
         self.logger.coms('UNO>g {}>triax'.format(new_steps))
 
         response = self.send_command('mg {}'.format(new_steps))
         if response == 'o':
             triax_res = self.wait_for_triax(target_steps)
             if triax_res == 'S0':
-                self.logger.info('Triax moved to {} nm'.format(wavelength))
+                self.logger.info('Triax moved to {} steps'.format(target_steps))
                 self.triax_steps = target_steps
                 return 'S0'
             else:
@@ -186,8 +217,14 @@ class Triax(Instrument):
                 return 'F0'
         # Note: workaround for something not handled well by the above code #TODO fix this
         elif response.startswith('o'):
+            # The move was accepted: wait for it to finish, or the next frame sees a moving grating.
             self.logger.info('Triax coms anomaly #TODO debug. Response:{}'.format(response))
-            return 'S0'
+            triax_res = self.wait_for_triax(target_steps)
+            if triax_res == 'S0':
+                self.triax_steps = target_steps
+            else:
+                self.logger.info('Triax move failed after coms anomaly: {}'.format(triax_res))
+            return triax_res
 
         else:
             self.logger.info('Triax communication failed:')

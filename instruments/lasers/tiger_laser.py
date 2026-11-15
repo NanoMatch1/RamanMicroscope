@@ -105,7 +105,7 @@ class TigerLaser(Instrument):
         # ── State ─────────────────────────────────────────────────────────────
         # The Tiger has no on/off command so status is always 'ON' once
         # connected. These attributes exist so the rest of the codebase
-        # (Microscope, SimulatedHardware) can read them without crashing.
+        # (Microscope, SimulatedMicroscopeScene) can read them without crashing.
         self.status        = 'ON'
         self.current_power = 0.0    # diode current in Amps
         self.current_temp  = None   # controller temperature in °C
@@ -371,7 +371,7 @@ class TigerLaser(Instrument):
         This is the closest available proxy for laser power on the Tiger.
         Waits up to STATUS_TIMEOUT seconds for the next broadcast.
 
-        Updates self.current_power so SimulatedHardware threshold checks
+        Updates self.current_power so SimulatedMicroscopeScene threshold checks
         (current_power >= 3) remain meaningful. The simulated diode current
         is set to 4.52 A so the simulated laser line renders correctly.
         """
@@ -683,7 +683,7 @@ class TigerLaser(Instrument):
         """
         Not available on Tiger — no remote on/off command.
         Logs a warning. Does NOT change self.status to avoid breaking
-        SimulatedHardware laser line rendering.
+        SimulatedMicroscopeScene laser line rendering.
         """
         self.logger.warning(
             "TigerLaser.turn_off(): no remote on/off on Tiger — "
@@ -879,7 +879,7 @@ class _SimulatedTigerSerial:
     """
 
     _CTRL_TEMP   = 26.2
-    _DIODE_IACT  = 4.52    # Amps — above SimulatedHardware threshold of 3
+    _DIODE_IACT  = 4.52    # Amps — above SimulatedMicroscopeScene threshold of 3
     _DIODE_IMON  = 0.000
     _XTAL1_TACT  = 18.39
     _XTAL2_TACT  = 27.19

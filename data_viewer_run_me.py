@@ -9,6 +9,8 @@ import tkinter as tk
 import traceback
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+from pixisspec.spectral_roi import frame_rows_to_bin
+
 
 class LiveDataPlotter:
     def __init__(self, file_path, **kwargs):
@@ -95,6 +97,8 @@ class LiveDataPlotter:
                 self._new_data_available = False
 
             if frame is not None:
+                if frame.shape[0] != self.data.shape[0]:
+                    self._select_all_rows(frame.shape[0])  # a new camera ROI
                 self.data = frame
                 if self.data_mode == "Image":
                     self.update_image(self.data)
@@ -255,6 +259,15 @@ class LiveDataPlotter:
     # Y ROI
     # --------------------------------------------------------------------------
 
+    def _select_all_rows(self, frame_row_count):
+        """Bin every row of a frame of a new shape: the old selection was in rows of the old
+        frame (the camera ROI changed, e.g. by 'roi auto')."""
+        self.spectrum_roi = (0, frame_row_count)
+        self.y_center_entry.delete(0, tk.END)
+        self.y_center_entry.insert(0, str(frame_row_count // 2))
+        self.y_width_entry.delete(0, tk.END)
+        self.y_width_entry.insert(0, str(frame_row_count))
+
     def apply_y_roi(self):
         """Set Y ROI from center and width entries, then refresh the plot."""
         try:
@@ -318,7 +331,8 @@ class LiveDataPlotter:
         self.ax.set_xlabel("Pixel")
         self.ax.set_ylabel("Intensity (counts)")
         self.ax.set_title(
-            f"Spectrum  |  Y rows {self.spectrum_roi[0]}–{self.spectrum_roi[1]}"
+            "Spectrum  |  Y rows {}–{}".format(
+                *frame_rows_to_bin(self.spectrum_roi, self.data.shape[0]))
         )
 
         if self.autoscale_enabled and self.roi:
@@ -380,16 +394,9 @@ class LiveDataPlotter:
     # --------------------------------------------------------------------------
 
     def frame_to_spectrum(self):
-        """Average the selected Y-row ROI to produce a 1D spectrum."""
-        if self.spectrum_roi is None:
-            y_start, y_end = 0, self.data.shape[0]
-        else:
-            y_start = max(0, min(self.data.shape[0], self.spectrum_roi[0]))
-            y_end   = max(0, min(self.data.shape[0], self.spectrum_roi[1]))
-
-        if y_end <= y_start:
-            y_end = y_start + 1
-
+        """Average the selected Y-row ROI to produce a 1D spectrum (all rows when the selection
+        is outside the frame)."""
+        y_start, y_end = frame_rows_to_bin(self.spectrum_roi, self.data.shape[0])
         return np.mean(self.data[y_start:y_end, :], axis=0)
 
     # --------------------------------------------------------------------------
