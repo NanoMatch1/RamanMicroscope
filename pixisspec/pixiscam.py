@@ -1,4 +1,25 @@
-# pixisspec/pixiscam.py
+"""
+The PIXIS camera as the application uses it: live view, acquisitions, exposures and readout.
+
+- Live view (`run`): the camera streams frames for alignment, shown by data_viewer_run_me.py.
+  The newest frame is shown at once, so a frame can predate a move. `stop` ends it.
+- Acquisitions (`acquire`, scans, calibrations) stop the live view and take their own frames,
+  each exposed after the request.
+- Exposures are not limited in the software: a frame is waited for its exposure plus 30 s
+  (RealHardware.FRAME_TIMEOUT_MARGIN_S), so minutes per frame are fine. If the camera cannot
+  take an exposure it says so, and `caminfo` lists its allowed range. For long exposures,
+  consider several frames (`nframe`) rather than one: a cosmic ray then spoils one frame, not
+  the whole point.
+- The PIXIS has no shutter, so the sensor keeps collecting light while a frame is read out. At
+  short exposures a frame holds noticeably more light than the exposure alone (an on-chip
+  binned "10 ms" frame held 5.4 times the light of 10 ms, lab-notebook RAM-F3), and each line
+  smears faintly along its column. Saved data records the camera's readout time
+  (`readout_time_s` under `camera` in the metadata) so this can be allowed for.
+- The cooler runs flat out: the set point (-50 C) is below what this sensor reaches (about
+  -43 C), which gives the coldest sensor and the least dark current.
+
+The rows read out and their binning are set by the ROI (pixisspec/spectral_roi.py).
+"""
 
 import os
 import threading

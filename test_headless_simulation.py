@@ -160,6 +160,58 @@ def test_integrity_checker_agrees_with_registry():
             instrument._integrity_checker()
 
 
+def test_command_reference_is_up_to_date():
+    """docs/command_reference.md is generated from the command docstrings. A changed docstring
+    or command without regenerating the file fails here."""
+    sys.path.insert(0, os.path.join(REPO_DIR, 'tools'))  # tools/ is not a package
+    import build_command_reference
+    generated = build_command_reference.reference_for_interface(get_interface(), 'this test')
+    with open(build_command_reference.COMMAND_REFERENCE_PATH) as file:
+        committed = file.read()
+    assert (build_command_reference.without_build_stamp(committed)
+            == build_command_reference.without_build_stamp(generated)), (
+        "docs/command_reference.md is out of date: run "
+        "'PYTHONPATH=. python tools/build_command_reference.py' and commit the result")
+
+
+def test_command_reference_shows_which_of_two_same_named_commands_runs():
+    """The generator flags a name registered twice, says which method runs, marks the other as
+    unreachable, and lists commands without a docstring."""
+    sys.path.insert(0, os.path.join(REPO_DIR, 'tools'))  # tools/ is not a package
+    import build_command_reference as reference
+
+    def set_wavelength(wavelength):
+        """Set every grating to a wavelength."""
+
+    def relative_move(steps):
+        """Move the grating by a number of steps."""
+
+    def undocumented():
+        pass
+
+    sources = reference.CommandSources(
+        registrations=[reference.CommandRegistration('Microscope', 'sg', set_wavelength),
+                       reference.CommandRegistration('TRIAX', 'sg', relative_move),
+                       reference.CommandRegistration('TRIAX', 'mg', relative_move),
+                       reference.CommandRegistration('TRIAX', 'nodoc', undocumented)],
+        dispatched={'sg': set_wavelength, 'mg': relative_move, 'nodoc': undocumented},
+        motor_groups={}, subsystems=[('Gratings', 'How the gratings move.')])
+    markdown = reference.command_reference_markdown(sources, 'a test')
+    assert '### `sg`, `mg`' in markdown, "aliases of one method are listed together"
+    assert '**Not reachable as `sg`**' in markdown
+    clash_row = next(line for line in markdown.split('\n') if line.startswith('| `sg`'))
+    assert clash_row.endswith('`test_command_reference_shows_which_of_two_same_named_commands_runs.'
+                              '<locals>.set_wavelength` |')
+    assert markdown.rstrip().endswith('`nodoc`')
+    assert '## How it works: Gratings' in markdown
+
+
+def test_help_is_an_application_command():
+    """'help' goes through the command handler like any other command."""
+    assert 'help' in get_interface().interface_commands
+    assert run_command('help') is None
+
+
 # ----------------------------------------------------------------------------
 # Tiger laser
 # ----------------------------------------------------------------------------

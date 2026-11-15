@@ -4,27 +4,65 @@ Which CCD rows make the spectrum, and how they are binned.
 The spectrograph images the entrance slit as a band of rows across the PIXIS (1024 x 1024);
 the spectrum runs along the columns. Reading only the rows of that band (the region of
 interest, ROI) cuts the readout time and the file size, and leaves out rows that hold only
-dark current and read noise.
+dark current and read noise. Only the ROI rows are saved.
 
-Two ways to combine the ROI rows into one spectrum:
+Setting the ROI:
+
+- During alignment, `roi auto` (or Auto ROI in the live viewer) takes one frame of the whole
+  sensor with the light on, finds the slit image (`find_slit_image`) and reads its rows plus 3
+  each side. It also reports the slit image's tilt across the chip, in rows per 1000 columns,
+  which should be close to zero once the camera is square to the spectrograph. `roi full`
+  reads every row, to see where the light falls.
+- Exposure for `roi auto`: about 1 s with the Ar/Hg lamp (0.3 s was the shortest that worked
+  on the 2026-11-12 lamp frames, lab-notebook RAM-F3). The PIXIS has no shutter, so light keeps
+  landing on the rows while they are shifted out to be read (about 0.5 s for the whole
+  sensor). That smears every line along its column, the faint streaks above and below the
+  lamp lines, and the smear does not shrink with the exposure. When the smear outweighs the
+  slit image, `roi auto` says to lengthen the exposure instead of guessing the rows. With
+  on-chip binning's short exposures, lengthen the exposure for the `roi auto` frame, then
+  shorten it again.
+- Before collecting data, choose the rows by hand: in the live viewer, drag over the slit
+  image in the frame (or type Ymin/Ymax) and press Use selection as ROI; or
+  `roi <first row> <last row>`. Take the rows where the slit image is bright and no wider, so
+  no rows of pure noise are binned in. Data taken with an automatic or full-sensor ROI is
+  flagged in the log.
+- The ROI is stored in microscope_config.json and set again at start-up. Every saved file
+  records the ROI and binning the camera reported, with the exposure, readout time, gain, ADC
+  speed and sensor temperature (`metadata['camera']`). A lamp calibration (`speccal`,
+  `speccalzero`) checks the slit image first and records it with the walk; if the ROI misses
+  it, it sets an automatic ROI.
+
+Two ways to combine the ROI rows into one spectrum (the box in the live viewer, or
+`roi binning software|onchip`, or `setbin`):
 
 - software binning (`rows_binned_on_chip = 1`): every ROI row is read out and saved, and the
-  rows are combined afterwards. Each row adds its own read noise, but the frame still shows
-  where the slit image sits, how it is tilted, and which rows a cosmic ray hit.
+  rows are combined afterwards. The frame still shows where the slit image sits, how it is
+  tilted, the readout smear, and which rows a cosmic ray hit.
 - on-chip binning (`rows_binned_on_chip = row count`): the CCD sums the rows' charge before
-  the single read of each column, so read noise enters once per column. Best for weak signals;
-  the frame is one row, so the slit image can no longer be checked from the data. The summed
-  charge is clipped at the ADC full scale (65535 counts), so bright lines saturate sooner.
+  the single read of each column. The frame is one row, so the slit image can no longer be
+  checked from the data.
 
 A value between the two bins that many rows per output row.
 
-Setting the ROI: `find_slit_image` locates the slit image on a full-sensor frame (the lamp
-or laser on), which is what an automatic ROI uses; it follows the slit image while the
-camera is being aligned and moves it. Before collecting data the rows should be chosen by
-hand in the live viewer, around the slit image and no wider, so no rows of pure noise are
-binned in (docs/user_guide.md).
+Which binning when: software while troubleshooting and aligning, because it shows what the
+CCD sees; on-chip for acquisitions. Both read only the ROI rows; the difference is how many
+pixels are digitised. Every read adds read noise (a fixed amount per read, from the output
+amplifier and the ADC), and noises from separate reads add in quadrature, so summing N rows
+read one by one gives sqrt(N) times the read noise of one read: about 12.6 times for a 158-row
+ROI. On-chip binning adds the charge of the N rows together first and reads it once, so it
+carries the read noise of one read. It also reads out faster: one row of 1024 pixels is
+digitised instead of N (about 0.5 ms per row at 2 MHz), though shifting the rows down to the
+readout register still takes its time (`readout_time_s` in the metadata gives the total).
 
-Pure: no camera or GUI here.
+The noise advantage matters while read noise dominates: weak signals and short exposures.
+Binning does not reduce the shot noise of the signal or of the dark current (that charge is
+summed either way), so in long exposures (minutes) the gain shrinks;
+tools/pixis_dark_noise_check.py measures where that happens on this camera. The costs: bright
+lines saturate sooner (the sum is clipped at the ADC full scale, 65535 counts: column 399 of
+the Ar/Hg lamp did at "10 ms", RAM-F3), and cosmic rays cannot be seen or removed in a one-row
+frame, so split long points into several frames (`nframe`).
+
+This module is pure: no camera or GUI.
 """
 
 from dataclasses import asdict, dataclass, replace

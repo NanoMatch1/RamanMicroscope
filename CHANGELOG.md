@@ -35,7 +35,7 @@ dated section of the change that fixes it.
   differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
   against a known Raman line once the axis is settled.
 
-## Repeated walks, walk offsets in the fit report, `sg` fixed (2026-11-15)
+## Repeated walks, walk offsets in the fit report, `sg` fixed, generated command reference (2026-11-15)
 
 Branch `feature/calibration-repeat-and-docs`.
 
@@ -53,6 +53,14 @@ Branch `feature/calibration-repeat-and-docs`.
 - **The `speccalfit` report tabulates every walk's offset at every TRIAX position**, with the
   mean (nm and TRIAX steps) and the spread over the walks: the raw material for a TRIAX position
   table.
+- **`docs/command_reference.md` is generated from the docstrings** by
+  `tools/build_command_reference.py`: every command (application, instruments, motor labels),
+  "How it works" sections from module docstrings, the command names registered in more than one
+  place and which one runs, and the commands without a docstring. A test fails when the file is
+  out of date. The user guide's hand-written command lists and its camera ROI section are
+  replaced by a link to it; what only the guide said moved into the docstrings first. `gui` and
+  `help` are now ordinary application commands, and motor jogging (`g2 -40`) is documented by
+  `Interface.jog_motor`.
 
 ## TRIAX moves arrive from below; PIXIS readout time recorded (2026-11-12)
 

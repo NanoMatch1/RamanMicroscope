@@ -53,12 +53,16 @@ class Interface:
 
         self.logger = LoggerInterface(name='interface')
 
+        # Application-level commands. They are looked up before the instruments' commands, so
+        # a name here wins over an instrument's (tools/build_command_reference.py lists clashes).
         self.interface_commands = {
             'triax'  : self.connect_to_triax,
             'camera' : self.connect_to_camera,
             'laser'  : self.connect_to_laser,
             'logger' : self.logger_level,
-            'calcheck': self._laser_cal_check
+            'calcheck': self._laser_cal_check,
+            'gui'    : self.gui,
+            'help'   : self.show_help,
         }
 
         self.simulate    = simulate
@@ -201,14 +205,6 @@ class Interface:
                     self.camera.close_camera()
                     # ── END CHANGE ────────────────────────────────────────────
                     break
-
-                if command == 'gui':
-                    self.gui()
-                    continue
-
-                if command == 'help':
-                    self.show_help()
-                    continue
 
                 if command == 'debug':
                     self.logger.info("Debugging")
@@ -390,6 +386,7 @@ class Interface:
         return help_dict
 
     def show_help(self):
+        """List every command with its docstring (docs/command_reference.md has the same)."""
         help_dict = self.generate_help()
         self.logger.info("Available commands:")
         for inst, commands in help_dict.items():
@@ -418,9 +415,11 @@ class Interface:
     # Command map
     # --------------------------------------------------------------------------
 
-    def _generate_command_map(self):
-        """Dynamically generate a command map from declared instruments."""
-        instruments = [
+    def registered_instruments(self):
+        """The instruments whose command_functions make up the CLI, in the order their commands
+        are merged (attribute name order): a name registered twice goes to the later one.
+        tools/build_command_reference.py documents the commands from the same list."""
+        return [
             self.__getattribute__(attr)
             for attr in dir(self)
             if (
@@ -428,9 +427,12 @@ class Interface:
                 or isinstance(self.__getattribute__(attr), InstrumentBase)
             )
         ]
+
+    def _generate_command_map(self):
+        """Dynamically generate a command map from declared instruments."""
         command_map = {
             funct: (instrument, method)
-            for instrument in instruments
+            for instrument in self.registered_instruments()
             for funct, method in instrument.command_functions.items()
         }
         return command_map
@@ -463,13 +465,10 @@ class Interface:
 
         elif funct in self.microscope.motor_map.keys():
             try:
-                motor_id      = self.microscope.motor_map[funct]
-                steps         = int(arguments[0])
-                motion_command = 'o{}{}o'.format(motor_id, steps)
-                self.controller.send_command(motion_command)
+                self.jog_motor(funct, *(arguments or []))
             except Exception as e:
                 error_details = traceback.format_exc()
-                result = f" > Error: {e}\n{error_details}"
+                return f" > Error: {e}\n{error_details}"
 
         else:
             try:
@@ -478,6 +477,14 @@ class Interface:
                 error_details = traceback.format_exc()
                 result = f" > Error: {e}\n{error_details}"
             return result
+
+    def jog_motor(self, motor_label, steps):
+        """Jog one motor by a number of steps from where it is (relative, either sign), e.g.
+        'g2 -40'. Type the motor's label and the steps; the labels are listed below. For
+        alignment and calibration, when a whole-instrument command (a wavelength) is too coarse.
+        The move goes straight to the controller: no backlash correction is applied."""
+        motor_id = self.microscope.motor_map[motor_label]
+        self.controller.send_command('o{}{}o'.format(motor_id, int(steps)))
 
     # --------------------------------------------------------------------------
     # Command parser

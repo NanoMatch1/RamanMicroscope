@@ -1323,10 +1323,10 @@ class Microscope(Instrument):
     @ui_callable
     def home_motor(self, motor_label):
         """
-        Home the specified motor.
+        Home the specified motor, e.g. 'home l1'.
         
         Parameters:
-        motor_label (str): The label of the motor to home, e.g., '1X', '2Y', etc.
+        motor_label (str): The motor's label, e.g. 'l1', 'g2' (Microscope.motor_map).
         
         Returns:
         str: The response from the controller after homing the motor.
@@ -1470,13 +1470,14 @@ class Microscope(Instrument):
 
     @ui_callable
     def go_to_polarization_in(self, angle):
-        '''Moves the polarizer to the specified angle.'''
+        '''Moves the input polarizer to the specified angle.'''
         self.motion_control.move_motors({'p_in': angle})
         self.micro_log.info('Input polarization set to {} degrees'.format(angle))
 
     @ui_callable
     def go_to_polarization_out(self, angle):
-        '''Moves the polarizer to the specified angle.'''
+        '''Moves the output polarizer (analyser) to the specified angle. Not implemented yet:
+        the command prints a notice and does nothing.'''
         print("Not implemented yet")
         return
         self.motion_control.move_motors({'p_out': angle})
@@ -2338,6 +2339,7 @@ class Microscope(Instrument):
 
     @ui_callable
     def set_filename(self, filename):
+        '''Set the file name for saved data, e.g. 'filename MoS2_flake3'.'''
         self.interface.acq_ctrl.general_parameters['filename'] = filename
         print("Filename set to: ", filename)
 
@@ -2376,7 +2378,8 @@ class Microscope(Instrument):
 
     @ui_callable
     def cycle_laser_shutter(self):
-        '''Cycles the laser shutter.'''
+        '''Cycle the laser shutter. Not available on the Tiger, which has no remote shutter
+        control: the command only logs a warning.'''
         self.interface.laser.cycle_shutter()
     
     @ui_callable
@@ -2387,7 +2390,8 @@ class Microscope(Instrument):
     
     @ui_callable
     def enable_laser(self):
-        '''Enables the laser.'''
+        '''Enable the laser. Not available on the Tiger, which has no remote enable command:
+        the command only logs a warning.'''
         self.interface.laser.enable_laser()
 
     @ui_callable
@@ -2472,7 +2476,10 @@ class Microscope(Instrument):
     
     @ui_callable
     def start_continuous_acquisition(self):
-        '''Starts continuous acquisition on the camera.'''
+        '''Starts continuous acquisition on the camera: the live view for alignment, plotted by
+        data_viewer_run_me.py. It shows the newest frame at once, so a frame can predate a move.
+        Acquisitions ('acquire', scans, calibrations) stop it and take their own frames, each
+        exposed after the request. 'stop' ends it.'''
         self.interface.acq_ctrl.prepare_acquisition_params()
         self.camera.start_continuous_acquisition()
 
@@ -2993,7 +3000,7 @@ class Microscope(Instrument):
     def go_to_laser_wavelength(self, wavelength):
         """
         Move the Tiger Ti:Sapphire laser to the specified wavelength
-        via the piezomotor calibration.
+        via the piezomotor calibration, e.g. 'sl 800' for 800 nm.
 
         Parameters:
         wavelength (float): Target wavelength in nm
@@ -3032,7 +3039,9 @@ class Microscope(Instrument):
     @debug_return()
     def go_to_monochromator_wavelength(self, wavelength):
         """
-        Move the monochromator to the specified wavelength.
+        Move the monochromator to the specified wavelength, e.g. 'sm 805', leaving the other
+        gratings where they are. Moving the detection closer to the laser line shows
+        low-frequency modes; moving it further away cuts stray light and Rayleigh scattering.
         
         Parameters:
         wavelength (float): Target wavelength in nm
@@ -3222,10 +3231,12 @@ class Microscope(Instrument):
 
     @ui_callable
     def close_mono_shutter(self):
+        '''Close the mechanical shutter.'''
         self.controller.close_mono_shutter()
 
     @ui_callable
     def open_mono_shutter(self):
+        '''Open the mechanical shutter.'''
         self.controller.open_mono_shutter()
 
 
@@ -3250,6 +3261,8 @@ class Microscope(Instrument):
 
     @ui_callable
     def where_am_i(self):
+        '''"Where am I": report every motor's position and the laser and grating wavelengths
+        calculated from them with the calibrations.'''
         self.get_all_current_wavelengths()
         self.report_all_current_positions()
 

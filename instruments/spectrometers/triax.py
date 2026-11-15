@@ -120,7 +120,7 @@ class Triax(Instrument):
     
     @ui_callable
     def read_enterance_slit(self):
-        '''Read the current position of the entrance slit.'''
+        '''Read the current position of the entrance slit: 25-50 microns for standard operation.'''
         response = self.send_command('read_enter')
 
         try:
