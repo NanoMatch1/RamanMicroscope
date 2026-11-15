@@ -4,36 +4,13 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
-## Open issues (found 2026-11-06 to 2026-11-12)
+## Open issues
 
-Open issues found by review and bench data. When an issue is fixed, its entry moves into the
-dated section of the change that fixes it.
-
-### PIXIS camera: still open
-
-- The ADC runs at 2 MHz. The 100 kHz rate has lower read noise; worth comparing on the bench now
-  that the ROI makes the readout time much smaller.
-- The camera ROI is stored in `microscope_config.json`, which is tracked in git, although it
-  belongs to one rig (where its slit image falls). Kept there for now; to be moved to an
-  untracked per-machine file (MODERNIZATION.md, "Planned work").
-
-### Wavelength axis calibration: still open
-
-- **The TRIAX drive is not a low-order polynomial in steps.** Over the full Ar-Hg walk the
-  per-position TRIAX offsets sit 0.34 nm rms from a quadratic, 0.10 nm from a cubic and 0.05 nm
-  from order 5 (2026-11-10). `triaxorder=N` and the TRIAX-shape gate (below) handle the smooth
-  part; the remaining ~0.1 nm from one position to the next is the drive itself. A TRIAX position
-  table interpolated between calibration positions would capture it (estimated 0.045 nm from
-  the 2026-11-10 data; a walk with finer TRIAX steps would show whether interpolation holds).
-- **`speccalfit triaxsigma=`** (added 2026-11-10) adds a TRIAX positioning error to each point
-  to bring chi-squared down. It treats an error shared by every line in a frame as independent
-  per line, which hides misidentified lines and model errors alike; the measured repeatability
-  within a session is about 0.03 nm (3 steps), not the 25 steps in the example. It is kept for
-  now, with a gate that says when it was used; decide whether to remove it.
-- **Mercury sits ~0.05 nm off argon** in the same frames (first and second order alike), so
-  mercury is identification-only. If argon and the Raman signal also light the slit
-  differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
-  against a known Raman line once the axis is settled.
+Open bugs and planned work are tracked as GitHub Issues: https://github.com/NanoMatch1/RamanMicroscope/issues. The
+entries that stood here moved there on 2026-11-15: ADC speed (#9), camera ROI in the
+tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (#6),
+mercury vs argon offset (#4). A dated section below says which issue a change
+fixes.
 
 ## Repeated walks, walk offsets in the fit report, `sg` fixed, generated command reference (2026-11-15)
 
