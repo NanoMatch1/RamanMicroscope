@@ -4,36 +4,40 @@ This file tracks functionally significant changes to the Raman microscope
 control software. It does not track calibration data regeneration, log
 churn, or other non-functional file noise — see git history for that.
 
-## Open issues (found 2026-11-06 to 2026-11-12)
+## Open issues
 
-Open issues found by review and bench data. When an issue is fixed, its entry moves into the
-dated section of the change that fixes it.
+Open bugs and planned work are tracked as GitHub Issues: https://github.com/NanoMatch1/RamanMicroscope/issues. The
+entries that stood here moved there on 2026-11-15: ADC speed (#9), camera ROI in the
+tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (#6),
+mercury vs argon offset (#4). A dated section below says which issue a change
+fixes.
 
-### PIXIS camera: still open
+## Repeated walks, walk offsets in the fit report, `sg` fixed, generated command reference (2026-11-15)
 
-- The ADC runs at 2 MHz. The 100 kHz rate has lower read noise; worth comparing on the bench now
-  that the ROI makes the readout time much smaller.
-- The camera ROI is stored in `microscope_config.json`, which is tracked in git, although it
-  belongs to one rig (where its slit image falls). Kept there for now; to be moved to an
-  untracked per-machine file (MODERNIZATION.md, "Planned work").
+Branch `feature/calibration-repeat-and-docs`.
 
-### Wavelength axis calibration: still open
-
-- **The TRIAX drive is not a low-order polynomial in steps.** Over the full Ar-Hg walk the
-  per-position TRIAX offsets sit 0.34 nm rms from a quadratic, 0.10 nm from a cubic and 0.05 nm
-  from order 5 (2026-11-10). `triaxorder=N` and the TRIAX-shape gate (below) handle the smooth
-  part; the remaining ~0.1 nm from one position to the next is the drive itself. A TRIAX position
-  table interpolated between calibration positions would capture it (estimated 0.045 nm from
-  the 2026-11-10 data; a walk with finer TRIAX steps would show whether interpolation holds).
-- **`speccalfit triaxsigma=`** (added 2026-11-10) adds a TRIAX positioning error to each point
-  to bring chi-squared down. It treats an error shared by every line in a frame as independent
-  per line, which hides misidentified lines and model errors alike; the measured repeatability
-  within a session is about 0.03 nm (3 steps), not the 25 steps in the example. It is kept for
-  now, with a gate that says when it was used; decide whether to remove it.
-- **Mercury sits ~0.05 nm off argon** in the same frames (first and second order alike), so
-  mercury is identification-only. If argon and the Raman signal also light the slit
-  differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
-  against a known Raman line once the axis is settled.
+- **`sg 800` moved the TRIAX 800 steps instead of setting the gratings to 800 nm.** The TRIAX
+  registered `sg` (and `go_to_position`) as a relative grating move on 2026-08-20, and the
+  command registry gave it the name over the microscope's grating command. The TRIAX's `sg` and
+  `go_to_position` are removed (`mg` makes the same relative move), so `sg` sets the gratings
+  again.
+- **`speccal arhg repeat=N`** runs N walks in a row, unattended, all planned from the same
+  calibration so they visit the same TRIAX steps (it combines with `samples=`). If a walk fails,
+  the walks saved before it are kept. Ported from Riley's `multispeccal` (`d2ac41f`, archived on
+  `feature/wavelength-reference-calibration`); the comparison his `speccaltriaxcheck` made is
+  the `walk agreement` gate plus the table below. Walk files no longer overwrite each other when
+  two finish in the same second.
+- **The `speccalfit` report tabulates every walk's offset at every TRIAX position**, with the
+  mean (nm and TRIAX steps) and the spread over the walks: the raw material for a TRIAX position
+  table.
+- **`docs/command_reference.md` is generated from the docstrings** by
+  `tools/build_command_reference.py`: every command (application, instruments, motor labels),
+  "How it works" sections from module docstrings, the command names registered in more than one
+  place and which one runs, and the commands without a docstring. A test fails when the file is
+  out of date. The user guide's hand-written command lists and its camera ROI section are
+  replaced by a link to it; what only the guide said moved into the docstrings first. `gui` and
+  `help` are now ordinary application commands, and motor jogging (`g2 -40`) is documented by
+  `Interface.jog_motor`.
 
 ## TRIAX moves arrive from below; PIXIS readout time recorded (2026-11-12)
 

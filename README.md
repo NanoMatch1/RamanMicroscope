@@ -130,7 +130,9 @@ axis — is in the [calibration guide](docs/calibration.md).
 order (motor power stays off until the command prompt appears), homing, tuning
 to a wavelength, the sulfur alignment check, jogging the grating motors back
 into alignment, and troubleshooting weak lasing. Read it before running the
-real instrument.
+real instrument. Every command is documented in
+[`docs/command_reference.md`](docs/command_reference.md), generated from the code's
+docstrings by `tools/build_command_reference.py`.
 
 If the Raman signal disappears entirely, the
 [grating alignment quickstart](docs/grating_alignment_quickstart.md) walks

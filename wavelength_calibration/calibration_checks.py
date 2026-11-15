@@ -490,6 +490,38 @@ def triax_rms_by_polynomial_order(fit, highest_order=5):
     return rms_by_order
 
 
+def frame_offset_table_lines(fit):
+    """The offset of every walk at every TRIAX position, as report lines: the mean fit residual of
+    each frame (nm, and in TRIAX steps), one row per TRIAX position, one column per walk, then the
+    mean and spread over the walks. Walks are numbered in the table and named below it.
+
+    After each walk's own zero, a frame's offset is the TRIAX drive's error at that position as
+    far as the fitted model cannot follow it. Walks that agree position by position show an error
+    that repeats, which a position table can correct (lab-notebook RAM-F3: 0.003 nm between walks
+    against 0.05 nm of pattern); offsets that differ from walk to walk are positioning noise."""
+    frame_offsets = decompose_fit_residuals(fit).frame_offsets_nm
+    walks = list(dict.fromkeys(walk for walk, _ in frame_offsets))
+    positions = sorted({steps for _, steps in frame_offsets})
+    if not positions:
+        return []
+    walk_headers = [f"walk {number}" for number in range(1, len(walks) + 1)]
+    lines = ["TRIAX frame offsets by walk and position (mean fit residual of each frame, nm):",
+             f"  {'TRIAX steps':>11} " + " ".join(f"{header:>9}" for header in walk_headers)
+             + f" {'mean nm':>9} {'mean steps':>10} {'spread nm':>9}"]
+    for steps in positions:
+        offsets = [frame_offsets.get((walk, steps)) for walk in walks]
+        measured = [offset for offset in offsets if offset is not None]
+        mean_offset = float(np.mean(measured))
+        mean_in_steps = mean_offset / abs(fit.model.nm_per_triax_step(float(steps)))
+        spread = float(np.ptp(measured)) if len(measured) > 1 else float('nan')
+        lines.append(f"  {steps:>11d} "
+                     + " ".join(f"{offset:>+9.4f}" if offset is not None else f"{'-':>9}"
+                                for offset in offsets)
+                     + f" {mean_offset:>+9.4f} {mean_in_steps:>+10.1f} {spread:>9.4f}")
+    lines += [f"  {header} = {walk}" for header, walk in zip(walk_headers, walks)]
+    return lines
+
+
 @calibration_check('TRIAX shape', applies_to=('fit',))
 def check_triax_shape(evidence, limits):
     """Frame offsets: what the TRIAX polynomial does not follow (drive shape, positioning)."""

@@ -140,7 +140,7 @@ def test_command_registry_is_populated():
 
     # A representative command from each hardware module must be present.
     for command in ['gotowavelength', 'wavelength', 'laserhome',   # laser
-                    'rg', 'ren', 'sg',                             # spectrometer
+                    'rg', 'ren', 'mg',                             # spectrometer
                     'acquire', 'acqtime', 'caminfo',               # camera
                     'report', 'wai', 'ramanshift']:                # microscope
         assert command in command_map, f"{command!r} missing from command map"
@@ -158,6 +158,58 @@ def test_integrity_checker_agrees_with_registry():
                        interface.microscope]:
         with contextlib.redirect_stdout(io.StringIO()):
             instrument._integrity_checker()
+
+
+def test_command_reference_is_up_to_date():
+    """docs/command_reference.md is generated from the command docstrings. A changed docstring
+    or command without regenerating the file fails here."""
+    sys.path.insert(0, os.path.join(REPO_DIR, 'tools'))  # tools/ is not a package
+    import build_command_reference
+    generated = build_command_reference.reference_for_interface(get_interface(), 'this test')
+    with open(build_command_reference.COMMAND_REFERENCE_PATH) as file:
+        committed = file.read()
+    assert (build_command_reference.without_build_stamp(committed)
+            == build_command_reference.without_build_stamp(generated)), (
+        "docs/command_reference.md is out of date: run "
+        "'PYTHONPATH=. python tools/build_command_reference.py' and commit the result")
+
+
+def test_command_reference_shows_which_of_two_same_named_commands_runs():
+    """The generator flags a name registered twice, says which method runs, marks the other as
+    unreachable, and lists commands without a docstring."""
+    sys.path.insert(0, os.path.join(REPO_DIR, 'tools'))  # tools/ is not a package
+    import build_command_reference as reference
+
+    def set_wavelength(wavelength):
+        """Set every grating to a wavelength."""
+
+    def relative_move(steps):
+        """Move the grating by a number of steps."""
+
+    def undocumented():
+        pass
+
+    sources = reference.CommandSources(
+        registrations=[reference.CommandRegistration('Microscope', 'sg', set_wavelength),
+                       reference.CommandRegistration('TRIAX', 'sg', relative_move),
+                       reference.CommandRegistration('TRIAX', 'mg', relative_move),
+                       reference.CommandRegistration('TRIAX', 'nodoc', undocumented)],
+        dispatched={'sg': set_wavelength, 'mg': relative_move, 'nodoc': undocumented},
+        motor_groups={}, subsystems=[('Gratings', 'How the gratings move.')])
+    markdown = reference.command_reference_markdown(sources, 'a test')
+    assert '### `sg`, `mg`' in markdown, "aliases of one method are listed together"
+    assert '**Not reachable as `sg`**' in markdown
+    clash_row = next(line for line in markdown.split('\n') if line.startswith('| `sg`'))
+    assert clash_row.endswith('`test_command_reference_shows_which_of_two_same_named_commands_runs.'
+                              '<locals>.set_wavelength` |')
+    assert markdown.rstrip().endswith('`nodoc`')
+    assert '## How it works: Gratings' in markdown
+
+
+def test_help_is_an_application_command():
+    """'help' goes through the command handler like any other command."""
+    assert 'help' in get_interface().interface_commands
+    assert run_command('help') is None
 
 
 # ----------------------------------------------------------------------------
@@ -243,11 +295,21 @@ def test_spectrometer_reports_position():
 
 
 def test_spectrometer_relative_move_changes_position():
-    """'sg' issues a relative grating move; position must track it."""
+    """'mg' issues a relative TRIAX grating move; position must track it."""
     before = run_command('rg')
-    run_command('sg 500')
+    run_command('mg 500')
     after = run_command('rg')
     assert after == before + 500
+
+
+def test_sg_sets_the_grating_wavelength_not_a_triax_move():
+    """'sg' sets every tunable-filter grating to a wavelength. The TRIAX once registered 'sg' as a
+    relative move too, and the registry gave it the name, so 'sg 800' moved the TRIAX 800 steps."""
+    interface = get_interface()
+    assert interface.command_map['sg'][1] == interface.microscope.go_to_grating_wavelength
+    triax_steps_before = run_command('rg')
+    run_command('sg 800')
+    assert run_command('rg') == triax_steps_before
 
 
 def test_spectrometer_always_arrives_at_a_position_from_below():
@@ -575,6 +637,59 @@ def test_speccal_samples_and_speccalfit_plot():
         assert len(report_files) == 2, report_files
         report_name, plot_name = sorted(report_files, key=lambda name: name.endswith('.png'))
         assert plot_name == os.path.splitext(report_name)[0] + '.png'
+
+
+def test_speccal_repeat_walks_the_same_positions_and_the_report_tabulates_each_walk():
+    """'speccal arhg repeat=2' runs two walks planned from one calibration, so they visit the same
+    TRIAX steps; 'speccalfit' tabulates each walk's offset at each position. A bad repeat value
+    refuses instead of walking."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        assert run_command('speccal arhg repeat=0') is None
+        assert run_command('speccal arhg repeat=twice') is None
+        line_walk_paths = run_command('speccal arhg samples=3 repeat=2')
+        assert len(line_walk_paths) == 2 and len(set(line_walk_paths)) == 2
+        requested_steps_by_walk, descriptions = [], []
+        for line_walk_path in line_walk_paths:
+            with open(line_walk_path) as file:
+                walk = json.load(file)
+            requested_steps_by_walk.append([record['requested_steps']
+                                            for record in walk['position_records']])
+            descriptions.append(walk['description'])
+        assert requested_steps_by_walk[0] == requested_steps_by_walk[1]
+        assert 'walk 1 of 2' in descriptions[0] and 'walk 2 of 2' in descriptions[1]
+        assert microscope.line_walk_session_files == line_walk_paths
+        assert run_command('speccalfit curvature triaxquadratic') is not None
+        report_name, = os.listdir(microscope.calibration_fit_report_directory)
+        with open(os.path.join(microscope.calibration_fit_report_directory, report_name)) as file:
+            report = file.read()
+        table = report.split('TRIAX frame offsets by walk and position')[1].split('\n\n')[0]
+        assert 'walk 1' in table and 'walk 2' in table
+        for line_walk_path in line_walk_paths:
+            assert os.path.basename(line_walk_path) in table
+
+
+def test_speccal_repeat_keeps_the_walks_saved_before_one_fails():
+    """If a walk of 'speccal repeat=N' fails, the walks already saved are kept and returned, and
+    the remaining walks are not started."""
+    microscope = get_interface().microscope
+    original_run_one_line_walk = microscope._run_one_line_walk
+    walks_started = []
+
+    def second_walk_fails(*arguments, **keyword_arguments):
+        walks_started.append(len(walks_started) + 1)
+        if len(walks_started) == 2:
+            raise RuntimeError('simulated camera timeout')
+        return original_run_one_line_walk(*arguments, **keyword_arguments)
+
+    with temporary_calibration_files(microscope):
+        microscope._run_one_line_walk = second_walk_fails
+        try:
+            line_walk_paths = run_command('speccal arhg samples=3 repeat=3')
+        finally:
+            del microscope._run_one_line_walk
+        assert walks_started == [1, 2]
+        assert len(line_walk_paths) == 1 and os.path.exists(line_walk_paths[0])
 
 
 def test_applied_axis_warns_outside_its_fitted_triax_range():

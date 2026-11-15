@@ -32,7 +32,10 @@ interactive prompt fails fast instead of hanging. Never add a bare
   - Classes: PascalCase (e.g., `PIXISCamera`, `TigerLaser`, `Microscope`)
   - Functions/variables: snake_case (e.g., `get_laser_motor_positions`)
   - Constants: UPPERCASE (e.g., `RAMAN_MODE_STEPS`, `STEP_MAX`)
-- **Documentation**: Use docstrings for all functions and classes
+- **Documentation**: Use docstrings for all functions and classes. A command's docstring is its
+  user documentation: `docs/command_reference.md` is generated from the docstrings by
+  `tools/build_command_reference.py` (re-run it after changing a command or its docstring; a
+  headless test fails when it is out of date). Never edit that file by hand.
 - **Error Handling**: Use try/except blocks for hardware interactions, log errors
 - **Types**: Consider adding type hints to function signatures
 - **Simulation**: Use `@simulate` decorator for hardware-free testing

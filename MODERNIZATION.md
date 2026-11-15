@@ -13,6 +13,10 @@ system runs. These are the things that make it expensive to change safely.
 prerequisites — they make the rest cheaper and safer to do. Tier 3 items
 are worth doing but can wait indefinitely without cost compounding.
 
+**Status lives in GitHub Issues** (https://github.com/NanoMatch1/RamanMicroscope/issues). An item marked "(issue #N)" is
+tracked there; this file keeps the reasoning and the file:line evidence the issue links
+to. When an issue closes, mark the item done here.
+
 ---
 
 ## Tier 1 — Do these first (they unblock everything else)
@@ -27,7 +31,7 @@ now-unused `serial` / `abstractmethod` imports they required.
 
 Remaining: the file is still 2826 lines. See 1.2.
 
-### 1.2 Break up the monoliths
+### 1.2 Break up the monoliths (issue #21)
 
 | File | Lines | Contains |
 |---|---:|---|
@@ -49,7 +53,7 @@ status reporting. Suggested split:
 suite green after each move. The suite exists now precisely to make this
 safe.
 
-### 1.3 Two different `Instrument` base classes with the same name
+### 1.3 Two different `Instrument` base classes with the same name (issue #18)
 
 - `instruments/instrument_base.py:Instrument` — used by `TigerLaser`,
   `Triax`, `PIXISCamera`
@@ -64,7 +68,7 @@ Collapse to one ABC in `instruments/instrument_base.py`. Low risk — the
 two implementations are near-identical; the registry contract
 (`_integrity_checker`) is the part that matters and it is duplicated.
 
-### 1.4 Hardware ports are hard-coded, defeating the DI design
+### 1.4 Hardware ports are hard-coded, defeating the DI design (issue #19)
 
 The architecture is otherwise good dependency injection — hardware objects
 are constructed in `interface_run_me.py` and passed in. But the ports are
@@ -84,13 +88,11 @@ instrument-connection config, ports injected at construction.
 `.example`), read by `Interface`, ports passed to each constructor. This
 also fixes the `simulate=True` hazard in 1.5.
 
-### 1.5 `simulate` is a hard-coded override, not a flag
+### 1.5 `simulate` is a hard-coded override, not a flag (issue #25)
 
-`interface_run_me.py:530` currently carries `simulate = True  # Force
-simulation mode for testing purposes`, which overrides the platform
-detection above it. **This is deliberately uncommitted** (it would run the
-lab microscope fully simulated with no hardware moving), but the underlying
-problem is that there is no supported way to ask for simulation.
+The forced `simulate = True  # Force simulation mode for testing purposes`
+line is gone, but the underlying problem remains: there is no supported way
+to ask for simulation, so the platform heuristic below decides.
 
 Replace the whole `if "Users\\Sam" in os.getcwd()` heuristic block
 (`interface_run_me.py:523-528` — hostname-sniffing to guess intent) with an
@@ -121,7 +123,7 @@ is authoritative in `README.md`, so the two cannot silently diverge.
 
 ## Tier 2 — Correctness and maintainability
 
-### 2.1 Interactive `input()` calls inside library code
+### 2.1 Interactive `input()` calls inside library code (issue #26)
 
 Blocking prompts buried in instrument logic make automation and testing
 impossible, and hang unattended runs:
@@ -141,7 +143,7 @@ to non-interactive; let the CLI layer supply the prompt. This is the same
 separation the GUI already needs, since none of these prompts can work from
 `process_gui_command()` either.
 
-### 2.2 Cross-object private state access
+### 2.2 Cross-object private state access (issue #23)
 
 `Microscope` writes directly into `AcquisitionControl`'s private dict:
 
@@ -173,7 +175,7 @@ elsewhere in the same firmware file (`:335`), evidently copied across by
 mistake. Corrected to `6000`, and `test_controller_simulated.py` now
 asserts the firmware value explicitly rather than a round trip.
 
-#### TODO — resolve mode switching (needs hardware check with the student)
+#### TODO — resolve mode switching (needs hardware check with the student) (issue #24)
 
 Traced end to end. **The ±6000 firmware path is dead code as far as the
 application is concerned**, so the disagreement is less alarming than it
@@ -240,7 +242,7 @@ Others:
 **Recommended:** single source of truth per constant, in config, with the
 derivation documented.
 
-### 2.4 Silent exception swallowing
+### 2.4 Silent exception swallowing (issue #23)
 
 - `instruments/lasers/tiger_laser.py:842-843` — `except Exception: pass` in
   `__del__`
@@ -258,12 +260,11 @@ scan can currently accumulate failures that are logged as INFO-level strings
 and never surfaced. Consider a `CommandResult` dataclass
 (`ok: bool, value, error`) instead of stringly-typed returns.
 
-### 2.5 Naming that fails the searchability test
+### 2.5 Naming that fails the searchability test (issue #20)
 
-- `Triax.go_to_position()` (`triax.py:217`) sends `F0`, a **relative** move.
-  `sg 105500` shifts by 105500 steps rather than moving to that position.
-  Rename to `move_grating_relative` (which already exists as a separate
-  command mapping to the same underlying call).
+- ~~`Triax.go_to_position()` sends `F0`, a **relative** move, registered as `sg`~~
+  — ✅ DONE (32f72a7): removed; `mg` makes the relative move and `sg` sets the
+  grating wavelength.
 - `"enterance"` — misspelling of "entrance", **32 occurrences** across the
   codebase including public method names (`read_enterance_slit`,
   `move_enterance_slit`, `enterance_slit_width`). Searching for the correct
@@ -272,7 +273,7 @@ and never surfaced. Consider a `CommandResult` dataclass
   `Calibrationgenerator.py`, `Lasercalbration.py` (also misspelled),
   `sdk check.py` (space in filename), `cal1.csv`, `calitest.csv`.
 
-### 2.6 Two GUI frameworks
+### 2.6 Two GUI frameworks (issue #22)
 
 `acquisitioncontrol/acqgui.py` is **tkinter**; `acquisitioncontrol/pyqtGUI.py`
 is **PyQt5**. The tkinter one is imported unconditionally in
@@ -354,28 +355,13 @@ machine keeps its real values) and added to `.gitignore`:
 
 ## Planned work: camera and wavelength calibration
 
-Features and follow-ups agreed or proposed, not yet built. Open defects are in
-`CHANGELOG.md` ("Known issues"); findings behind these are in the lab notebook (RAM-F#).
+Moved to GitHub Issues on 2026-11-15, where the reasoning now lives: ADC speed
+(#9), untrack the camera ROI (#7), per-walk dispersion check (#5), TRIAX position
+table (#3), remove `triaxsigma` (#6), provenance code vs data (#17), cosmic-ray
+rejection (#10). Findings behind them are in the lab notebook (RAM-F#).
 
-- **ADC speed option (100 kHz / 2 MHz).** Lower read noise at 100 kHz; the readout of a small
-  ROI is short enough that the slower rate costs little. Compare dark frames on the bench, then
-  add a command and the live viewer box next to the binning one.
-- **Untrack the camera ROI.** It is stored in `microscope_config.json` for now (decided
-  2026-11-11), but it is per-rig state (where this camera's slit image falls), like
-  `instrument_state.json`: every ROI change shows as a local edit on the lab PC, and a committed
-  value would tell another rig its slit image is somewhere it is not. Move `camera_roi` to an
-  untracked per-machine file (one path in `Microscope._apply_camera_roi` /
-  `apply_stored_camera_roi`), keeping the tracked config for shared settings.
-- **Per-walk dispersion check** in the walk-agreement gate (`calibration_checks.py`): two walks
-  minutes apart differed by ~0.06 % in dispersion on 2026-11-10 and 2026-11-11 (RAM-F1, RAM-F2)
-  and no gate said so.
-- **TRIAX position table** in the wavelength axis model, interpolated between calibration
-  positions, once a walk at `samples=12` shows the drive is smooth between them (RAM-F1).
-- **Remove `speccalfit triaxsigma=`** (kept for now with a WARN gate).
-- **Provenance: code vs data changes.** `software_version()` reports "uncommitted changes" when
-  only the tracked master calibration was rewritten by `speccalapply`; list the changed files,
-  or count only code.
-- **Cosmic-ray rejection** across the frames of a point (`nframe` > 1), for long exposures.
+Not an issue yet:
+
 - **Unused simulators** in `simulation.py` (`SimulatedInstrument`, `SimulatedMonochromator`,
   `SimulatedLaser`, `SimulatedStageControl`): not used by any test or simulate path.
 

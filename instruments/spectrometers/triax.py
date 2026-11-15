@@ -34,8 +34,6 @@ class Triax(Instrument):
         self.command_functions = {
             'get_spectrometer_position': self.get_spectrometer_position,
             'rg': self.get_spectrometer_position,
-            'go_to_position': self.go_to_position,
-            'sg': self.go_to_position,
             'ren': self.read_enterance_slit,
             'rex': self.read_exit_slit,
             'men': self.move_enterance_slit,
@@ -122,7 +120,7 @@ class Triax(Instrument):
     
     @ui_callable
     def read_enterance_slit(self):
-        '''Read the current position of the entrance slit.'''
+        '''Read the current position of the entrance slit: 25-50 microns for standard operation.'''
         response = self.send_command('read_enter')
 
         try:
@@ -250,13 +248,6 @@ class Triax(Instrument):
         self.spectrometer_position = self.get_triax_steps()
         return self.spectrometer_position
     
-    @ui_callable
-    def go_to_position(self, position):
-        self.logger.info("Going to the position: {}".format(position))
-        command = self.message_map['move_grating'] + str(position)
-        response = self._send_command_to_spectrometer(command)
-        return response
-
     def connect(self):
     # Open a serial connection to the TRIAX on COM16.
         if self.simulate:
