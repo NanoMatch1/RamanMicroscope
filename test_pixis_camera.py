@@ -408,7 +408,7 @@ LAMP_LINE_COLUMNS_AND_STRENGTHS = ((183, 0.45), (260, 0.35), (270, 0.35), (385, 
 
 def lamp_frame_like_2026_11_12(line_peak_counts=500.0, smear_counts=40.0, seed=3):
     """
-    A full-sensor Ar/Hg lamp frame with what Riley's 2026-11-12 frames showed: a slit image
+    A full-sensor Ar/Hg lamp frame with what the 2026-11-12 bench frames showed: a slit image
     over rows 420-570 with a dust shadow across it at row 480; a background that climbs
     ~130 counts from the first row to the last in every column; readout smear (no shutter) in
     the line columns, nothing before the slit image and `smear_counts` x the line after it;
@@ -428,7 +428,7 @@ def lamp_frame_like_2026_11_12(line_peak_counts=500.0, smear_counts=40.0, seed=3
 
 
 def test_slit_image_is_found_on_a_lamp_frame_with_background_slope_smear_and_dust():
-    """Riley's 2026-11-12 'roi auto' needed long exposures: the background's climb down the rows
+    """On the 2026-11-12 bench frames, 'roi auto' needed long exposures: the background's climb down the rows
     was taken for noise (the old search saw 1.8 x the noise on a 1 s frame with S/N ~900)."""
     slit_image = find_slit_image(lamp_frame_like_2026_11_12(line_peak_counts=150))
     assert abs(slit_image.first_row - 420) <= 4 and abs(slit_image.last_row - 571) <= 4, \

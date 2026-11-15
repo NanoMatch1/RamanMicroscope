@@ -12,7 +12,7 @@ repository drives all of it — lasers, motors, spectrometer, camera and stage �
 from one Python command layer, with a simulation mode complete enough to run
 and test the whole application with no hardware attached.
 
-<!-- TODO(sam): add figures/instrument.jpg — a photograph of the rig -->
+<!-- TODO: add figures/instrument.jpg — a photograph of the rig -->
 
 ---
 
@@ -39,12 +39,12 @@ an electronic transition and watch particular modes amplify.
 
 Ranges are the configured limits, not measured performance figures.
 
-<!-- TODO(sam): the table above is read from config and code. Confirm or correct
+<!-- TODO: the table above is read from config and code. Confirm or correct
      against measured performance, and add: spectral resolution, achievable spot
      size, objective(s), typical acquisition time, laser power at sample,
      polarisation extinction ratio. -->
 
-<!-- TODO(sam): restore a "### A representative measurement" heading here and
+<!-- TODO: restore a "### A representative measurement" heading here and
      add figures/example_spectrum.png — one real spectrum, with
      sample, excitation wavelength and acquisition time in the caption. -->
 
@@ -66,7 +66,7 @@ and is the authoritative definition of the motor command protocol. It is
 versioned here alongside the Python that speaks to it, deliberately — the two
 have to agree, and keeping them apart is how they stop agreeing.
 
-<!-- TODO(sam): pump, Ti:sapphire and TRIAX models were reported from the lab
+<!-- TODO: pump, Ti:sapphire and TRIAX models were reported from the lab
      (2026-10). Confirm the pump name (JenLas JOL-D2.10 is a Jenoptik product;
      the Tsunami-era pump was a Spectra-Physics Millennia). Add the objective
      and the remaining TRIAX gratings. -->
@@ -114,7 +114,7 @@ Other entry points:
 Calibration — what depends on what, and how to recalibrate the wavelength
 axis — is in the [calibration guide](docs/calibration.md).
 
-<!-- TODO(sam): the older calibration scripts (calibration_auto.py,
+<!-- TODO: the older calibration scripts (calibration_auto.py,
      calibration_manual.py, calibration_scaling.py, calibration_shift_run_me.py)
      are being replaced and archived; the guide will cover gratings next. -->
 
@@ -329,4 +329,4 @@ MIT — see [LICENSE](LICENSE).
 Built by Samuel Brooke. If you use this in published work, a citation is
 appreciated.
 
-<!-- TODO(sam): add a CITATION.cff if there is a paper to point at. -->
+<!-- TODO: add a CITATION.cff if there is a paper to point at. -->

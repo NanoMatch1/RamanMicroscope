@@ -200,7 +200,7 @@ Evidence the ±6000 path is vestigial:
 - The firmware itself brackets them with the comment
   `// Legacy mode commands` (`.ino:564`).
 
-Samuel's recollection matches the live path: **100000 steps** were needed
+Recollection from the bench matches the live path: **100000 steps** were needed
 to move between Raman and image mode; the ±6000 in the firmware was a
 workaround from an early input-only test and was never updated.
 

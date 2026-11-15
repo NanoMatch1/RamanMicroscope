@@ -6,7 +6,7 @@ pylablib's "sequence" mode, so the CCD exposed and read out back to back into a 
 all the time, and RealHardware.grab_frame() called wait_for_frame(since="lastread") and
 read_newest_image(). After a pause (a TRIAX move, a motor step) unread frames had piled up,
 so the wait returned at once and the newest frame in the buffer was exposed before or
-during the move. Riley's line walks of 2026-11-04 show the result: lines at the previous
+during the move. The line walks of 2026-11-04 show the result: lines at the previous
 TRIAX position. grab_frame now acquires on demand (section 3); that streaming grab
 survives only as the live view (`run`), which is what section 2 measures.
 

@@ -316,7 +316,7 @@ def test_argon_mercury_walk_recovers_truth_with_uneven_line_strengths():
 
 def test_fixed_dispersion_cannot_describe_a_wide_walk():
     """
-    Riley's first bench walk (2026-11-04): small rms, reduced chi^2 in the thousands.
+    The first bench walk (2026-11-04): small rms, reduced chi^2 in the thousands.
 
     The dispersion falls as the grating turns; one nm_per_pixel for the whole
     690-930 nm walk leaves a systematic error that the tiny bright-line
@@ -724,7 +724,7 @@ def test_rezero_refuses_when_more_than_the_zero_changed():
 
 def test_replay_of_the_2026_11_10_bench_walk_finds_the_right_lines():
     """
-    Riley's walk of 2026-11-10 16:10 (spectra kept as a fixture). The first walk code recorded the
+    The walk of 2026-11-10 16:10 (spectra kept as a fixture). The first walk code recorded the
     weak Hg 404.657 (2nd order) peak at pixel ~903.5 as Ar 811.531; the real Ar 810.369 / 811.531
     pair is at ~916.6 / ~931.7. Re-identified from the spectra, every frame with lines must be
     identified, those three peaks must get their real names, and each frame's lines must agree to
@@ -795,7 +795,7 @@ def test_a_bump_on_a_bright_line_wing_is_not_fitted_as_a_satellite():
     """
     2026-11-11 (RAM-F2): a small bump on a broad line's wing became a candidate, its fit window
     shrank to 3 px, and the Gaussian climbed the bright line to the window edge: a false peak
-    2-3 px from every bright line. Riley's counts around Ar 811.531 (walk 14:24, TRIAX 100858)
+    2-3 px from every bright line. The counts around Ar 811.531 (walk 14:24, TRIAX 100858)
     reproduce it; only the line itself may be reported.
     """
     riley_counts_823_to_839 = [391, 393, 463, 487, 465, 602, 1045, 1529, 1639, 1494, 1307, 1045,

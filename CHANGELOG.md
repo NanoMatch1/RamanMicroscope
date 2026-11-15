@@ -23,8 +23,8 @@ Branch `feature/calibration-repeat-and-docs`.
   again.
 - **`speccal arhg repeat=N`** runs N walks in a row, unattended, all planned from the same
   calibration so they visit the same TRIAX steps (it combines with `samples=`). If a walk fails,
-  the walks saved before it are kept. Ported from Riley's `multispeccal` (`d2ac41f`, archived on
-  `feature/wavelength-reference-calibration`); the comparison his `speccaltriaxcheck` made is
+  the walks saved before it are kept. Ported from `multispeccal` (`d2ac41f`, archived on
+  `feature/wavelength-reference-calibration`); the comparison `speccaltriaxcheck` made is
   the `walk agreement` gate plus the table below. Walk files no longer overwrite each other when
   two finish in the same second.
 - **The `speccalfit` report tabulates every walk's offset at every TRIAX position**, with the
@@ -48,7 +48,7 @@ Branch `feature/pixis-camera-settings`.
   and comes back up; a move up goes straight there. Before, a move down arrived from above, on
   the other side of the drive's backlash from the calibration, so `st`/`sall` positions reached
   that way could sit off the wavelength axis by the backlash (not yet
-  measured). Riley's three walks of 2026-11-12 repeat the TRIAX
+  measured). The three walks of 2026-11-12 repeat the TRIAX
   error to 0.003 nm when approached from below (lab-notebook RAM-F3). `mg` and `sg` remain raw
   relative moves.
 - **Saved data records the PIXIS readout time** (`readout_time_s` in the `camera` metadata and in
@@ -59,7 +59,7 @@ Branch `feature/pixis-camera-settings`.
 
 ## PIXIS camera: automatic ROI on real frames, live plotter rows (2026-11-12)
 
-Branch `feature/pixis-camera-settings`, from Riley's first bench test of the ROI commands.
+Branch `feature/pixis-camera-settings`, from the first bench test of the ROI commands.
 
 - **`roi auto` finds the slit image at ordinary exposures.** On a 1 s Ar/Hg frame it saw the slit
   image at 1.8 x the noise (needs 10) where the real figure is ~900: the background climbs ~130
@@ -67,7 +67,7 @@ Branch `feature/pixis-camera-settings`, from Riley's first bench test of the ROI
   slow climb for noise. It now removes the climb (from the darker half of the columns), sums only
   the lit columns, takes the noise from row-to-row differences, places each edge of the slit
   image against the background on its own side, and bridges dust shadows across the slit image
-  (a ~10-row dip to a third of the peak cut the band in two). On Riley's frames it works from
+  (a ~10-row dip to a third of the peak cut the band in two). On the bench frames it works from
   ~0.3 s.
 - **Readout smear is reported instead of guessed through.** The PIXIS has no shutter: lines
   smear along their columns while the rows are read out (~0.5 s for the full sensor), and the
@@ -83,7 +83,7 @@ Branch `feature/pixis-camera-settings`, from Riley's first bench test of the ROI
 
 Branch `feature/pixis-camera-settings`. The Tucsen start-up applied binning, gain, the region of
 interest (ROI), the set point and the fan; the PIXIS port kept only the set point (fixed
-2026-11-06). These were found by review and on Riley's walks (the slit image at rows 567-818 of
+2026-11-06). These were found by review and on the bench walks (the slit image at rows 567-818 of
 frames that were full height although the software said 100 rows).
 
 - **The ROI reaches the camera.** `camera.roi = (0, 0, 1024, 100)` existed only in software: the
@@ -188,15 +188,15 @@ What caused it, and what changed:
 - **The simulator emits every listed line** at a brightness from its NIST intensity (weak
   neighbours and second-order mercury included), and can add a TRIAX drive error and shift the
   TRIAX counter, so the tests now meet the bench's difficulties. A replay test runs one of
-  Riley's 2026-11-10 walks (`test_fixtures/`) and checks the misidentified peaks get their real
+  the 2026-11-10 walks (`test_fixtures/`) and checks the misidentified peaks get their real
   names.
 - **Fit plot: `speccalfit ... plot`** (also `speccalapply`, and `--plot` on the command line)
   saves a PNG next to the report: the TRIAX map with the fitted polynomial, the TRIAX residual
-  frame by frame, the CCD-axis residual against pixel, and each line's residual. Riley had been
-  plotting the residuals by hand in a spreadsheet to see them.
+  frame by frame, the CCD-axis residual against pixel, and each line's residual. The residuals had
+  been plotted by hand in a spreadsheet to see them.
 - **`speccal arhg samples=N`** sets how many places on the chip each line is seen at (default
   6). A denser walk shows how the TRIAX behaves between the usual positions.
-- **Fixed: false peaks 2-3 px from bright lines** (Riley's 2026-11-11 walks). On broad lines, a
+- **Fixed: false peaks 2-3 px from bright lines** (the 2026-11-11 walks). On broad lines, a
   bump on a line's wing was fitted in a 3 px window and the Gaussian climbed the bright line's
   flank to the window edge. Those false peaks counted as unexplained, failed frames, and in one
   frame at the chip edge one was taken for Ar 811.531 three pixels from the real line, failing
@@ -238,7 +238,7 @@ returned the newest frame already in the buffer. After a move that frame had
 been exposed before or during the move: on the lab PC at 0.5 s exposure,
 5 of 5 grabs after a pause returned a frame exposed 1.0-1.8 s before the
 request (`tools/pixis_frame_freshness_check.py`, judged by exposure time
-stamps). Riley's line walks of 2026-11-04 show it as lines sitting at the
+stamps). The line walks of 2026-11-04 show it as lines sitting at the
 previous TRIAX position.
 
 - **Acquire** (`grab_frame`, `RealHardware.acquire_frames`) is the default for
@@ -489,8 +489,8 @@ reinstating each bug and confirming the corresponding test fails.
 
 Untracked working-tree edits made in the Melbourne lab to connect a new
 Tiger Ti:Sapphire laser in place of the retired Tsunami. Captured here
-before the first commit of this work. Reviewed and summarised by Claude
-at Samuel's request; not yet split into individual commits.
+before the first commit of this work. Reviewed and summarised by Claude;
+not yet split into individual commits.
 
 ### Laser: Tsunami → Tiger
 

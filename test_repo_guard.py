@@ -47,10 +47,10 @@ def test_safe_addresses_pass(text):
 
 
 @pytest.mark.parametrize("text", [
-    r"dataDir = r'C:\Users\Sam\Data\scan_01'",
+    r"dataDir = r'C:\Users\Alex\Data\scan_01'",
     "path = 'C:/Users/someone/Desktop/x.csv'",
     "open('/home/match/notes.txt')",
-    "open('/Users/sam/Documents/run.json')",
+    "open('/Users/alex/Documents/run.json')",
 ])
 def test_personal_path_is_flagged(text):
     assert repo_guard.find_personal_path(text)
@@ -192,7 +192,7 @@ def test_hook_allows_a_clean_commit(guarded_repository):
 
 @pytest.mark.parametrize("name, content, check_name", [
     ("docs/notes.md", "data: https://x-my.sharepoint.com/personal/y\n", "share-link"),
-    ("analysis.py", "folder = r'C:\\Users\\Riley\\Data'\n", "personal-path"),
+    ("analysis.py", "folder = r'C:\\Users\\Jordan\\Data'\n", "personal-path"),
     ("README.md", "questions to someone@gmail.com\n", "personal-email"),
     ("scan_001.npz", b"\x93NUMPY", "data-file"),
 ])
@@ -213,7 +213,7 @@ def test_hook_blocks_a_personal_identity(guarded_repository):
 def test_range_mode_catches_what_skipped_the_hook(guarded_repository, monkeypatch):
     base = git(guarded_repository, "rev-parse", "HEAD").stdout.strip()
     git(guarded_repository, "config", "user.email", "someone@gmail.com")
-    (guarded_repository / "notes.md").write_text("path C:\\Users\\Sam\\x\n")
+    (guarded_repository / "notes.md").write_text("path C:\\Users\\Alex\\x\n")
     git(guarded_repository, "add", "notes.md")
     git(guarded_repository, "commit", "-q", "--no-verify", "-m", "sneak past the hook")
     monkeypatch.chdir(guarded_repository)
