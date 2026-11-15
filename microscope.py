@@ -23,8 +23,8 @@ from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
 from wavelength_calibration.line_peaks import collapse_image_to_spectrum, slit_image_rows
 from wavelength_calibration.line_walk import DEFAULT_SAMPLES_PER_LINE, LineWalk, save_line_walk
 from wavelength_calibration.promotion import (FitOptions, fit_and_check_line_walk_files,
-                                              new_fit_report_path, write_fit_report,
-                                              write_model_to_master)
+                                              new_fit_report_path, new_timestamped_path,
+                                              write_fit_report, write_model_to_master)
 from wavelength_calibration.provenance import software_version
 from wavelength_calibration.reference_lines import argon_mercury_lamp_lines, externally_measured_line
 from wavelength_calibration.scatter_export import export_scatter_csv, new_export_path
@@ -156,6 +156,22 @@ def string_to_float(value, message=''):
         return float(value)
     except ValueError:
         print('Invalid value {}- use a number'.format(message))
+
+@dataclass(frozen=True)
+class LineWalkArguments:
+    """speccal's options after the reference, parsed (Microscope.run_wavelength_axis_line_walk)."""
+    samples_per_line: int
+    repeat_count: int
+    wavelength_nm: object       # 'speccal external' only: the line's wavelength, as typed
+    uncertainty_nm: object      # ... and its uncertainty
+
+
+# speccal name=value options: name -> (smallest, largest, example).
+LINE_WALK_INTEGER_OPTIONS = {
+    'samples': (2, 30, 'speccal arhg samples=12'),
+    'repeat': (1, 20, 'speccal arhg repeat=3'),
+}
+
 
 @dataclass
 class MotorPositions:
@@ -1615,14 +1631,54 @@ class Microscope(Instrument):
                                       spare spectrometer): its wavelength and uncertainty in nm
         speccal arhg samples=12       a denser walk: each line seen at ~12 places on the chip
                                       instead of 6 (twice the positions and time)
+        speccal arhg repeat=3         three walks in a row, unattended (options combine:
+                                      'speccal arhg samples=24 repeat=3')
         The lines are identified from all the spectra at once and the result is logged;
         'speccalfit' re-identifies, fits and runs the gate checks. Keep the brightest lines below
-        saturation (65000 counts).'''
+        saturation (65000 counts).
+        Repeated walks measure how well the TRIAX returns to a position: every walk is planned
+        from the calibration in use, so all of them visit the same TRIAX steps, each approached
+        from below. 'speccalfit' then fits them together; its 'walk agreement' gate says how
+        closely they agree and its report tabulates each walk's offset at each TRIAX position.
+        Do not run 'speccalapply' between walks that are to be compared. If one walk fails, the
+        walks saved before it are kept and the rest are not started.
+        Returns the saved walk's path, or a list of paths for repeat=N.'''
         reference = str(reference).lower()
-        samples_per_line, wavelength_nm, uncertainty_nm = \
-            self._parse_line_walk_arguments(walk_arguments)
-        if samples_per_line is None:
+        arguments = self._parse_line_walk_arguments(walk_arguments)
+        if arguments is None:
             return None
+        reference_lines = self._line_walk_reference_lines(reference, arguments)
+        if reference_lines is None:
+            return None
+        catalogue_lines, description = reference_lines
+        planning_model = self.calibration_service.wavelength_axis_model
+        if arguments.repeat_count == 1:
+            return self._run_one_line_walk(reference, catalogue_lines, description, planning_model,
+                                           arguments.samples_per_line)
+        line_walk_paths = []
+        for walk_number in range(1, arguments.repeat_count + 1):
+            self.micro_log.info(f"speccal: walk {walk_number} of {arguments.repeat_count}")
+            walk_description = (f"{description}; walk {walk_number} of {arguments.repeat_count} "
+                                f"(speccal repeat={arguments.repeat_count})")
+            try:
+                line_walk_paths.append(self._run_one_line_walk(
+                    reference, catalogue_lines, walk_description, planning_model,
+                    arguments.samples_per_line))
+            except Exception as error:  # keep the walks already saved; do not start the rest
+                self.micro_log.error(f"speccal: walk {walk_number} of {arguments.repeat_count} "
+                                     f"failed ({type(error).__name__}: {error}); stopping after "
+                                     f"{len(line_walk_paths)} walk(s).")
+                break
+        self.micro_log.info(f"speccal: {len(line_walk_paths)} of {arguments.repeat_count} walks "
+                            "saved, all at the same TRIAX positions. 'speccalfit' fits them "
+                            "together.")
+        return line_walk_paths
+
+    def _line_walk_reference_lines(self, reference, arguments):
+        '''(catalogue lines, description) for 'arhg' or 'external'; None (after logging why) for
+        an unknown reference or an external line without its wavelength and uncertainty.'''
+        samples_per_line = arguments.samples_per_line
+        wavelength_nm, uncertainty_nm = arguments.wavelength_nm, arguments.uncertainty_nm
         if reference == 'arhg':
             catalogue_lines = argon_mercury_lamp_lines()
             description = (f'Ar-Hg lamp (reference_lines.ARGON_MERCURY_LAMP_LINES), '
@@ -1640,8 +1696,12 @@ class Microscope(Instrument):
             self.micro_log.error(f"speccal: unknown reference '{reference}'. "
                                  "Use 'arhg' or 'external'.")
             return None
+        return catalogue_lines, description
 
-        planning_model = self.calibration_service.wavelength_axis_model
+    def _run_one_line_walk(self, reference, catalogue_lines, description, planning_model,
+                           samples_per_line):
+        '''One line walk, planned from planning_model: check the slit image, walk, save the walk
+        and add it to this session's list. Returns the saved walk's path.'''
         self._calibration_row_band = None
         if self.simulate:
             self._install_simulated_line_lamp(catalogue_lines)
@@ -1667,10 +1727,8 @@ class Microscope(Instrument):
                 self.interface.camera.simulated_scene.override_scene = None
             self.generate_wavelength_axis()
 
-        os.makedirs(self.line_walk_directory, exist_ok=True)
-        timestamp = time.strftime('%Y%m%d_%H%M%S')
-        line_walk_path = os.path.join(self.line_walk_directory,
-                                      f'linewalk_{timestamp}_{reference}.json')
+        line_walk_path = new_timestamped_path(self.line_walk_directory, 'linewalk',
+                                              f'_{reference}.json')
         save_line_walk(line_walk_path, result, planning_model, description=description,
                        reference_kind=reference, catalogue_lines=catalogue_lines,
                        instrument=instrument)
@@ -1687,27 +1745,32 @@ class Microscope(Instrument):
         return line_walk_path
 
     def _parse_line_walk_arguments(self, walk_arguments):
-        '''speccal arguments after the reference -> (samples per line, wavelength, uncertainty).
-        Samples per line is None (after logging why) for a bad argument.'''
-        samples_per_line, numbers = DEFAULT_SAMPLES_PER_LINE, []
+        '''speccal arguments after the reference -> LineWalkArguments: the name=value options of
+        LINE_WALK_INTEGER_OPTIONS, and up to two numbers (an external line's wavelength and
+        uncertainty). None (after logging why) for a bad argument.'''
+        option_values = {'samples': DEFAULT_SAMPLES_PER_LINE, 'repeat': 1}
+        numbers = []
         for argument in walk_arguments:
             name, _, value = str(argument).lower().partition('=')
-            if name != 'samples':
+            if name not in LINE_WALK_INTEGER_OPTIONS:
                 numbers.append(argument)
                 continue
+            smallest, largest, example = LINE_WALK_INTEGER_OPTIONS[name]
             try:
-                samples_per_line = int(value)
+                option_values[name] = int(value)
             except ValueError:
-                samples_per_line = 0
-            if not 2 <= samples_per_line <= 30:
-                self.micro_log.error(f"speccal: '{argument}': samples must be a whole number "
-                                     "from 2 to 30, e.g. 'speccal arhg samples=12'")
-                return None, None, None
+                option_values[name] = None
+            if option_values[name] is None or not smallest <= option_values[name] <= largest:
+                self.micro_log.error(f"speccal: '{argument}': {name} must be a whole number "
+                                     f"from {smallest} to {largest}, e.g. '{example}'")
+                return None
         if len(numbers) > 2:
             self.micro_log.error(f"speccal: unexpected arguments {numbers[2:]}")
-            return None, None, None
+            return None
         numbers += [None] * (2 - len(numbers))
-        return samples_per_line, numbers[0], numbers[1]
+        return LineWalkArguments(samples_per_line=option_values['samples'],
+                                 repeat_count=option_values['repeat'],
+                                 wavelength_nm=numbers[0], uncertainty_nm=numbers[1])
 
     def _check_roi_covers_slit_image(self):
         '''Before a lamp walk or re-zero: find the slit image on a full-sensor frame and, if the

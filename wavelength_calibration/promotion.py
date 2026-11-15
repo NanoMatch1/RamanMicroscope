@@ -25,6 +25,7 @@ import os
 import shutil
 
 from .calibration_checks import (CalibrationEvidence, any_failed, decompose_fit_residuals,
+                                 frame_offset_table_lines,
                                  format_check_report, run_checks)
 from .line_walk import identify_saved_walk, load_line_walk
 from .triax_zero import POSITION_TABLE_KEY
@@ -127,19 +128,24 @@ def fit_line_walk_files(line_walk_paths, reference_pixel=50.0, fit_dispersion_cu
     return outcome.fit
 
 
-def new_fit_report_path(report_directory, report_prefix='wavelength_axis_fit', now=None):
-    """A timestamped path for the next report, '<report_prefix>_<YYYYmmdd_HHMMSS>.txt' (the
-    directory is created). A second report of the same kind in the same second gets '_2', '_3'...
-    instead of overwriting the first. now (a datetime) defaults to the current time."""
-    os.makedirs(report_directory, exist_ok=True)
+def new_timestamped_path(directory, prefix, suffix='.txt', now=None):
+    """A path '<prefix>_<YYYYmmdd_HHMMSS><suffix>' in directory (created if missing). A second
+    file of the same kind in the same second gets '_2', '_3'... before the suffix instead of
+    overwriting the first. now (a datetime) defaults to the current time."""
+    os.makedirs(directory, exist_ok=True)
     timestamp = (now or datetime.datetime.now()).strftime('%Y%m%d_%H%M%S')
-    report_path = os.path.join(report_directory, f'{report_prefix}_{timestamp}.txt')
+    path = os.path.join(directory, f'{prefix}_{timestamp}{suffix}')
     repeat_number = 1
-    while os.path.exists(report_path):
+    while os.path.exists(path):
         repeat_number += 1
-        report_path = os.path.join(report_directory,
-                                   f'{report_prefix}_{timestamp}_{repeat_number}.txt')
-    return report_path
+        path = os.path.join(directory, f'{prefix}_{timestamp}_{repeat_number}{suffix}')
+    return path
+
+
+def new_fit_report_path(report_directory, report_prefix='wavelength_axis_fit', now=None):
+    """A timestamped path for the next report, '<report_prefix>_<YYYYmmdd_HHMMSS>.txt'
+    (see new_timestamped_path)."""
+    return new_timestamped_path(report_directory, report_prefix, '.txt', now=now)
 
 
 def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, backup_path=None):
@@ -177,6 +183,7 @@ def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, ba
         for frame in identification.frames:
             report += [f"      TRIAX {frame.triax_steps}: {note}" for note in frame.skipped_lines]
     if fit is not None:
+        report += ["", *frame_offset_table_lines(fit)]
         report += ["", "residuals (measured - fitted wavelength):",
                    f"  {'walk':<36} {'line':<24} {'TRIAX steps':>11} {'pixel':>8} {'+/- px':>7} "
                    f"{'residual nm':>12}"]

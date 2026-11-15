@@ -587,6 +587,59 @@ def test_speccal_samples_and_speccalfit_plot():
         assert plot_name == os.path.splitext(report_name)[0] + '.png'
 
 
+def test_speccal_repeat_walks_the_same_positions_and_the_report_tabulates_each_walk():
+    """'speccal arhg repeat=2' runs two walks planned from one calibration, so they visit the same
+    TRIAX steps; 'speccalfit' tabulates each walk's offset at each position. A bad repeat value
+    refuses instead of walking."""
+    microscope = get_interface().microscope
+    with temporary_calibration_files(microscope):
+        assert run_command('speccal arhg repeat=0') is None
+        assert run_command('speccal arhg repeat=twice') is None
+        line_walk_paths = run_command('speccal arhg samples=3 repeat=2')
+        assert len(line_walk_paths) == 2 and len(set(line_walk_paths)) == 2
+        requested_steps_by_walk, descriptions = [], []
+        for line_walk_path in line_walk_paths:
+            with open(line_walk_path) as file:
+                walk = json.load(file)
+            requested_steps_by_walk.append([record['requested_steps']
+                                            for record in walk['position_records']])
+            descriptions.append(walk['description'])
+        assert requested_steps_by_walk[0] == requested_steps_by_walk[1]
+        assert 'walk 1 of 2' in descriptions[0] and 'walk 2 of 2' in descriptions[1]
+        assert microscope.line_walk_session_files == line_walk_paths
+        assert run_command('speccalfit curvature triaxquadratic') is not None
+        report_name, = os.listdir(microscope.calibration_fit_report_directory)
+        with open(os.path.join(microscope.calibration_fit_report_directory, report_name)) as file:
+            report = file.read()
+        table = report.split('TRIAX frame offsets by walk and position')[1].split('\n\n')[0]
+        assert 'walk 1' in table and 'walk 2' in table
+        for line_walk_path in line_walk_paths:
+            assert os.path.basename(line_walk_path) in table
+
+
+def test_speccal_repeat_keeps_the_walks_saved_before_one_fails():
+    """If a walk of 'speccal repeat=N' fails, the walks already saved are kept and returned, and
+    the remaining walks are not started."""
+    microscope = get_interface().microscope
+    original_run_one_line_walk = microscope._run_one_line_walk
+    walks_started = []
+
+    def second_walk_fails(*arguments, **keyword_arguments):
+        walks_started.append(len(walks_started) + 1)
+        if len(walks_started) == 2:
+            raise RuntimeError('simulated camera timeout')
+        return original_run_one_line_walk(*arguments, **keyword_arguments)
+
+    with temporary_calibration_files(microscope):
+        microscope._run_one_line_walk = second_walk_fails
+        try:
+            line_walk_paths = run_command('speccal arhg samples=3 repeat=3')
+        finally:
+            del microscope._run_one_line_walk
+        assert walks_started == [1, 2]
+        assert len(line_walk_paths) == 1 and os.path.exists(line_walk_paths[0])
+
+
 def test_applied_axis_warns_outside_its_fitted_triax_range():
     """An applied calibration records the TRIAX range it was fitted over and the frame shape the
     camera returned; the application warns when the TRIAX goes beyond that range."""

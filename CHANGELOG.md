@@ -35,7 +35,7 @@ dated section of the change that fixes it.
   differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
   against a known Raman line once the axis is settled.
 
-## `sg` fixed (2026-11-15)
+## Repeated walks, walk offsets in the fit report, `sg` fixed (2026-11-15)
 
 Branch `feature/calibration-repeat-and-docs`.
 
@@ -44,6 +44,15 @@ Branch `feature/calibration-repeat-and-docs`.
   command registry gave it the name over the microscope's grating command. The TRIAX's `sg` and
   `go_to_position` are removed (`mg` makes the same relative move), so `sg` sets the gratings
   again.
+- **`speccal arhg repeat=N`** runs N walks in a row, unattended, all planned from the same
+  calibration so they visit the same TRIAX steps (it combines with `samples=`). If a walk fails,
+  the walks saved before it are kept. Ported from Riley's `multispeccal` (`d2ac41f`, archived on
+  `feature/wavelength-reference-calibration`); the comparison his `speccaltriaxcheck` made is
+  the `walk agreement` gate plus the table below. Walk files no longer overwrite each other when
+  two finish in the same second.
+- **The `speccalfit` report tabulates every walk's offset at every TRIAX position**, with the
+  mean (nm and TRIAX steps) and the spread over the walks: the raw material for a TRIAX position
+  table.
 
 ## TRIAX moves arrive from below; PIXIS readout time recorded (2026-11-12)
 
