@@ -35,6 +35,16 @@ dated section of the change that fixes it.
   differently, a lamp calibration carries a similar offset into Raman spectra: worth checking
   against a known Raman line once the axis is settled.
 
+## `sg` fixed (2026-11-15)
+
+Branch `feature/calibration-repeat-and-docs`.
+
+- **`sg 800` moved the TRIAX 800 steps instead of setting the gratings to 800 nm.** The TRIAX
+  registered `sg` (and `go_to_position`) as a relative grating move on 2026-08-20, and the
+  command registry gave it the name over the microscope's grating command. The TRIAX's `sg` and
+  `go_to_position` are removed (`mg` makes the same relative move), so `sg` sets the gratings
+  again.
+
 ## TRIAX moves arrive from below; PIXIS readout time recorded (2026-11-12)
 
 Branch `feature/pixis-camera-settings`.

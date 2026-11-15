@@ -140,7 +140,7 @@ def test_command_registry_is_populated():
 
     # A representative command from each hardware module must be present.
     for command in ['gotowavelength', 'wavelength', 'laserhome',   # laser
-                    'rg', 'ren', 'sg',                             # spectrometer
+                    'rg', 'ren', 'mg',                             # spectrometer
                     'acquire', 'acqtime', 'caminfo',               # camera
                     'report', 'wai', 'ramanshift']:                # microscope
         assert command in command_map, f"{command!r} missing from command map"
@@ -243,11 +243,21 @@ def test_spectrometer_reports_position():
 
 
 def test_spectrometer_relative_move_changes_position():
-    """'sg' issues a relative grating move; position must track it."""
+    """'mg' issues a relative TRIAX grating move; position must track it."""
     before = run_command('rg')
-    run_command('sg 500')
+    run_command('mg 500')
     after = run_command('rg')
     assert after == before + 500
+
+
+def test_sg_sets_the_grating_wavelength_not_a_triax_move():
+    """'sg' sets every tunable-filter grating to a wavelength. The TRIAX once registered 'sg' as a
+    relative move too, and the registry gave it the name, so 'sg 800' moved the TRIAX 800 steps."""
+    interface = get_interface()
+    assert interface.command_map['sg'][1] == interface.microscope.go_to_grating_wavelength
+    triax_steps_before = run_command('rg')
+    run_command('sg 800')
+    assert run_command('rg') == triax_steps_before
 
 
 def test_spectrometer_always_arrives_at_a_position_from_below():
