@@ -5,33 +5,29 @@ filter gratings (issue #29). The commands it uses are documented in their docstr
 (`help runfile`, `python tools/make_stage1_edge_runfiles.py --help`, and
 `docs/command_reference.md`).
 
-## 1. Why not maximise the CCD signal one motor at a time
+## 1. Why not jogging for intensity
 
-The tunable filter is a double subtractive monochromator: two stages, each a pair of gratings.
-In each stage, the entrance grating disperses the light and a lens focuses it onto a sharp edge,
-which blocks one side of the spectrum. The exit grating then undoes the dispersion and sends a
-collimated beam onwards. Stage 1 is g1/g2 (1200 grooves/mm); stage 2 is g3/g4 (300 grooves/mm).
+The tunable filter is a double subtractive monochromator: there are two stages, each is a pair 
+of gratings. The design is symmetric - a change at one end is designed to be undone by the other end.
+Changing the angle of `g1` changes which wavelengths focus on which part of the intermediate slit, effectively
+making a cutoff wavelength defined by those which strike the edge of the slit. 
 
-Because the exit grating undoes what the entrance grating does, signal on the CCD changes slowly
-as any one grating turns. A move of several nm still shows signal. That tolerance is the design
-working, but it makes intensity a poor target:
+The exit grating then undoes the dispersion and sends a
+collimated beam outwards. The key is that even if you change `g1` a set amount, you will then change `g2` an equal amount to restore the alignment direction. But this just optimises which chunk of the spectrum passes the slit, and there's a large range of spectrum that can pass at once. The design is inherently tolerant of angular misaligment. This means:
 
 - **The maximum is a broad plateau.** Its peak is set by noise and does not repeat.
-- **The motors are coupled.** The right g2 depends on g1, so tuning one motor at a time
-  zig-zags and ends wherever it started.
-- **Intensity measures neither of the things being calibrated.** The entrance gratings set
+- **The motors are coupled.** The right g2 depends on g1, so tuning one motor requires tuning the other to find the local mimima, over and over, to find the largest local minima.
+- **Intensity is only half the reference:** The entrance gratings set
   *where the cutoff is* (a wavelength). The exit gratings set *where the beam points* (an
-  angle). Neither quantity is at its correct value where the intensity peaks.
+  angle). Intensity in the spectrograph can help the last one, but it requires care to make sure that each component is correctly decoupled.
 
-So each grating is calibrated against the quantity it controls:
+So we start by defining the correct references to measure:
 
 - **Entrance gratings (g1, g3): the wavelength of the cutoff edge**, read off the CCD, whose
-  wavelength axis is now calibrated.
-- **Exit gratings (g2, g4): beam position on a small aperture** at that stage's own exit port.
+  wavelength axis is now calibrated. We're reading a *spectral shape* so the overall intensity is not an issue.
+- **Exit gratings (g2, g4): beam position or intensity through a small aperture** at that stage's own exit port.
   Each stage is aligned to its own entrance and exit ports, and relay mirrors carry the axis
   between stages.
-
-This session measures the first of these for stage 1.
 
 ## 2. How stage 1 works, and why its edge is special
 
@@ -63,12 +59,18 @@ of it.
 about 608 steps. That stops the laser going forwards to the microscope and retroreflects it
 almost exactly onto itself, so it lands just past the mirror edge. From there it follows the
 path the Stokes light will take: through the next lens and g2, and on to stage 2. That makes
-it a visible reference for aligning everything downstream.
+it a visible reference for aligning everything downstream. In reality, a small angle offset from
+the laser going back to the mirror, and passing the mirror, is a real error. It is **wavelength X**,
+passing in the direction of light that should have **wavelength X** + *small stokes shift*, and
+will be diffracted in a slightly different direction at the `g2`. This requires a 
+"moment of faith" at the end of alignment, to bring `g1` back a few steps, while watching almost no
+signal, in the hopes that this correction brings the Raman into view. Best done with a sample that 
+gives lots of signal like sulfur of WSe2...
 
 ![Alignment mode: g1 turned so the laser is reflected back past the mirror edge, along the Stokes path towards stage 2](figures/stage_1_alignment.png)
 
-At 1200 grooves/mm, the 10.7 degree rotation (608 steps of about 17.6 mdeg) turns the beam
-about 21 degrees, which matches the angle between the two paths.
+*At 1200 grooves/mm, the 10.7 degree rotation (608 steps of about 17.6 mdeg) turns the beam
+about 21 degrees, which matches the angle between the two paths.*
 
 ## 3. What is measured, and why each detail matters
 
@@ -81,7 +83,10 @@ CCD as a step in that spectrum. Each frame gives:
   collimating lens focuses different wavelengths at slightly different distances (chromatic
   focal shift), so the edge should be sharpest at one wavelength and broaden away from it. The
   measured width against wavelength gives the cost of the lens, and the case for replacing that
-  section with curved mirrors.
+  section with curved mirrors. The dispersion is already visible in the CCD image of old data:
+
+
+![CCD image of spectrum shows](figures/spectrum_dispersion_lens.png)
 
 The details of the procedure follow from those two quantities:
 
@@ -127,8 +132,7 @@ Useful numbers:
      reach the full 720-960 nm.
 2. Laser off or blocked.
 3. Stage 2 edge (the one nearest the spectrograph) removed. Stage 1 mirror left in place.
-4. Halogen lamp at the sample focus, with as small a source as possible: a pinhole, or the
-   smallest fibre core available. Let it warm up for 15 minutes.
+4. Halogen lamp at the sample focus. Use two aperture cards along the cage rails on the microscope optical axis to restrict the light to a more collimated beam - this essentially filters out off-axis and non-collimated light to mimic a centered beam down the optical axis. Let the lamp warm up for 15 minutes.
 5. TRIAX entrance slit about 50 um. Record the value with `ren`.
 6. Set the exposure:
    - Put 800 nm mid-chip: `st` with the value on the first `st` line of
