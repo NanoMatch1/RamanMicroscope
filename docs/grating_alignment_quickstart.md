@@ -17,10 +17,14 @@ re-aligning.
      protecting the camera).
 1. Home gratings 1–4.
 2. Align g1 so the beam passes through the pinhole placed in front of the
-   sample. This is the only fully consistent reference.
-3. Push g1 past cutoff filter 1: bring the beam onto the edge of the filter,
-   then keep moving until it can no longer be observed on the filter
-   (approximately −608 steps from alignment).
+   sample. This is the only fully consistent reference. Mark this position in steps or 
+   wavelength.
+3. We are going to use g1 to back-reflect the laser now past the cutoff filter mirror of 
+   stage 1. 
+   Move g1 a lot, until the first-order reflection now hits the cuttoff filter mirror.
+   Bring the beam onto the edge of the filter, then keep moving towards the edge until it
+   can no longer be observed on the filter (i.e. it is now passing the edge of the mirror 
+   as the Raman light will. This is approximately −608 steps from the alignment position of (2) when using 1/32 microstepping).
 4. Place a fluorescent target near the end of the optical path and align g2 so
    the (now broad) laser spot sits at middle height. If no laser spot is
    visible, move g3 negative until it passes the second cutoff filter.
