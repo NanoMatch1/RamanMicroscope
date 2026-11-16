@@ -12,6 +12,22 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Run files (`runfile`) and the stage 1 edge measurement (2026-11-16)
+
+Branch `feature/calibration-repeat-and-docs`. Groundwork for issue #29 (grating calibration).
+
+- **`runfile <path>`** runs a text file of ordinary CLI commands in order. The whole file is
+  checked before anything moves (an unknown command or a bad jog stops it: the CLI otherwise sends
+  unrecognised text to the controller), each jogged motor is waited for before the next line, the
+  run stops at the first failing command, Ctrl+C stops it without closing the application, and
+  every command and result goes to a run log in `data/runfile_logs/`. Reading and checking the
+  lines is in `command_file.py`.
+- **`tools/make_stage1_edge_runfiles.py`** writes the run files for measuring the stage 1 cutoff
+  edge on the CCD with a lamp at the sample: an edge walk (g1 offsets at several centre
+  wavelengths, each centre put mid-chip) and single g1 steps with a reversal.
+- **docs/stage1_edge_measurement.md**: why the edge is measured this way and what to run at each
+  step, including the reference frames and the laser-excited run done by hand.
+
 ## Repeated walks, walk offsets in the fit report, `sg` fixed, generated command reference (2026-11-15)
 
 Branch `feature/calibration-repeat-and-docs`.

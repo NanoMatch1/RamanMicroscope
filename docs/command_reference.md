@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git 532cb05 on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git 391d82d on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 
@@ -54,6 +54,25 @@ Launch the GUI interface for the microscope control.
 
 ```text
 List every command with its docstring (docs/command_reference.md has the same).
+```
+
+### `runfile`
+
+```text
+Run a file of commands in order, e.g. 'runfile data/runfiles/stage1_edge_walk.txt'.
+
+Each line is one command exactly as it would be typed here; blank lines and lines
+starting with '#' are skipped. The whole file is checked first and nothing runs if any
+line is not a known command (or a motor label with a whole number of steps). Then:
+- each jogged motor is waited for until it stops, so the next line (an 'acquire')
+  never starts while a grating is still moving;
+- the run stops at the first command that reports an error, and says which line;
+- Ctrl+C stops the run after the current command, leaving the application running;
+- every command, its time and its result go to a run log in data/runfile_logs/,
+  written as the run goes, so a stopped run still has its record.
+Typed commands are lower-cased, so the file name is too; on the lab PC (Windows) the
+case of a path does not matter. tools/make_stage1_edge_runfiles.py writes run files for
+the stage 1 cutoff-edge measurement.
 ```
 
 ## Tiger Ti:Sapphire Laser

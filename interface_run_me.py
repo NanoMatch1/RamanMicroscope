@@ -1,6 +1,7 @@
 # TRIAX: ~ 700 nm at 131343 steps
 import os
 import sys
+import time
 import traceback
 import threading
 
@@ -18,6 +19,7 @@ from PyQt5.QtWidgets import QApplication
 from pixisspec.pixiscam import PIXISCamera
 
 from logging_utils import LoggerInterface
+import command_file
 
 def thread_locked(method):
     """
@@ -63,6 +65,7 @@ class Interface:
             'calcheck': self._laser_cal_check,
             'gui'    : self.gui,
             'help'   : self.show_help,
+            'runfile': self.run_command_file,
         }
 
         self.simulate    = simulate
@@ -152,6 +155,72 @@ class Interface:
             result = self._command_handler(command)
             self.logger.info(result)
             self.save_state()
+
+    def run_command_file(self, *path_parts):
+        """Run a file of commands in order, e.g. 'runfile data/runfiles/stage1_edge_walk.txt'.
+
+        Each line is one command exactly as it would be typed here; blank lines and lines
+        starting with '#' are skipped. The whole file is checked first and nothing runs if any
+        line is not a known command (or a motor label with a whole number of steps). Then:
+        - each jogged motor is waited for until it stops, so the next line (an 'acquire')
+          never starts while a grating is still moving;
+        - the run stops at the first command that reports an error, and says which line;
+        - Ctrl+C stops the run after the current command, leaving the application running;
+        - every command, its time and its result go to a run log in data/runfile_logs/,
+          written as the run goes, so a stopped run still has its record.
+        Typed commands are lower-cased, so the file name is too; on the lab PC (Windows) the
+        case of a path does not matter. tools/make_stage1_edge_runfiles.py writes run files for
+        the stage 1 cutoff-edge measurement."""
+        file_path = ' '.join(path_parts)
+        if not file_path:
+            return " > Error: name the run file, e.g. 'runfile data/runfiles/edge_walk.txt'"
+        with open(file_path) as run_file:
+            command_lines = command_file.read_command_lines(run_file.read())
+        command_names = set(self.interface_commands) | set(self.command_map)
+        invalid_lines = command_file.find_invalid_lines(
+            command_lines, command_names, set(self.microscope.motor_map))
+        if invalid_lines:
+            details = '\n'.join(f"  line {command_line.line_number}: {command_line.command!r}: "
+                                f"{reason}" for command_line, reason in invalid_lines)
+            return f" > Error: {file_path} was not run; fix these lines first:\n{details}"
+
+        log_path = self._run_log_path(file_path)
+        self.logger.info(f"Running {len(command_lines)} commands from {file_path}; "
+                         f"log: {log_path}")
+        with open(log_path, 'w') as run_log:
+            run_log.write(f"# run file: {os.path.abspath(file_path)}\n")
+            for position, command_line in enumerate(command_lines, start=1):
+                self.logger.info(f"[{position}/{len(command_lines)}] {command_line.command}")
+                try:
+                    result = self._run_one_file_command(command_line)
+                except KeyboardInterrupt:
+                    run_log.write(f"# stopped by Ctrl+C at line {command_line.line_number}\n")
+                    return (f"Run stopped by Ctrl+C at line {command_line.line_number} "
+                            f"({command_line.command!r}); {position - 1} commands completed.")
+                run_log.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}\t"
+                              f"{command_line.command}\t{result!r}\n")
+                run_log.flush()
+                if command_file.reports_failure(result):
+                    return (f" > Error: run stopped at line {command_line.line_number} "
+                            f"({command_line.command!r}):\n{result}")
+        return f"Ran all {len(command_lines)} commands from {file_path}."
+
+    def _run_one_file_command(self, command_line):
+        """Run one run-file command; after a jog, wait until that motor has stopped (a typed
+        jog returns as soon as the controller has the command)."""
+        result = self._command_handler(command_line.command)
+        command_names = set(self.interface_commands) | set(self.command_map)
+        if command_file.is_motor_jog(command_line, command_names, self.microscope.motor_map):
+            motor_id = self.microscope.motor_map[command_line.name]
+            self.microscope.motion_control.wait_for_motors([motor_id])
+        self.save_state()
+        return result
+
+    def _run_log_path(self, file_path):
+        log_directory = os.path.join(self.dataDir, 'runfile_logs')
+        os.makedirs(log_directory, exist_ok=True)
+        run_name = os.path.splitext(os.path.basename(file_path))[0]
+        return os.path.join(log_directory, f"{run_name}_{time.strftime('%Y%m%d_%H%M%S')}.txt")
 
     def _laser_cal_check(self):
         """Temporary diagnostic — prints laser calibration values."""

@@ -868,6 +868,133 @@ def test_external_reference_line_walk_needs_wavelength_and_uncertainty():
 
 
 # ----------------------------------------------------------------------------
+# Run files ('runfile')
+# ----------------------------------------------------------------------------
+
+import tempfile
+
+import command_file
+from tools import make_stage1_edge_runfiles
+
+
+def _write_run_file(lines):
+    """A run file in a temporary directory (lower-case path: typed commands are lower-cased)."""
+    directory = tempfile.mkdtemp(prefix='headless_runfile_').lower()
+    path = os.path.join(directory, 'test_run.txt')
+    with open(path, 'w') as run_file:
+        run_file.write('\n'.join(lines) + '\n')
+    atexit.register(shutil.rmtree, directory, True)
+    return path
+
+
+def _g1_steps():
+    return get_interface().microscope.get_all_motor_positions()['g1']
+
+
+def _remove_run_logs_after_tests():
+    log_directory = os.path.join(get_interface().dataDir, 'runfile_logs')
+    logs_before = set(os.listdir(log_directory)) if os.path.isdir(log_directory) else set()
+
+    def remove_new_logs():
+        if os.path.isdir(log_directory):
+            for name in set(os.listdir(log_directory)) - logs_before:
+                os.remove(os.path.join(log_directory, name))
+    atexit.register(remove_new_logs)
+
+
+def test_run_file_lines_skip_blanks_and_comments_and_keep_line_numbers():
+    lines = command_file.read_command_lines('# header\n\ng1 10\n  acquire  \n# end\n')
+    assert [(line.line_number, line.command) for line in lines] == [(3, 'g1 10'), (4, 'acquire')]
+
+
+def test_run_file_checker_follows_the_cli_lookup_order():
+    """A motor label that a command shares runs as the command ('triax' connects), so it is not
+    checked as a jog; a plain motor label needs one whole number of steps."""
+    command_lines = command_file.read_command_lines(
+        'triax\ng1 10\ng1 ten\ng1\ng4 1 2\nfocus_up 3\nrunfile other.txt\n')
+    invalid = command_file.find_invalid_lines(command_lines, {'triax', 'runfile'},
+                                              {'triax', 'g1', 'g4'})
+    assert [command_line.line_number for command_line, _ in invalid] == [3, 4, 5, 6, 7]
+
+
+def test_runfile_refuses_a_file_with_a_bad_line_and_moves_nothing():
+    """The whole file is checked first: a typo must not reach the controller, and the good lines
+    before it must not run either."""
+    _remove_run_logs_after_tests()
+    run_file_path = _write_run_file(['g1 10', 'acquier', 'g1 x'])
+    g1_before = _g1_steps()
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = get_interface()._command_handler(f'runfile {run_file_path}')
+    assert 'was not run' in result and 'line 2' in result and 'line 3' in result
+    assert _g1_steps() == g1_before
+
+
+def test_runfile_runs_jogs_in_order_and_logs_every_command():
+    _remove_run_logs_after_tests()
+    run_file_path = _write_run_file(['# jog test', 'g1 -30', '', 'g1 10', 'allmotors', 'g1 5'])
+    g1_before = _g1_steps()
+    result = run_command(f'runfile {run_file_path}')
+    assert 'Ran all 4 commands' in result
+    assert _g1_steps() == g1_before - 15
+    log_directory = os.path.join(get_interface().dataDir, 'runfile_logs')
+    newest_log = max((os.path.join(log_directory, name) for name in os.listdir(log_directory)),
+                     key=os.path.getmtime)
+    with open(newest_log) as run_log:
+        logged_commands = [line.split('\t')[1] for line in run_log if not line.startswith('#')]
+    assert logged_commands == ['g1 -30', 'g1 10', 'allmotors', 'g1 5']
+
+
+def test_runfile_stops_at_the_first_command_that_fails():
+    """'filename' without a name raises; the jog after it must not run."""
+    _remove_run_logs_after_tests()
+    run_file_path = _write_run_file(['g1 2', 'filename', 'g1 7'])
+    g1_before = _g1_steps()
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = get_interface()._command_handler(f'runfile {run_file_path}')
+    assert 'run stopped at line 2' in result
+    assert _g1_steps() == g1_before + 2
+
+
+def test_stage1_edge_walk_run_file_runs_end_to_end():
+    """A generated edge walk (one centre, small offsets) passes the checker and runs in simulate
+    mode: every frame is saved under its position name and g1 ends where the plan says."""
+    _remove_run_logs_after_tests()
+    chip_placement = make_stage1_edge_runfiles.chip_placement_from_files()
+    lines = make_stage1_edge_runfiles.edge_walk_lines([800], chip_placement,
+                                                      edge_offsets_steps=(-1, 0, 1),
+                                                      exposure_seconds=0.1)
+    run_file_path = _write_run_file(lines)
+    data_directory = get_interface().dataDir
+    expected_names = ['s1edge_t800_g1m001', 's1edge_t800_g1p000', 's1edge_t800_g1p001',
+                      's1edge_t800_g1p150', 's1edge_t800_g1m150']
+    for name in expected_names:
+        atexit.register(shutil.rmtree, os.path.join(data_directory, name), True)
+    run_command('sg 800')
+    g1_at_centre = _g1_steps()
+    result = run_command(f'runfile {run_file_path}')
+    assert 'Ran all' in result
+    for name in expected_names:
+        assert os.path.exists(os.path.join(data_directory, name, f'{name}_000000.npz')), name
+    assert _g1_steps() == g1_at_centre - make_stage1_edge_runfiles.EDGE_FREE_OFFSET_STEPS
+
+
+def test_stage1_run_files_approach_every_frame_from_below():
+    """Each edge-walk frame (other than the edge-free ones) and each single step on the way up is
+    reached by a positive g1 move, as the bench procedure needs for repeatable positions."""
+    chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
+    for lines in (make_stage1_edge_runfiles.edge_walk_lines([760, 800], chip_placement),
+                  make_stage1_edge_runfiles.single_step_lines(800, chip_placement,
+                                                              reverse_steps=0)):
+        last_move = None
+        for line in lines:
+            if line.startswith('g1 '):
+                last_move = int(line.split()[1])
+            if line.startswith('filename') and not line.endswith(('p150', 'm150')):
+                assert last_move > 0, line
+    assert chip_placement.st_wavelength_for_chip_centre(800) == 800 - 412 * 0.08
+
+
+# ----------------------------------------------------------------------------
 # Standalone runner
 # ----------------------------------------------------------------------------
 
