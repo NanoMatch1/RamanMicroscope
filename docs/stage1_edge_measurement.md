@@ -35,23 +35,40 @@ This session measures the first of these for stage 1.
 
 ## 2. How stage 1 works, and why its edge is special
 
-The stage 1 edge is the cleaved edge of the 45 degree mirror that brings the laser in. The laser
-path runs: focusing lens -> mirror edge -> collimating lens -> g1 -> relay mirrors -> objective.
-Light scattered from the sample comes back the same way. g1 disperses it and the lens focuses it
-across the mirror edge:
+The stage 1 edge is the cleaved edge of the 45 degree mirror that brings the laser in. There is
+no beamsplitter: the mirror edge sits at the stage's intermediate focus and does two jobs.
 
+**Laser in.** The laser is focused onto the mirror edge and diverges from it to the collimating
+lens. The lens collimates it onto g1, which sends it along the microscope's optical axis.
+
+![The laser is focused onto the mirror edge, collimated by the lens and sent by g1 onto the microscope axis](figures/stage_1_forwards.png)
+
+**Scattered light back.** Light scattered from the sample comes back along the same axis. g1
+disperses it, and the collimating lens, now working as a focusing lens, spreads the wavelengths
+across the plane of the mirror edge:
 - Rayleigh and anti-Stokes light focuses onto the mirror and is reflected away.
-- Stokes light focuses just past the edge and continues to g2.
+- Stokes light focuses just past the edge and continues to the next lens and g2.
 
-The laser and the edge are at the same point, so the g1 setting that puts wavelength X on the
-edge is also the setting that sends a laser at X down the microscope axis (light retraces its
-path). The edge calibration measured here therefore doubles as the laser pointing calibration.
-The pinhole check becomes a test of it.
+g2 undoes the dispersion and sends a filtered, collimated beam on to stage 2.
 
-The 608 steps in `docs/grating_alignment_quickstart.md` (step 3) is a different thing: it turns
-g1 from sending the laser forwards, to the microscope, to retroreflecting it past the edge, as an
-alignment reference for the later stages. At 1200 grooves/mm that 10.7 degree rotation turns the
-beam about 21 degrees, which matches the geometry.
+![Scattered light from the microscope: g1 disperses it, Rayleigh and anti-Stokes light land on the mirror, Stokes light passes the edge to g2 and on to stage 2](figures/stage_1_backwards.png)
+
+**Why the edge calibration is also the laser calibration.** The laser and the edge are at the
+same point, and light retraces its path. So the g1 setting that puts wavelength X on the edge is
+also the setting that sends a laser at X down the microscope axis. The edge calibration measured
+here therefore doubles as the laser pointing calibration, and the pinhole check becomes a test
+of it.
+
+**Alignment mode (the 608 steps).** Step 3 of `docs/grating_alignment_quickstart.md` turns g1 by
+about 608 steps. That stops the laser going forwards to the microscope and retroreflects it
+almost exactly onto itself, so it lands just past the mirror edge. From there it follows the
+path the Stokes light will take: through the next lens and g2, and on to stage 2. That makes
+it a visible reference for aligning everything downstream.
+
+![Alignment mode: g1 turned so the laser is reflected back past the mirror edge, along the Stokes path towards stage 2](figures/stage_1_alignment.png)
+
+At 1200 grooves/mm, the 10.7 degree rotation (608 steps of about 17.6 mdeg) turns the beam
+about 21 degrees, which matches the angle between the two paths.
 
 ## 3. What is measured, and why each detail matters
 
