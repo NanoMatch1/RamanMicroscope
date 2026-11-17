@@ -1,5 +1,6 @@
 # pixisspec/pixis_hardware.py
 
+import time
 from contextlib import contextmanager
 
 from pylablib.devices import PrincetonInstruments
@@ -86,6 +87,9 @@ class RealHardware(CameraHardwareBase):
     # Allowance on top of the exposure when waiting for a frame: the readout (0.56 s for the
     # full sensor at 2 MHz, ~11 s at 100 kHz) plus the start of the acquisition.
     FRAME_TIMEOUT_MARGIN_S = 30.0
+    # Frames that arrive sooner than this fraction of their exposure were not exposed by the
+    # acquisition that returned them (see acquire_frames).
+    MINIMUM_EXPOSED_FRACTION = 0.9
     ADC_GAIN_NAMES = ('Low', 'Medium', 'High')
 
     def __init__(self, camera, open_device=open_pylablib_picam_camera):
@@ -205,13 +209,45 @@ class RealHardware(CameraHardwareBase):
         """
         Acquire `frame_count` frames, all exposed after this call; None on failure.
 
+        Frames cannot arrive sooner than their exposure. A 50 s acquire once returned a flat,
+        unlit frame after 2 s with no error from the camera (2026-11-17, #31). So the
+        acquisition is timed, and frames that arrive sooner than MINIMUM_EXPOSED_FRACTION of
+        their exposure are discarded and logged with the times: None is returned, as for any
+        failed acquisition, and the caller's retries take over (CameraScanner retries a frame
+        twice, then reports the failure).
+
+        `timeout` is in milliseconds per frame.
+        """
+        started_at = time.perf_counter()
+        frames = self._acquire_frames_once(frame_count, timeout)
+        if frames is None:
+            return None
+        elapsed_s = time.perf_counter() - started_at
+        shortest_s = self.shortest_genuine_acquisition_s(frame_count)
+        if elapsed_s < shortest_s:
+            self.logger.error(
+                f"PIXIS: {frame_count} frame(s) arrived after {elapsed_s:.3g} s, sooner than "
+                f"their exposure allows ({shortest_s:.3g} s): not exposed by this acquisition, "
+                f"discarded.")
+            return None
+        return frames
+
+    def shortest_genuine_acquisition_s(self, frame_count):
+        """The least time `frame_count` freshly exposed frames can take (s), on this device's
+        clock: the simulated device runs faster than real time by its `time_scale`."""
+        exposure_s = self.get_exposure_time() or self.camera.acqtime
+        device_time_scale = getattr(self._cam, 'time_scale', 1.0)
+        return frame_count * exposure_s * self.MINIMUM_EXPOSED_FRACTION * device_time_scale
+
+    def _acquire_frames_once(self, frame_count, timeout):
+        """
+        One acquisition of `frame_count` frames; None on failure.
+
         A sequence acquisition is started now, the first `frame_count` frames are read,
         and it is stopped while still running. pylablib's own grab() snaps instead, and
         with pylablib 1.4.5 its stop_acquisition() can raise
         PicamError_AcquisitionNotInProgress once a snap has finished by itself (seen on
         the lab PC, 2026-11-05); stopping a running sequence does not have that problem.
-
-        `timeout` is in milliseconds per frame.
         """
         if self._cam is None:
             self.logger.error("PIXIS: acquire_frames() called but camera not connected.")

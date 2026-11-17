@@ -466,7 +466,10 @@ class AcquisitionControl(QObject):
         self._current_parameters.update(self.general_parameters)
         self._current_parameters['laser_wavelength'] = self.interface.microscope.laser_wavelength_calibrated
         self._current_parameters['laser_wavelength_uncalibrated'] = self.interface.microscope.laser_wavelengths.get('l1', 0.0)
-        self._current_parameters['monochromator_wavelength'] = self.interface.microscope.monochromator_wavelengths.get('g3', 0.0)
+        # From the motor positions now: the cached wavelengths are only refreshed by some
+        # commands ('sm', not 'sg' or a jog), so a cached value can be stale (#32).
+        self._current_parameters['monochromator_wavelength'] = (
+            self.interface.microscope.calculate_monochromator_wavelength().get('g3', 0.0))
         self._current_parameters['spec_slit_width'] = self.interface.microscope.report_enterance_slit_width
         # TODO: Add polarization angles when implemented
         # self._current_parameters['polarization_in_angle'] = self.interface.microscope.polarization_angles.get('in', 0.0)
@@ -786,13 +789,16 @@ class AcquisitionControl(QObject):
         
 
     def acquire_once(self, filename=None):
-        '''Acquires a single frame and saves it.'''
+        '''Acquires a single frame and saves it. Returns False, saving nothing, if no frame
+        could be acquired, so a run file stops at that line.'''
         if filename is not None:
             self.general_parameters['filename'] = filename
         self.prepare_acquisition_params()  # ensures acqtime is set correctly at camera level
         self.interface.microscope.check_roi_for_data_collection()
         self.logger.info("Acquiring single frame...")
         image_data = self._acquire_one_frame()
+        if image_data is None:
+            return False
 
         self.save_spectrum_transient(image_data, wavelength_axis=self.wavelength_axis, report=True)
 

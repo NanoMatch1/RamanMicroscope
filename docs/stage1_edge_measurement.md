@@ -126,11 +126,12 @@ The details of the procedure follow from the two quantities measured, edge posit
 
 | Detail | Why |
 |---|---|
-| Stage 2 edge removed | Only one edge in the light path, so the step on the CCD is unambiguously stage 1's. |
+| Stage 2's intermediate slit removed | Only one edge in the light path, so the step on the CCD is unambiguously stage 1's. With the slit in, its edge hides stage 1's, and the edge on the CCD does not move with g1 (as on 2026-11-17). |
 | TRIAX slit about 50 um, not wide | The slit has to resolve the edge width (50 um is about 0.3 nm). A narrow slit does not bias the edge: when the gratings cancel the dispersion, every wavelength reaches the slit at the same spot. A wide slit is only needed later, for the exit-grating scans, where the spot moves. |
 | Lamp light limited by two aperture cards | Light entering the filter at an angle (in stage 1's dispersion plane) lands on the edge like a different wavelength: about 0.7 nm of edge per mrad. The cards limit that angle. The periscope puts the same angle along the slit, so each CCD row sees one angle: fitted row by row, the edge slants across the rows and each row's width is close to the true width. Summed over the rows, the width is only an upper bound. Step 3 checks the width at operating conditions. |
 | Dark and Ar-Hg frames | The dark frame is subtracted. The Ar lines' width is the spectrograph's own line shape, which is removed from the edge width. |
-| Edge-free frames each side | g1 moved about 67 nm each way. One frame passes everything (open) and one blocks everything (closed). Dividing by the open frame removes the lamp spectrum and the camera response; the closed frame shows how much light leaks through the edge. |
+| g2 follows g1 | The edge is set by g1 alone, but turning g1 on its own also turns the beam leaving stage 1. On 2026-11-17, g1 moved alone dimmed the light many times over within 20 steps and lost it at 150. The run files move g2 with every g1 move, at the ratio the master calibration gives (about -1 step of g2 per step of g1). |
+| Edge-free frames each side | g1 (with g2 following) moved about 67 nm each way. One frame passes everything (open) and one blocks everything (closed). Dividing by the open frame removes the lamp spectrum and the camera response; the closed frame shows how much light leaks through the edge. |
 | Every position approached from the same side | The motors have backlash. Approaching from one side makes positions repeatable; the single-step run measures the backlash directly. |
 | Centre wavelength put mid-chip | `st` alone puts a wavelength near the end of the chip (pixel 100), and the edge would run off it. The run files aim the TRIAX so the centre lands mid-chip, with about +/-40 nm visible. |
 | File name holds the position | Saved spectra do not record grating steps, so a name like `s1edge_t800_g1m020` (centre 800 nm, g1 at -20 steps) is the record. The run log also stores the motor positions before each frame. |
@@ -165,7 +166,9 @@ Useful numbers:
    - `--centres 760 800 840 ...` sets the centre wavelengths, if the lamp or camera do not
      reach the full 720-960 nm.
 2. Laser off or blocked.
-3. Stage 2 edge (the one nearest the spectrograph) removed. Stage 1 mirror left in place.
+3. Stage 2's **intermediate slit** removed: the slit between g3 and g4, in the stage nearest the
+   spectrograph. Stage 1's mirror stays in place. If the slit stays in, its edge hides stage 1's
+   and the measurement shows nothing about g1.
 4. Halogen lamp at the sample focus. Two aperture cards on the cage rails, on the microscope
    axis, restrict the light to a near-collimated beam. That filters out off-axis and
    non-collimated light, standing in for light from a point on the optical axis. Let the lamp
@@ -182,7 +185,9 @@ Useful numbers:
    - Put 800 nm mid-chip: `st` with the value on the first `st` line of
      `stage1_single_steps.txt` (768.0 with the current config), then `sg 800`.
    - Take a test frame: `acqtime 0.5`, `nframe 1`, `filename s1ref_test`, `acquire`.
-   - Adjust until the brightest pixel is about 30-40k counts, below saturation.
+   - Adjust until the brightest pixel is about 30-40k counts, below saturation. (With stage 2's
+     intermediate slit in, 50 s already saturated on 2026-11-17; with it out, expect more
+     light.)
 
 ### Step 0: reference frames (by hand, about 10 minutes)
 
@@ -191,9 +196,11 @@ All at the same exposure and slit width.
 - **Dark:** block the lamp, then `filename s1ref_dark`, `acquire`.
 - **Ar-Hg:** with the Ar-Hg lamp in place of the halogen, `filename s1ref_arhg`, `acquire`.
 - **Check:** with the halogen back and `sg 800`, take a frame (`filename s1ref_g1p000`,
-  `acquire`). Then `g1 10` and another (`filename s1ref_g1p010`, `acquire`).
-  - The edge should move about 4.5 nm. Note which direction it moves.
-  - If it moves much more or less, stop: the step plan needs rescaling.
+  `acquire`). Then `g1 10`, `g2 -10` (g2 follows g1) and another frame
+  (`filename s1ref_g1p010`, `acquire`).
+  - The edge should move about 4.5 nm, to shorter wavelengths. Note which way it moves.
+  - If it hardly moves, check that stage 2's intermediate slit is out.
+  - If it moves much more or less than 4.5 nm, stop: the step plan needs rescaling.
 
 ### Step 1: the edge walk (run file, about 49 frames)
 
@@ -205,6 +212,8 @@ At each centre wavelength, the file:
 1. puts the TRIAX and all gratings there;
 2. takes frames at g1 = -20, -10, 0, +10, +20 steps (about +/-9 nm), each approached from below;
 3. takes one frame at +150 steps and one at -150 steps (edge-free).
+
+g2 follows every g1 move, so the beam leaving stage 1 keeps its direction.
 
 **Check after the first centre:** the edge is visible and moves between frames. If the lamp is
 too dim at the ends of the range, regenerate the files with fewer `--centres`.
@@ -231,7 +240,8 @@ This measures the edge width with the real source: the laser spot.
    - put the laser wavelength near mid-chip (as in set-up step 6);
    - `allmotors`, then `filename s1laser_l760` (with the matching wavelength), then `acquire`.
 
-**Camera safety:** with the stage 2 edge out, only the stage 1 mirror keeps the laser off the CCD.
+**Camera safety:** with stage 2's intermediate slit out, only the stage 1 mirror keeps the laser
+off the CCD.
 Start with the shortest exposure and increase it gradually.
 
 The `allmotors` values give g1's laser-pointing setting at each wavelength. Comparing them with

@@ -486,6 +486,45 @@ def test_frames_wait_at_least_the_exposure():
         hardware.close_camera()
 
 
+class DeviceReturningEarlyFrames(SimulatedPicamDevice):
+    """The fault of 2026-11-17 (#31): the next `early_acquisitions` acquisitions hand back a
+    flat, unlit frame at once instead of waiting for the exposure."""
+
+    def __init__(self, *args, early_acquisitions=1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.early_acquisitions = early_acquisitions
+        self.serving_early_frame = False
+
+    def wait_for_frame(self, *args, **kwargs):
+        if self.early_acquisitions > 0:
+            self.early_acquisitions -= 1
+            self.serving_early_frame = True
+            return True
+        return super().wait_for_frame(*args, **kwargs)
+
+    def read_multiple_images(self, rng=None, **kwargs):
+        if self.serving_early_frame:
+            self.serving_early_frame = False
+            frame_count = 1 if rng is None else rng[1] - rng[0]
+            return [np.full((100, 1024), 424, dtype=np.uint16)] * frame_count
+        return super().read_multiple_images(rng=rng, **kwargs)
+
+
+def test_a_frame_that_arrives_before_its_exposure_is_discarded():
+    """An unexposed frame returned early is a failed acquisition, not data (#31)."""
+    camera_stub = SimpleNamespace(interface=None, logger=logging.getLogger('test_pixis_camera'),
+                                  acqtime=EXPOSURE_S)
+    hardware = RealHardware(camera_stub)
+    hardware._cam = DeviceReturningEarlyFrames(SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE),
+                                               exposure_s=EXPOSURE_S, readout_s=READOUT_S)
+    try:
+        assert hardware.grab_frame() is None, "the early frame is refused"
+        frame = hardware.grab_frame()
+        assert frame is not None and frame_level(frame) == pytest.approx(SCENE_LEVEL_BEFORE_MOVE)
+    finally:
+        hardware.close_camera()
+
+
 def test_an_exposure_the_camera_clips_is_reported():
     hardware = real_hardware_on_simulated_device(SceneWithLevel(SCENE_LEVEL_BEFORE_MOVE))
     hardware._cam.maximum_exposure_s = 100.0

@@ -2458,8 +2458,7 @@ class Microscope(Instrument):
     @ui_callable
     def acquire_once(self, filename=None):
         self.interface.acq_ctrl.prepare_acquisition_params()
-        self.interface.acq_ctrl.acquire_once(filename)
-        return
+        return self.interface.acq_ctrl.acquire_once(filename)
     
     @ui_callable
     def acquire_custom_scan(self):

@@ -12,6 +12,29 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Early camera frames refused, fresh wavelength in saved frames, g2 follows g1 in the stage 1 run files (2026-11-17)
+
+Branch `feature/calibration-repeat-and-docs`. From the first stage 1 edge session (2026-11-17).
+
+- **An acquisition that returns sooner than its exposure is refused (#31).** A 50 s `acquire`
+  returned a flat, unlit frame after 2 s, with no error, and it was saved as data.
+  `RealHardware.acquire_frames` now times each acquisition and discards frames that arrive
+  sooner than 90 % of their exposure. The scanner's existing retries then take over. If no
+  frame can be acquired, `acquire` saves nothing and returns False, so a run file stops at
+  that line.
+- **Saved frames record the wavelength the gratings are at (#32).** `monochromator_wavelength`
+  in a frame's metadata was a cached value that `sg` and jogs never refreshed (every frame of
+  the session recorded 799.8 nm). It is now worked out from the motor positions when the frame
+  is saved.
+- **Stage 1 run files: g2 follows every g1 move.** g1 moved on its own also turns the beam
+  leaving stage 1: in the session, the light dimmed many times over within 20 steps and was
+  lost at 150. `tools/make_stage1_edge_runfiles.py` now pairs each g1 jog with the g2 jog that
+  keeps the pair matched, at the master calibration's ratio for that centre (-1.02 at 720 nm
+  to -0.88 at 960 nm).
+- **`docs/stage1_edge_measurement.md`:** the element to remove is named as stage 2's
+  intermediate slit (it was "stage 2 edge"). With the slit left in, its edge hid stage 1's.
+  The Step 0 check moves g2 with g1, and says what to check if the edge hardly moves.
+
 ## Demo data allowed in the docs; stage 1 measurement guide revised (2026-11-17)
 
 Branch `feature/calibration-repeat-and-docs`.

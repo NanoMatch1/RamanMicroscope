@@ -891,6 +891,10 @@ def _g1_steps():
     return get_interface().microscope.get_all_motor_positions()['g1']
 
 
+def _g2_steps():
+    return get_interface().microscope.get_all_motor_positions()['g2']
+
+
 def _remove_run_logs_after_tests():
     log_directory = os.path.join(get_interface().dataDir, 'runfile_logs')
     logs_before = set(os.listdir(log_directory)) if os.path.isdir(log_directory) else set()
@@ -955,12 +959,32 @@ def test_runfile_stops_at_the_first_command_that_fails():
     assert _g1_steps() == g1_before + 2
 
 
+def test_runfile_stops_when_a_frame_cannot_be_acquired():
+    """A failed acquisition (e.g. an early, unexposed frame, #31) saves nothing and stops the
+    run at that line, instead of the run carrying on past a missing frame."""
+    _remove_run_logs_after_tests()
+    acquisition = get_interface().acq_ctrl
+    run_file_path = _write_run_file(['filename headless_failed_frame_test', 'acquire', 'g1 3'])
+    g1_before = _g1_steps()
+    acquire_one_frame = acquisition._acquire_one_frame
+    acquisition._acquire_one_frame = lambda: None
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = get_interface()._command_handler(f'runfile {run_file_path}')
+    finally:
+        acquisition._acquire_one_frame = acquire_one_frame
+    assert 'run stopped at line 2' in result
+    assert _g1_steps() == g1_before
+    assert not os.path.exists(os.path.join(get_interface().dataDir, 'headless_failed_frame_test'))
+
+
 def test_stage1_edge_walk_run_file_runs_end_to_end():
     """A generated edge walk (one centre, small offsets) passes the checker and runs in simulate
     mode: every frame is saved under its position name and g1 ends where the plan says."""
     _remove_run_logs_after_tests()
     chip_placement = make_stage1_edge_runfiles.chip_placement_from_files()
-    lines = make_stage1_edge_runfiles.edge_walk_lines([800], chip_placement,
+    pair = make_stage1_edge_runfiles.grating_pair_from_calibration(800)
+    lines = make_stage1_edge_runfiles.edge_walk_lines([800], chip_placement, lambda centre: pair,
                                                       edge_offsets_steps=(-1, 0, 1),
                                                       exposure_seconds=0.1)
     run_file_path = _write_run_file(lines)
@@ -970,20 +994,24 @@ def test_stage1_edge_walk_run_file_runs_end_to_end():
     for name in expected_names:
         atexit.register(shutil.rmtree, os.path.join(data_directory, name), True)
     run_command('sg 800')
-    g1_at_centre = _g1_steps()
+    g1_at_centre, g2_at_centre = _g1_steps(), _g2_steps()
     result = run_command(f'runfile {run_file_path}')
     assert 'Ran all' in result
     for name in expected_names:
         assert os.path.exists(os.path.join(data_directory, name, f'{name}_000000.npz')), name
-    assert _g1_steps() == g1_at_centre - make_stage1_edge_runfiles.EDGE_FREE_OFFSET_STEPS
+    final_offset = -make_stage1_edge_runfiles.EDGE_FREE_OFFSET_STEPS
+    assert _g1_steps() == g1_at_centre + final_offset
+    assert _g2_steps() == g2_at_centre + pair.g2_offset(final_offset), "g2 follows g1"
 
 
 def test_stage1_run_files_approach_every_frame_from_below():
     """Each edge-walk frame (other than the edge-free ones) and each single step on the way up is
     reached by a positive g1 move, as the bench procedure needs for repeatable positions."""
     chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
-    for lines in (make_stage1_edge_runfiles.edge_walk_lines([760, 800], chip_placement),
-                  make_stage1_edge_runfiles.single_step_lines(800, chip_placement,
+    pair = make_stage1_edge_runfiles.GratingPair(g2_steps_per_g1_step=-0.97)
+    for lines in (make_stage1_edge_runfiles.edge_walk_lines([760, 800], chip_placement,
+                                                            lambda centre: pair),
+                  make_stage1_edge_runfiles.single_step_lines(800, chip_placement, pair,
                                                               reverse_steps=0)):
         last_move = None
         for line in lines:
@@ -992,6 +1020,47 @@ def test_stage1_run_files_approach_every_frame_from_below():
             if line.startswith('filename') and not line.endswith(('p150', 'm150')):
                 assert last_move > 0, line
     assert chip_placement.st_wavelength_for_chip_centre(800) == 800 - 412 * 0.08
+
+
+def test_stage1_run_files_keep_g2_matched_to_g1_at_every_frame():
+    """g1 moved alone turns the beam leaving stage 1 and loses the light (2026-11-17), so at
+    every frame g2 sits at round(ratio * g1 offset), including the edge-free frames."""
+    chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
+    pair = make_stage1_edge_runfiles.GratingPair(g2_steps_per_g1_step=-0.97)
+    for lines in (make_stage1_edge_runfiles.edge_walk_lines([800], chip_placement,
+                                                            lambda centre: pair),
+                  make_stage1_edge_runfiles.single_step_lines(800, chip_placement, pair)):
+        g1_offset = g2_offset = frames = 0
+        for line in lines:
+            if line.startswith('sg '):
+                g1_offset = g2_offset = 0
+            elif line.startswith('g1 '):
+                g1_offset += int(line.split()[1])
+            elif line.startswith('g2 '):
+                g2_offset += int(line.split()[1])
+            elif line == 'acquire':
+                frames += 1
+                assert g2_offset == pair.g2_offset(g1_offset), (g1_offset, g2_offset)
+        assert frames > 0
+    ratio_at_800 = make_stage1_edge_runfiles.grating_pair_from_calibration(800).g2_steps_per_g1_step
+    assert -1.1 < ratio_at_800 < -0.8, "the master calibration turns g2 against g1, about 1:1"
+
+
+def test_saved_frame_records_the_wavelength_the_gratings_are_at():
+    """The frame's monochromator wavelength comes from the motor positions when it is saved,
+    not from a value only some commands refresh: after 'sg 720' it is 720, not stale (#32)."""
+    name = 'headless_stale_wavelength_test'
+    atexit.register(shutil.rmtree, os.path.join(get_interface().dataDir, name), True)
+    run_command('sg 800')
+    run_command('sm 800')
+    run_command('sg 720')
+    run_command(f'filename {name}')
+    run_command('acqtime 0.01')
+    run_command('acquire')
+    saved_path = os.path.join(get_interface().dataDir, name, f'{name}_000000.npz')
+    with np.load(saved_path) as saved:
+        metadata = json.loads(str(saved['metadata']))
+    assert abs(metadata['_current_parameters']['monochromator_wavelength'] - 720) < 1.0
 
 
 # ----------------------------------------------------------------------------
