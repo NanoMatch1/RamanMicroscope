@@ -12,6 +12,11 @@ steps and lost it entirely at 150. So each g1 move is paired with the g2 move th
 pair matched, at the ratio the master calibration gives at that centre (d g2 / d g1 at fixed
 wavelength, about -1). Stage 2's intermediate slit must be out, or its edge hides stage 1's.
 
+The TRIAX entrance slit is wide (about 500 um). The stages never cancel the dispersion exactly,
+so a narrow slit would pass only a window of wavelengths whose sides can mimic or hide the edge.
+The wide slit blurs the edge by about 3 nm without moving its midpoint, so these files measure
+the edge position; its width is measured in the laser-excited run.
+
 Two run files, written to data/runfiles/ (per machine, not tracked):
 - stage1_edge_walk.txt: at each centre wavelength, the TRIAX put so that wavelength lands mid-chip
   ('st' alone puts it on spectrometer_target_pixel, near the short-wavelength end, and the
@@ -69,7 +74,7 @@ def header_lines(title, exposure_seconds):
              '# Written by tools/make_stage1_edge_runfiles.py; procedure in '
              'docs/stage1_edge_measurement.md.',
              '# Lamp at the sample, laser off, stage 2 intermediate slit removed, '
-             'TRIAX slit ~50 um.',
+             'TRIAX slit ~500 um.',
              '# g2 follows every g1 move (ratio from the master calibration).']
     if exposure_seconds is not None:
         lines += [f'acqtime {exposure_seconds}', 'nframe 1']

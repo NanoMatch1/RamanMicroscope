@@ -127,9 +127,9 @@ The details of the procedure follow from the two quantities measured, edge posit
 | Detail | Why |
 |---|---|
 | Stage 2's intermediate slit removed | Only one edge in the light path, so the step on the CCD is unambiguously stage 1's. With the slit in, its edge hides stage 1's, and the edge on the CCD does not move with g1 (as on 2026-11-17). |
-| TRIAX slit about 50 um, not wide | The slit has to resolve the edge width (50 um is about 0.3 nm). A narrow slit does not bias the edge: when the gratings cancel the dispersion, every wavelength reaches the slit at the same spot. A wide slit is only needed later, for the exit-grating scans, where the spot moves. |
+| TRIAX slit wide, about 500 um | The filter stages never cancel the dispersion perfectly, so different wavelengths reach the TRIAX slit at slightly different places across it. (The periscope puts stage 1's leftover dispersion along the slit, so what lands across it is mostly stage 2's.) A narrow slit then passes only a window of wavelengths, and the window's sharp sides can look like stage 1's edge or hide it: the intermediate-slit problem again, one slit later. A wide slit passes the whole spectrum. It blurs the edge by about 3 nm (about 6 nm per mm of slit), which does not move the edge's midpoint, so the position is still found to a fraction of a g1 step. The width is not measured at this slit width: step 3 measures it. With a wide slit, a wavelength's reading depends a little on where it enters the slit, so the Ar-Hg frame is taken at the same width, and step 0's slit series measures the effect. |
 | Lamp light limited by two aperture cards | Light entering the filter at an angle (in stage 1's dispersion plane) lands on the edge like a different wavelength: about 0.7 nm of edge per mrad. The cards limit that angle. The periscope puts the same angle along the slit, so each CCD row sees one angle: fitted row by row, the edge slants across the rows and each row's width is close to the true width. Summed over the rows, the width is only an upper bound. Step 3 checks the width at operating conditions. |
-| Dark and Ar-Hg frames | The dark frame is subtracted. The Ar lines' width is the spectrograph's own line shape, which is removed from the edge width. |
+| Dark and Ar-Hg frames | The dark frame is subtracted. The Ar lines' width is the spectrograph's own line shape at that slit width, which is removed from the edge width. |
 | g2 follows g1 | The edge is set by g1 alone, but turning g1 on its own also turns the beam leaving stage 1. On 2026-11-17, g1 moved alone dimmed the light many times over within 20 steps and lost it at 150. The run files move g2 with every g1 move, at the ratio the master calibration gives (about -1 step of g2 per step of g1). |
 | Edge-free frames each side | g1 (with g2 following) moved about 67 nm each way. One frame passes everything (open) and one blocks everything (closed). Dividing by the open frame removes the lamp spectrum and the camera response; the closed frame shows how much light leaks through the edge. |
 | Every position approached from the same side | The motors have backlash. Approaching from one side makes positions repeatable; the single-step run measures the backlash directly. |
@@ -180,7 +180,10 @@ Useful numbers:
    - The same angle spreads the light along the slit, by about 6-8 PIXIS rows per mrad, so the
      band is about 40-50 rows tall in the example. Frames must keep all of those rows (check on
      the test frame in step 6), because the analysis fits the edge row by row.
-5. TRIAX entrance slit about 50 um. Record the value with `ren`.
+5. TRIAX entrance slit open to about 500 um (see section 3 for why it is wide). Record the
+   value with `ren`. With the slit wide, keep stray lamp light out of the TRIAX: cover the lamp
+   housing and any gaps, so the only light reaching the slit comes through the filter. The
+   closed frame in step 1 (g1 at -150) measures what still gets through.
 6. Set the exposure:
    - Put 800 nm mid-chip: `st` with the value on the first `st` line of
      `stage1_single_steps.txt` (768.0 with the current config), then `sg 800`.
@@ -191,15 +194,23 @@ Useful numbers:
 
 ### Step 0: reference frames (by hand, about 10 minutes)
 
-All at the same exposure and slit width.
+All at the same exposure, and at 500 um except where a step says otherwise.
 
+- **Slit series:** halogen lamp, gratings where `sg 800` put them. One frame at each slit width,
+  narrowest first: about 50 um (`filename s1ref_slit0050`, `acquire`), 200 um (`s1ref_slit0200`)
+  and 500 um (`s1ref_slit0500`). Record each `ren` value, and leave the slit at 500 um.
+  - If 200 and 500 um give the same spectrum near the edge, 500 um is wide enough.
+  - If 50 um differs from both, a narrow slit cuts off part of the spectrum.
 - **Dark:** block the lamp, then `filename s1ref_dark`, `acquire`.
-- **Ar-Hg:** with the Ar-Hg lamp in place of the halogen, `filename s1ref_arhg`, `acquire`.
+- **Ar-Hg:** with the Ar-Hg lamp in place of the halogen, at 500 um
+  (`filename s1ref_arhg_slit0500`, `acquire`) and at 50 um (`filename s1ref_arhg_slit0050`,
+  `acquire`). Set the slit back to 500 um.
 - **Check:** with the halogen back and `sg 800`, take a frame (`filename s1ref_g1p000`,
   `acquire`). Then `g1 10`, `g2 -10` (g2 follows g1) and another frame
   (`filename s1ref_g1p010`, `acquire`).
   - The edge should move about 4.5 nm, to shorter wavelengths. Note which way it moves.
-  - If it hardly moves, check that stage 2's intermediate slit is out.
+  - If it hardly moves, check that stage 2's intermediate slit is out and the TRIAX slit is at
+    about 500 um.
   - If it moves much more or less than 4.5 nm, stop: the step plan needs rescaling.
 
 ### Step 1: the edge walk (run file, about 49 frames)
@@ -253,7 +264,7 @@ Only if an iris fits at stage 1's exit port (towards stage 2):
 - Open the TRIAX slit to about 1 mm.
 - Step g2 through the iris one step at a time until the signal falls away on both sides, and
   save each frame.
-- Narrow the slit again afterwards.
+- Set the slit back to about 500 um afterwards.
 
 This is the first test of the exit-grating method.
 

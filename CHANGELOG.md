@@ -34,6 +34,10 @@ Branch `feature/calibration-repeat-and-docs`. From the first stage 1 edge sessio
 - **`docs/stage1_edge_measurement.md`:** the element to remove is named as stage 2's
   intermediate slit (it was "stage 2 edge"). With the slit left in, its edge hid stage 1's.
   The Step 0 check moves g2 with g1, and says what to check if the edge hardly moves.
+- **`docs/stage1_edge_measurement.md`: TRIAX entrance slit about 500 um, not 50 um.** The filter
+  stages do not cancel the dispersion perfectly, so a narrow slit passes only a window of
+  wavelengths whose sides can mimic or hide stage 1's edge. Step 0 adds a slit series (50, 200,
+  500 um) and Ar-Hg frames at 500 and 50 um.
 
 ## Demo data allowed in the docs; stage 1 measurement guide revised (2026-11-17)
 
