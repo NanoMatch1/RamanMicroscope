@@ -15,8 +15,8 @@ All five suites must pass before a change is considered complete.
   (also runs standalone without pytest: `python test_headless_simulation.py`)
 - Repository safety checks: `python -m pytest test_repo_guard.py -q`
   (`tools/repo_guard.py`, the pre-commit hook in `.githooks/` and the CI
-  `repo-guard` job: no personal emails/paths/share links, data files or
-  personal commit identities in a public repo)
+  `repo-guard` job: no personal emails/paths/share links, data files (bar small
+  examples in `docs/demo_data/`) or personal commit identities in a public repo)
 - Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q`
 
 The headless suite drives the whole application in simulate mode through

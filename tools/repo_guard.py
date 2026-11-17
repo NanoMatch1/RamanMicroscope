@@ -4,7 +4,8 @@ This repository is public, and anything pushed to any branch is public the
 moment it is pushed. These checks catch the common accidents before that:
 personal email addresses, personal file paths, private share links, acquired
 data and large binaries, and a git identity that would publish a personal
-email address in the commit itself.
+email address in the commit itself. A small example frame that the docs show
+and explain may go in docs/demo_data/, still within the size limit.
 
 Two entry points, one set of checks:
 
@@ -38,6 +39,10 @@ ALLOW_MARKER = "repo-guard: allow"
 GUARD_SELF_PATHS = ("tools/repo_guard.py", "test_repo_guard.py")
 
 MAX_FILE_BYTES = 1_000_000
+
+# Small, curated example frames that the docs show and explain. They are still
+# held to MAX_FILE_BYTES; anything else acquired stays under data/.
+DEMO_DATA_DIRECTORY = "docs/demo_data/"
 
 DATA_FILE_EXTENSIONS = (
     ".npy", ".npz", ".spe", ".sif", ".h5", ".hdf5", ".tif", ".tiff",
@@ -158,9 +163,13 @@ def find_share_link(text):
     return f"cloud share link ({match.group(0)})" if match else None
 
 
-@file_check("data-file", "acquired data lives under data/ (git-ignored), never in the repository")
+@file_check("data-file", "acquired data lives under data/ (git-ignored); a small example "
+                        f"frame for the docs goes in {DEMO_DATA_DIRECTORY}")
 def find_data_file(changed_file):
-    """Flag a newly added file whose extension marks it as acquired data."""
+    """Flag a newly added file whose extension marks it as acquired data, outside the docs'
+    demo data directory."""
+    if changed_file.path.startswith(DEMO_DATA_DIRECTORY):
+        return None
     if changed_file.status == "A" and changed_file.path.lower().endswith(DATA_FILE_EXTENSIONS):
         return "data file added"
     return None

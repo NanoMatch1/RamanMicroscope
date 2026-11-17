@@ -5,29 +5,35 @@ filter gratings (issue #29). The commands it uses are documented in their docstr
 (`help runfile`, `python tools/make_stage1_edge_runfiles.py --help`, and
 `docs/command_reference.md`).
 
-## 1. Why not jogging for intensity
+## 1. Why not jog for intensity
 
-The tunable filter is a double subtractive monochromator: there are two stages, each is a pair 
-of gratings. The design is symmetric - a change at one end is designed to be undone by the other end.
-Changing the angle of `g1` changes which wavelengths focus on which part of the intermediate slit, effectively
-making a cutoff wavelength defined by those which strike the edge of the slit. 
+The tunable filter is a double subtractive monochromator: two stages, each a pair of gratings.
+Stage 1 is g1/g2 (1200 grooves/mm); stage 2 is g3/g4 (300 grooves/mm). The design is symmetric:
+a change at one end is undone by the other end. Changing the angle of g1 changes which
+wavelengths focus on which part of the intermediate plane, so the wavelengths that land on the
+edge there set the cutoff.
 
-The exit grating then undoes the dispersion and sends a
-collimated beam outwards. The key is that even if you change `g1` a set amount, you will then change `g2` an equal amount to restore the alignment direction. But this just optimises which chunk of the spectrum passes the slit, and there's a large range of spectrum that can pass at once. The design is inherently tolerant of angular misaligment. This means:
+The exit grating then undoes the dispersion and sends a collimated beam onwards. If g1 is
+changed by some amount, g2 is changed by an equal amount to restore the output direction. But
+that only chooses which chunk of the spectrum passes the edge, and a wide range of spectrum
+passes at once: the design is inherently tolerant of angular misalignment. This means:
 
 - **The maximum is a broad plateau.** Its peak is set by noise and does not repeat.
-- **The motors are coupled.** The right g2 depends on g1, so tuning one motor requires tuning the other to find the local mimima, over and over, to find the largest local minima.
-- **Intensity is only half the reference:** The entrance gratings set
-  *where the cutoff is* (a wavelength). The exit gratings set *where the beam points* (an
-  angle). Intensity in the spectrograph can help the last one, but it requires care to make sure that each component is correctly decoupled.
+- **The motors are coupled.** The right g2 depends on g1, so tuning one motor means re-tuning
+  the other to find a local maximum, over and over, in search of the largest one.
+- **Intensity is only half the reference.** The entrance gratings set *where the cutoff is* (a
+  wavelength). The exit gratings set *where the beam points* (an angle). Intensity in the
+  spectrograph can help with the second, but only with care that each grating is decoupled
+  from the others.
 
-So we start by defining the correct references to measure:
+So the first step is to define the right reference for each grating:
 
 - **Entrance gratings (g1, g3): the wavelength of the cutoff edge**, read off the CCD, whose
-  wavelength axis is now calibrated. We're reading a *spectral shape* so the overall intensity is not an issue.
-- **Exit gratings (g2, g4): beam position or intensity through a small aperture** at that stage's own exit port.
-  Each stage is aligned to its own entrance and exit ports, and relay mirrors carry the axis
-  between stages.
+  wavelength axis is now calibrated. This reads a *spectral shape*, so the overall intensity
+  does not matter.
+- **Exit gratings (g2, g4): beam position, or intensity through a small aperture**, at that
+  stage's own exit port. Each stage is aligned to its own entrance and exit ports, and relay
+  mirrors carry the axis between stages.
 
 ## 2. How stage 1 works, and why its edge is special
 
@@ -59,13 +65,19 @@ of it.
 about 608 steps. That stops the laser going forwards to the microscope and retroreflects it
 almost exactly onto itself, so it lands just past the mirror edge. From there it follows the
 path the Stokes light will take: through the next lens and g2, and on to stage 2. That makes
-it a visible reference for aligning everything downstream. In reality, a small angle offset from
-the laser going back to the mirror, and passing the mirror, is a real error. It is **wavelength X**,
-passing in the direction of light that should have **wavelength X** + *small stokes shift*, and
-will be diffracted in a slightly different direction at the `g2`. This requires a 
-"moment of faith" at the end of alignment, to bring `g1` back a few steps, while watching almost no
-signal, in the hopes that this correction brings the Raman into view. Best done with a sample that 
-gives lots of signal like sulfur of WSe2...
+it a visible reference for aligning everything downstream.
+
+In practice the alignment beam is not quite the Stokes beam. The laser, at wavelength X, passes
+the edge where Stokes light at X plus a small shift will later pass, so g2 sends it in a
+slightly different direction from the Raman light that takes that path. At the end of
+alignment, g2 is therefore brought back a few steps. This is usually done while watching
+almost no signal, so a strong scatterer such as sulfur or WSe2 helps.
+
+The CCD shows which way to step g2. The periscope between the stages turns stage 1's
+dispersion plane vertical, so a pointing error out of stage 1 moves the band along the slit:
+one g2 step turns the beam about 0.6 mrad, which is about 3-5 PIXIS rows with the 75-100 mm
+lens into the TRIAX. A few steps of error move the band by tens of rows, so read out the full
+chip height while correcting g2, and step towards the band's usual row.
 
 ![Alignment mode: g1 turned so the laser is reflected back past the mirror edge, along the Stokes path towards stage 2](figures/stage_1_alignment.png)
 
@@ -83,18 +95,40 @@ CCD as a step in that spectrum. Each frame gives:
   collimating lens focuses different wavelengths at slightly different distances (chromatic
   focal shift), so the edge should be sharpest at one wavelength and broaden away from it. The
   measured width against wavelength gives the cost of the lens, and the case for replacing that
-  section with curved mirrors. The dispersion is already visible in the CCD image of old data:
+  section with curved mirrors.
 
+**What older data already shows.** The frame below is MoS2 at 720 nm excitation through both
+stages, on the previous (Tucsen) camera (`docs/demo_data/sb_edgetest_2_720nm_000000.npz`).
+Wavelength runs left to right, and the rows run along the slit. The periscope between the
+stages swaps the axes, so the rows correspond to stage 1's dispersion plane.
 
-![CCD image of spectrum shows](figures/spectrum_dispersion_lens.png)
+![MoS2 at 720 nm excitation through both filter stages, old Tucsen camera: the band grows taller and tilts with wavelength, and changes abruptly at 746 and 756 nm](figures/spectrum_dispersion_lens.png)
 
-The details of the procedure follow from those two quantities:
+- **The band grows taller with wavelength**, from about 3.7 rows at 727 nm to about 7.3 rows at
+  745 nm. That is blur, not dispersion: the rows are a spatial axis.
+- **The band's centre moves about 0.16 rows per nm.** A tilt like this is what dispersion left
+  over from stage 1 looks like, but a slightly rotated camera gives the same tilt, and this
+  frame has no vertical reference to rule that out. (An Ar-Hg frame gives one: its lines should
+  be vertical.)
+- **The band changes abruptly at 746.3 and 756.3 nm.** Aberrations change smoothly with
+  wavelength, so steps this sharp point to something clipping the beam near a focus.
+
+The growth looks vertical-only, but that does not single out astigmatism: the slit clips any
+blur across its width, so a round blur also looks vertical on the CCD. An open-slit frame of
+discrete lines (an Ar-Hg lamp through the whole chain, or Raman peaks) separates the causes. A
+continuum is no use for this, since it smears across the width anyway.
+- Round spots that grow with wavelength mean chromatic defocus.
+- Spots stretched along one axis, which flip to the other axis as the TRIAX focus moves, mean
+  astigmatism.
+- Spots cut off on one side mean clipping.
+
+The details of the procedure follow from the two quantities measured, edge position and width:
 
 | Detail | Why |
 |---|---|
 | Stage 2 edge removed | Only one edge in the light path, so the step on the CCD is unambiguously stage 1's. |
 | TRIAX slit about 50 um, not wide | The slit has to resolve the edge width (50 um is about 0.3 nm). A narrow slit does not bias the edge: when the gratings cancel the dispersion, every wavelength reaches the slit at the same spot. A wide slit is only needed later, for the exit-grating scans, where the spot moves. |
-| Small lamp source | Along the dispersion direction, a source point off-centre at the sample lands on the edge like a different wavelength, magnified by roughly f_lens / f_objective (a large factor). A lamp filling the field smears the edge: the position is still fine, but the width is only an upper bound. Step 3 measures the true width. |
+| Lamp light limited by two aperture cards | Light entering the filter at an angle (in stage 1's dispersion plane) lands on the edge like a different wavelength: about 0.7 nm of edge per mrad. The cards limit that angle. The periscope puts the same angle along the slit, so each CCD row sees one angle: fitted row by row, the edge slants across the rows and each row's width is close to the true width. Summed over the rows, the width is only an upper bound. Step 3 checks the width at operating conditions. |
 | Dark and Ar-Hg frames | The dark frame is subtracted. The Ar lines' width is the spectrograph's own line shape, which is removed from the edge width. |
 | Edge-free frames each side | g1 moved about 67 nm each way. One frame passes everything (open) and one blocks everything (closed). Dividing by the open frame removes the lamp spectrum and the camera response; the closed frame shows how much light leaks through the edge. |
 | Every position approached from the same side | The motors have backlash. Approaching from one side makes positions repeatable; the single-step run measures the backlash directly. |
@@ -132,7 +166,17 @@ Useful numbers:
      reach the full 720-960 nm.
 2. Laser off or blocked.
 3. Stage 2 edge (the one nearest the spectrograph) removed. Stage 1 mirror left in place.
-4. Halogen lamp at the sample focus. Use two aperture cards along the cage rails on the microscope optical axis to restrict the light to a more collimated beam - this essentially filters out off-axis and non-collimated light to mimic a centered beam down the optical axis. Let the lamp warm up for 15 minutes.
+4. Halogen lamp at the sample focus. Two aperture cards on the cage rails, on the microscope
+   axis, restrict the light to a near-collimated beam. That filters out off-axis and
+   non-collimated light, standing in for light from a point on the optical axis. Let the lamp
+   warm up for 15 minutes.
+   - The angle the cards let through is what smears the edge: about 0.7 nm of edge per mrad.
+     Holes of diameter a, a distance L apart, pass about +/- a/L. For example, 1 mm holes
+     300 mm apart pass +/-3.3 mrad: about 5 nm of smear in total.
+   - Use holes about 1 mm across, as far apart as the rails allow.
+   - The same angle spreads the light along the slit, by about 6-8 PIXIS rows per mrad, so the
+     band is about 40-50 rows tall in the example. Frames must keep all of those rows (check on
+     the test frame in step 6), because the analysis fits the edge row by row.
 5. TRIAX entrance slit about 50 um. Record the value with `ren`.
 6. Set the exposure:
    - Put 800 nm mid-chip: `st` with the value on the first `st` line of
@@ -210,7 +254,9 @@ Copy these off the lab PC for fitting: the folders `data/s1ref_*`, `data/s1edge_
 
 The analysis, written once the data exists:
 - dark subtraction and division by the open frame;
-- an error-function fit per frame, giving edge position and width;
+- an error-function fit for each row (or a few rows) of each frame, giving edge position and
+  width. Each row is one beam angle, so the edge slants across the rows: the slant gives the
+  edge shift per mrad, and the per-row width is free of the smear from the lamp's angle spread;
 - the edge width corrected for the Ar line width;
 - edge position against g1 (the calibration), step uniformity and backlash;
 - edge width against wavelength, compared with the lens's predicted chromatic focal shift.

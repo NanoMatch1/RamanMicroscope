@@ -52,24 +52,15 @@ Ranges are the configured limits, not measured performance figures.
 
 ## Hardware
 
-| Subsystem | Device | Interface |
-|---|---|---|
-| Pump laser | JenLas JOL-D2.10 | RS-232 |
-| Tunable laser | Ti:sapphire, grating-tuned ("Tiger-200") | RS-232, piezomotor |
-| Excitation filter | double subtractive monochromator | stepper motors |
-| Spectrometer | HORIBA TRIAX 550, 300 Grooves/mm, 600 nm Blaze | RS-232 |
-| Detector | Princeton Instruments PIXIS CCD | PICam SDK via `pylablib` |
-| Motion | Arduino MEGA — 4 modules, up to 4 axes each | USB serial, custom protocol |
+A pump-laser-driven tunable Ti:sapphire, a double subtractive monochromator, a HORIBA
+TRIAX 550 and a Princeton Instruments PIXIS CCD, with an Arduino MEGA driving the
+stepper motors: models, optics and their sources are in
+[`docs/hardware_specifications.md`](docs/hardware_specifications.md).
 
 The Arduino firmware lives in [`arduino_mega_develop/`](arduino_mega_develop/)
 and is the authoritative definition of the motor command protocol. It is
 versioned here alongside the Python that speaks to it, deliberately — the two
 have to agree, and keeping them apart is how they stop agreeing.
-
-<!-- TODO: pump, Ti:sapphire and TRIAX models were reported from the lab
-     (2026-10). Confirm the pump name (JenLas JOL-D2.10 is a Jenoptik product;
-     the Tsunami-era pump was a Spectra-Physics Millennia). Add the objective
-     and the remaining TRIAX gratings. -->
 
 ---
 

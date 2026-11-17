@@ -79,6 +79,14 @@ def test_added_data_file_is_flagged_but_modified_one_is_not():
     assert repo_guard.find_data_file(modified) is None
 
 
+def test_demo_data_file_passes_but_is_still_size_limited():
+    demo = repo_guard.ChangedFile("docs/demo_data/example_frame.npz", "A", 900_000)
+    oversized_demo = repo_guard.ChangedFile("docs/demo_data/example_frame.npz", "A", 5_000_000)
+    assert repo_guard.find_data_file(demo) is None
+    assert repo_guard.find_data_file(repo_guard.ChangedFile("docs/example_frame.npz", "A", 100))
+    assert repo_guard.find_large_file(oversized_demo)
+
+
 def test_large_file_is_flagged():
     assert repo_guard.find_large_file(repo_guard.ChangedFile("big.pdf", "A", 5_000_000))
     assert repo_guard.find_large_file(repo_guard.ChangedFile("small.md", "A", 2_000)) is None

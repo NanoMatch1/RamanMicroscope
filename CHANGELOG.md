@@ -12,6 +12,26 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Demo data allowed in the docs; stage 1 measurement guide revised (2026-11-17)
+
+Branch `feature/calibration-repeat-and-docs`.
+
+- **The repo guard allows data files under `docs/demo_data/`**, so that the docs can show and
+  explain an example frame. They still count against the 1 MB file limit, and acquired data
+  anywhere else is still refused. The MoS2 frame added on 2026-11-17
+  (`docs/demo_data/sb_edgetest_2_720nm_000000.npz`) had failed the CI `repo-guard` job.
+- **`docs/stage1_edge_measurement.md`:**
+  - The old MoS2 frame is described: blur along the slit, a tilt, and abrupt steps. The text
+    says how an open-slit frame of discrete lines separates defocus, astigmatism and clipping.
+  - The lamp is limited by two aperture cards, with the edge smear per mrad and the hole sizes
+    to use.
+  - The edge is fitted row by row: each CCD row is one beam angle in stage 1's dispersion
+    plane.
+  - The post-alignment correction is made on g2, guided by the band's row on the CCD.
+- **`docs/hardware_specifications.md`** is the one place for the instrument's physical facts.
+  Each value has a source (datasheet, measured, estimate, to check) and a date checked. The
+  README's hardware table is now a summary that links to it.
+
 ## Run files (`runfile`) and the stage 1 edge measurement (2026-11-16)
 
 Branch `feature/calibration-repeat-and-docs`. Groundwork for issue #29 (grating calibration).
