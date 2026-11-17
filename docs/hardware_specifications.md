@@ -82,9 +82,10 @@ the stage 1 light paths.
 
 | Item | Value | Source | Checked | Notes |
 |---|---|---|---|---|
-| Objective (Raman) | ? | to check | | Magnification, NA, focal length, working distance, NIR correction. |
-| Objective (camera/white light path) | 4x | estimate | | From the white-light realignment notes in `docs/user_guide.md`. |
-| White light source | fibre-coupled lamp | estimate | | Model and fibre core: to check. |
+| Objectives (sample) | 4x, 20x, 60x, 100x oil immersion | estimate | | Upright microscope: the last mirror turns the beam down into the objective. Models, NA, working distance and NIR correction: to check. The "4x objective in the camera section" in `docs/user_guide.md` is probably the 4x sample objective (to check). |
+| White light source | fibre-coupled LED | estimate | | Collimated by a lens; model, lens focal length and fibre core: to check. |
+| Imaging beamsplitters | two cubes on a translation stage | estimate | | One brings in the LED light, one sends the image to the camera. In the beam for imaging and finding the sample, out of it for Raman collection. Split ratio and size: to check. |
+| Camera lens | achromatic doublet (Thorlabs) | estimate | | Focal length and part number: to check. |
 | Pinhole | ? | to check | | Diameter; where it sits. |
 | Polarisers (p_in, p_out) | ? | to check | | Type, extinction ratio, motor. |
 | Sample stage (x, y, z) | ? | to check | | Travel, step size. |
