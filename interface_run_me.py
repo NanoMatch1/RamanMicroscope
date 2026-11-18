@@ -169,8 +169,9 @@ class Interface:
         - every command, its time and its result go to a run log in data/runfile_logs/,
           written as the run goes, so a stopped run still has its record.
         Typed commands are lower-cased, so the file name is too; on the lab PC (Windows) the
-        case of a path does not matter. tools/make_stage1_edge_runfiles.py writes run files for
-        the stage 1 cutoff-edge measurement."""
+        case of a path does not matter. `python -m filter_calibration plan` writes the run
+        files for the stage 1 cutoff-edge calibration, and `python -m filter_calibration fit`
+        analyses their run logs."""
         file_path = ' '.join(path_parts)
         if not file_path:
             return " > Error: name the run file, e.g. 'runfile data/runfiles/edge_walk.txt'"

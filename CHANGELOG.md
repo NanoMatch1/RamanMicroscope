@@ -12,6 +12,33 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Stage 1 edge (g1) calibration package: run files, analysis, report, apply (2026-11-18)
+
+Branch `feature/calibration-repeat-and-docs`. Issue #29.
+
+- **`filter_calibration/`, run as `python -m filter_calibration`**, replaces
+  `tools/make_stage1_edge_runfiles.py`.
+  - `plan` writes the run files, now four: the edge walk, the single steps, the repeatability
+    run, and new Ar-Hg axis references (one frame at each centre's TRIAX position, slit at
+    50 um). Every run file starts with `ren`, so the log records the slit width.
+  - `fit <run logs>` finds the frames by name and fits each edge. It corrects each centre's
+    axis with its Ar-Hg frame (the TRIAX's axis error differs by position, RAM-F3), fits the
+    edge against the g1 count, and runs gate checks. It writes `report.txt`, `results.json`
+    and four plots to `data/filter_calibration_reports/`. Provenance: the commit, the command
+    line, and the SHA-256 of every input.
+  - `--apply` writes g1 (the edge at the `sg` wavelength) and g2 (kept at the master's pairing
+    with g1) into the master calibration. It backs the file up first, refuses if a gate fails,
+    and records each apply in `calibration/stage1_edge_calibration_history.json`.
+  - On the 2026-11-18 data the edges agree with the exploration scripts to 0.0001 nm.
+- **Tests:** `test_filter_calibration.py`, the sixth suite, plays the run files against a
+  simulated stage 1 bench and recovers its true calibration. A headless test runs the same
+  through `runfile` in simulate mode.
+- **`docs/stage1_edge_measurement.md`:** step 2c (the axis references), and section 5 is now how
+  to run the analysis and read its report.
+- **`explorations/stage1_edge_rerun_2026_11_18/`:** the scripts behind RAM-F5 and RAM-F6.
+- `wavelength_calibration.promotion.back_up_master` is split out of `write_model_to_master`, so
+  that both calibrations back up the master file the same way.
+
 ## Stage 1 repeatability run file; slit and Ar-Hg guidance corrected (2026-11-18)
 
 Branch `feature/calibration-repeat-and-docs`. From the stage 1 edge rerun (2026-11-18,

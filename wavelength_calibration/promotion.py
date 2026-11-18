@@ -212,6 +212,15 @@ def current_model_from_master(master_path):
 def write_model_to_master(model, master_path, backup_directory):
     """Back up the master file, then replace its wavelength_axis group. Returns the backup path."""
     master = load_master(master_path)
+    backup_path = back_up_master(master_path, backup_directory)
+    master[MASTER_GROUP_NAME] = model.to_dict()
+    with open(master_path, 'w') as file:
+        json.dump(master, file, indent=4)
+    return backup_path
+
+
+def back_up_master(master_path, backup_directory):
+    """Copy the master file to <backup_directory>/<name>.bak-<time>.json; returns that path."""
     os.makedirs(backup_directory, exist_ok=True)
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     master_name = os.path.splitext(os.path.basename(master_path))[0]
@@ -222,8 +231,4 @@ def write_model_to_master(model, master_path, backup_directory):
         backup_path = os.path.join(backup_directory,
                                    f"{master_name}.bak-{timestamp}_{repeat_number}.json")
     shutil.copyfile(master_path, backup_path)
-
-    master[MASTER_GROUP_NAME] = model.to_dict()
-    with open(master_path, 'w') as file:
-        json.dump(master, file, indent=4)
     return backup_path

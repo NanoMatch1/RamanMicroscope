@@ -84,7 +84,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen   # no display on a CI runner
           MPLBACKEND: Agg
         run: |
-          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q
+          python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
 
   # The one check the develop ruleset requires ("pytest"). The matrix reports one check per
   # Python version, named "pytest (3.11)" and so on, so the ruleset would otherwise have to list

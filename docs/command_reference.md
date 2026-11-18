@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git b9ac946 on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git 96970e2 on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 
@@ -71,8 +71,9 @@ line is not a known command (or a motor label with a whole number of steps). The
 - every command, its time and its result go to a run log in data/runfile_logs/,
   written as the run goes, so a stopped run still has its record.
 Typed commands are lower-cased, so the file name is too; on the lab PC (Windows) the
-case of a path does not matter. tools/make_stage1_edge_runfiles.py writes run files for
-the stage 1 cutoff-edge measurement.
+case of a path does not matter. `python -m filter_calibration plan` writes the run
+files for the stage 1 cutoff-edge calibration, and `python -m filter_calibration fit`
+analyses their run logs.
 ```
 
 ## Tiger Ti:Sapphire Laser
@@ -1105,6 +1106,25 @@ the Ar/Hg lamp did at "10 ms", RAM-F3), and cosmic rays cannot be seen or remove
 frame, so split long points into several frames (`nframe`).
 
 This module is pure: no camera or GUI.
+
+## How it works: Stage 1 edge (g1) calibration: run files and analysis
+
+Command line for the stage 1 edge (g1) calibration, run from the repository root.
+
+    python -m filter_calibration plan --exposure 15 --axis-exposure 15
+        writes the four run files to data/runfiles/ (see run_files.py)
+    python -m filter_calibration fit data/runfile_logs/stage1_*_20261201_*.txt
+        analyses the session those run logs recorded (here, every stage 1 run of 2026-12-01):
+        report, results.json and plots in data/filter_calibration_reports/stage1_edge_<time>/
+    python -m filter_calibration fit <logs> --apply
+        also writes the proposed g1 and g2 entries into the master calibration (backed up first),
+        and refuses if a gate check fails
+
+`fit` expands wildcards itself (the Windows command prompt does not), and finds the frames under
+--data-directory (default data/) by the names in the logs. Pass every run log of the session,
+and only that session's (older runs have the same frame names): the walk gives the calibration, the axis references correct it,
+and the single steps and the repeatability run are checked against it. Re-running the command
+in a report gives the same result from the same files; results.json records each file's SHA-256.
 
 ## Command names registered more than once
 

@@ -874,7 +874,12 @@ def test_external_reference_line_walk_needs_wavelength_and_uncertainty():
 import tempfile
 
 import command_file
-from tools import make_stage1_edge_runfiles
+from filter_calibration import run_files as stage1_run_files
+from filter_calibration.analysis import analyse_session
+from filter_calibration.calibration_checks import run_edge_checks
+from filter_calibration.session import read_session
+from filter_calibration.simulated_bench import (ARGON_MERCURY, HALOGEN,
+                                                SimulatedStage1Bench)
 
 
 def _write_run_file(lines):
@@ -982,11 +987,11 @@ def test_stage1_edge_walk_run_file_runs_end_to_end():
     """A generated edge walk (one centre, small offsets) passes the checker and runs in simulate
     mode: every frame is saved under its position name and g1 ends where the plan says."""
     _remove_run_logs_after_tests()
-    chip_placement = make_stage1_edge_runfiles.chip_placement_from_files()
-    pair = make_stage1_edge_runfiles.grating_pair_from_calibration(800)
-    lines = make_stage1_edge_runfiles.edge_walk_lines([800], chip_placement, lambda centre: pair,
-                                                      edge_offsets_steps=(-1, 0, 1),
-                                                      exposure_seconds=0.1)
+    chip_placement = stage1_run_files.chip_placement_from_files()
+    pair = stage1_run_files.grating_pair_from_calibration(800)
+    lines = stage1_run_files.edge_walk_lines([800], chip_placement, lambda centre: pair,
+                                             edge_offsets_steps=(-1, 0, 1),
+                                             exposure_seconds=0.1)
     run_file_path = _write_run_file(lines)
     data_directory = get_interface().dataDir
     expected_names = ['s1edge_t800_g1m001', 's1edge_t800_g1p000', 's1edge_t800_g1p001',
@@ -999,7 +1004,7 @@ def test_stage1_edge_walk_run_file_runs_end_to_end():
     assert 'Ran all' in result
     for name in expected_names:
         assert os.path.exists(os.path.join(data_directory, name, f'{name}_000000.npz')), name
-    final_offset = -make_stage1_edge_runfiles.EDGE_FREE_OFFSET_STEPS
+    final_offset = -stage1_run_files.EDGE_FREE_OFFSET_STEPS
     assert _g1_steps() == g1_at_centre + final_offset
     assert _g2_steps() == g2_at_centre + pair.g2_offset(final_offset), "g2 follows g1"
 
@@ -1007,12 +1012,12 @@ def test_stage1_edge_walk_run_file_runs_end_to_end():
 def test_stage1_run_files_approach_every_frame_from_below():
     """Each edge-walk frame (other than the edge-free ones) and each single step on the way up is
     reached by a positive g1 move, as the bench procedure needs for repeatable positions."""
-    chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
-    pair = make_stage1_edge_runfiles.GratingPair(g2_steps_per_g1_step=-0.97)
-    for lines in (make_stage1_edge_runfiles.edge_walk_lines([760, 800], chip_placement,
-                                                            lambda centre: pair),
-                  make_stage1_edge_runfiles.single_step_lines(800, chip_placement, pair,
-                                                              reverse_steps=0)):
+    chip_placement = stage1_run_files.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
+    pair = stage1_run_files.GratingPair(g2_steps_per_g1_step=-0.97)
+    for lines in (stage1_run_files.edge_walk_lines([760, 800], chip_placement,
+                                                   lambda centre: pair),
+                  stage1_run_files.single_step_lines(800, chip_placement, pair,
+                                                     reverse_steps=0)):
         last_move = None
         for line in lines:
             if line.startswith('g1 '):
@@ -1025,11 +1030,11 @@ def test_stage1_run_files_approach_every_frame_from_below():
 def test_stage1_run_files_keep_g2_matched_to_g1_at_every_frame():
     """g1 moved alone turns the beam leaving stage 1 and loses the light (2026-11-17), so at
     every frame g2 sits at round(ratio * g1 offset), including the edge-free frames."""
-    chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
-    pair = make_stage1_edge_runfiles.GratingPair(g2_steps_per_g1_step=-0.97)
-    for lines in (make_stage1_edge_runfiles.edge_walk_lines([800], chip_placement,
-                                                            lambda centre: pair),
-                  make_stage1_edge_runfiles.single_step_lines(800, chip_placement, pair)):
+    chip_placement = stage1_run_files.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
+    pair = stage1_run_files.GratingPair(g2_steps_per_g1_step=-0.97)
+    for lines in (stage1_run_files.edge_walk_lines([800], chip_placement,
+                                                   lambda centre: pair),
+                  stage1_run_files.single_step_lines(800, chip_placement, pair)):
         g1_offset = g2_offset = frames = 0
         for line in lines:
             if line.startswith('sg '):
@@ -1042,15 +1047,15 @@ def test_stage1_run_files_keep_g2_matched_to_g1_at_every_frame():
                 frames += 1
                 assert g2_offset == pair.g2_offset(g1_offset), (g1_offset, g2_offset)
         assert frames > 0
-    ratio_at_800 = make_stage1_edge_runfiles.grating_pair_from_calibration(800).g2_steps_per_g1_step
+    ratio_at_800 = stage1_run_files.grating_pair_from_calibration(800).g2_steps_per_g1_step
     assert -1.1 < ratio_at_800 < -0.8, "the master calibration turns g2 against g1, about 1:1"
 
 
 def test_stage1_repeatability_run_file_moves_one_thing_per_frame():
     """Between frames only the TRIAX ('st') or only the gratings ('sg') move, or nothing, and
     each move returns to the centre: a change in the edge then says which one did not return."""
-    chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
-    lines = make_stage1_edge_runfiles.repeatability_lines(800, chip_placement, cycles=2)
+    chip_placement = stage1_run_files.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
+    lines = stage1_run_files.repeatability_lines(800, chip_placement, cycles=2)
     centre_st_line = f'st {chip_placement.st_wavelength_for_chip_centre(800):.1f}'
     moves_since_frame, kinds_moved = [], []
     for line in lines:
@@ -1072,9 +1077,9 @@ def test_stage1_repeatability_run_file_runs_end_to_end():
     """One cycle passes the checker and runs in simulate mode, saving every frame by name and
     leaving the gratings where 'sg 800' puts them."""
     _remove_run_logs_after_tests()
-    chip_placement = make_stage1_edge_runfiles.chip_placement_from_files()
-    lines = make_stage1_edge_runfiles.repeatability_lines(800, chip_placement, cycles=1,
-                                                          exposure_seconds=0.1)
+    chip_placement = stage1_run_files.chip_placement_from_files()
+    lines = stage1_run_files.repeatability_lines(800, chip_placement, cycles=1,
+                                                 exposure_seconds=0.1)
     run_file_path = _write_run_file(lines)
     data_directory = get_interface().dataDir
     expected_names = [line.split()[1] for line in lines if line.startswith('filename ')]
@@ -1089,6 +1094,71 @@ def test_stage1_repeatability_run_file_runs_end_to_end():
     for name in expected_names:
         assert os.path.exists(os.path.join(data_directory, name, f'{name}_000000.npz')), name
     assert (_g1_steps(), _g2_steps()) == (g1_at_centre, g2_at_centre)
+
+
+def test_stage1_edge_calibration_workflow_recovers_the_simulated_bench():
+    """The g1 calibration as it is run on the bench: the package's run files, run by 'runfile'
+    in simulate mode against a simulated stage 1 bench (halogen with the slit at 500 um, then
+    Ar-Hg with it closed to 50 um), then analysed from the run logs and the saved frames. The
+    analysis must find the bench's true calibration, with each centre's axis error corrected
+    by its Ar-Hg frame, and no gate may fail."""
+    _remove_run_logs_after_tests()
+    interface = get_interface()
+    microscope = interface.microscope
+    scene = microscope.camera.simulated_scene
+    data_directory = interface.dataDir
+    log_directory = os.path.join(data_directory, 'runfile_logs')
+    logs_before = set(os.listdir(log_directory)) if os.path.isdir(log_directory) else set()
+    bench = SimulatedStage1Bench(band_row=500.0)
+
+    chip_placement = stage1_run_files.chip_placement_from_files()
+    pair_at = stage1_run_files.grating_pair_from_calibration
+    centres = [780, 820]
+    halogen_runs = [
+        stage1_run_files.edge_walk_lines(centres, chip_placement, pair_at,
+                                         edge_offsets_steps=(-10, 0, 10), exposure_seconds=0.1),
+        stage1_run_files.single_step_lines(780, chip_placement, pair_at(780), half_range_steps=3,
+                                           reverse_steps=1, exposure_seconds=0.1),
+        stage1_run_files.repeatability_lines(780, chip_placement, cycles=1, exposure_seconds=0.1)]
+    axis_run = stage1_run_files.axis_reference_lines(centres, chip_placement, exposure_seconds=0.1)
+    for lines in halogen_runs + [axis_run]:
+        for name in [line.split()[1] for line in lines if line.startswith('filename ')]:
+            atexit.register(shutil.rmtree, os.path.join(data_directory, name), True)
+
+    scene.override_scene = lambda: bench.image(
+        microscope.get_all_motor_positions(report=False)['g1'], microscope.wavelength_axis,
+        interface.spectrometer.get_triax_steps(), image_height=scene.height)
+    try:
+        slit_width = run_command('ren')
+        run_command(f'men {500 - slit_width}')
+        for lines in halogen_runs:
+            assert 'Ran all' in run_command(f'runfile {_write_run_file(lines)}')
+        bench.lamp = ARGON_MERCURY
+        run_command('men -450')
+        assert 'Ran all' in run_command(f'runfile {_write_run_file(axis_run)}')
+    finally:
+        bench.lamp = HALOGEN
+        scene.override_scene = None
+        run_command(f'men {slit_width - run_command("ren")}')
+
+    run_logs = [os.path.join(log_directory, name)
+                for name in sorted(set(os.listdir(log_directory)) - logs_before)]
+    assert len(run_logs) == 4
+    with open(microscope.master_calibration_path) as master_file:
+        master = json.load(master_file)
+    found = read_session(run_logs, data_directory)
+    assert not found.missing_frames
+    session_analysis = analyse_session(found, master)
+
+    fit = session_analysis.calibration
+    for count in fit.x_values:
+        assert abs(fit(count) - bench.true_edge_nm(count)) < 0.05, count
+    for summary in session_analysis.centres:
+        assert abs(summary.axis_correction_nm + bench.axis_error_nm(summary.triax_steps)) < 0.02
+    assert abs(session_analysis.single_steps.offset_from_walk_nm) < 0.05
+    assert session_analysis.repeatability.spread_nm('triax') < 0.05
+    results = {result.name: result.verdict for result in run_edge_checks(session_analysis)}
+    assert 'FAIL' not in results.values(), results
 
 
 def test_saved_frame_records_the_wavelength_the_gratings_are_at():

@@ -2,8 +2,8 @@
 
 A bench procedure with its reasoning, for the first measurement towards calibrating the tunable
 filter gratings (issue #29). The commands it uses are documented in their docstrings
-(`help runfile`, `python tools/make_stage1_edge_runfiles.py --help`, and
-`docs/command_reference.md`).
+(`help runfile`, `python -m filter_calibration --help`, and `docs/command_reference.md`); the
+run files and the analysis are the `filter_calibration` package.
 
 ## 1. Why not jog for intensity
 
@@ -158,12 +158,14 @@ Useful numbers:
 1. Pull the latest code, then write the run files:
 
    ```
-   python tools/make_stage1_edge_runfiles.py --exposure 0.5
+   python -m filter_calibration plan --exposure 0.5 --axis-exposure 15
    ```
 
-   This writes `data/runfiles/stage1_edge_walk.txt`, `stage1_single_steps.txt` and
-   `stage1_repeatability.txt`.
+   This writes `data/runfiles/stage1_edge_walk.txt`, `stage1_single_steps.txt`,
+   `stage1_repeatability.txt` and `stage1_axis_references.txt`. Each starts with `ren`, so the
+   run log records the slit width.
    - Choose `--exposure` after step 6 below, and re-run the command if it changes.
+     `--axis-exposure` is for the Ar-Hg frames at 50 um (15 s was right on 2026-11-18).
    - `--centres 760 800 840 ...` sets the centre wavelengths, if the lamp or camera do not
      reach the full 720-960 nm.
 2. Laser off or blocked.
@@ -258,6 +260,22 @@ three cycles, it takes a frame:
 3. after the gratings alone (`sg`) go to 720 nm and back, and again from 920 nm. A change here
    is the gratings: the edge itself has moved.
 
+### Step 2c: axis references (run file, one Ar-Hg frame per centre, about 5 minutes)
+
+Swap the halogen for the Ar-Hg lamp, close the slit to about 50 um (`ren`, then `men -450` from
+500 um, then `ren` again), and run
+
+```
+runfile data/runfiles/stage1_axis_references.txt
+```
+
+It puts the TRIAX at each centre's position, as the walk did, and takes one frame. The TRIAX's
+wavelength axis is off by a different amount at each position (up to about +/-0.13 nm, RAM-F3)
+and its zero can move between sessions (RAM-F1), so the analysis corrects each centre's edges
+with the argon lines in that centre's own frame, in the band's rows. The 50 um slit matters: at
+500 um the lamp lights a different part of the slit from the filtered light, and its lines read
+about 3 nm high (RAM-F6). Open the slit back to 500 um afterwards (`men 450`).
+
 ### Step 3: the edge at operating conditions (by hand, about 30 minutes)
 
 This measures the edge width with the real source: the laser spot.
@@ -289,17 +307,38 @@ This is the first test of the exit-grating method.
 
 ## 5. Afterwards
 
-Copy these off the lab PC for fitting: the folders `data/s1ref_*`, `data/s1edge_*`,
-`data/s1step_*`, `data/s1rep_*` and `data/s1laser_*`, and the newest files in `data/runfile_logs/`.
+Analyse the session on the lab PC, from the run logs of steps 1, 2, 2b and 2c. With the
+session's date in the pattern (here 2026-12-01), one line takes them all:
 
-The analysis, written once the data exists:
-- dark subtraction and division by the open frame;
-- an error-function fit for each row (or a few rows) of each frame, giving edge position and
-  width. Each row is one beam angle, so the edge slants across the rows: the slant gives the
-  edge shift per mrad, and the per-row width is free of the smear from the lamp's angle spread;
-- the edge width corrected for the Ar line width;
-- edge position against g1 (the calibration), step uniformity and backlash;
-- edge width against wavelength, compared with the lens's predicted chromatic focal shift.
+```
+python -m filter_calibration fit data/runfile_logs/stage1_*_20261201_*.txt
+```
 
-If the method holds, it becomes an automated `filtercal` command (issue #29), and stage 2 and
-the exit gratings follow the same pattern.
+Name the logs one by one instead if the session ran past midnight, or if a run was repeated (a
+stopped run leaves a log too). It finds the frames under `data/` by the names in the logs, and
+writes a folder
+`data/filter_calibration_reports/stage1_edge_<time>/` with:
+- `report.txt`: the gate checks first (PASS, WARN or FAIL, each with its likely cause and what
+  to try), then the proposed g1 and g2 entries against the ones in use, every centre's slope,
+  width and axis correction, the single steps and backlash, the repeatability by what moved,
+  and every frame's edge;
+- `results.json`: the same numbers, and the provenance: the software commit, the command line,
+  and the SHA-256 of every run log, frame and the master calibration, so the result can be
+  re-run and checked;
+- `g1_calibration.png`, `edge_fits.png`, `steps_and_repeatability.png` and
+  `widths_and_band.png`: the calibration and its residuals, every edge fit, the steps and
+  repeatability with the axis references, and the widths with the band's row.
+
+Nothing changes in the master calibration unless `--apply` is added, and `--apply` refuses if a
+gate check fails. It backs up the master file, writes g1 (the edge at the `sg` wavelength) and
+g2 (moved with g1 at the master's pairing), and records what it did in
+`calibration/stage1_edge_calibration_history.json`. Send the report folder before applying.
+
+Copy these off the lab PC as well: the folders `data/s1ref_*`, `data/s1edge_*`, `data/s1step_*`,
+`data/s1rep_*`, `data/s1axis_*` and `data/s1laser_*`, and the newest files in
+`data/runfile_logs/`.
+
+Not yet automated: the per-row edge fit (the slant across the rows gives the edge shift per
+mrad), the edge width corrected for the Ar line width, and the width against the lens's
+predicted chromatic focal shift. Stage 2 and the exit gratings are to follow the same pattern
+(issue #29).

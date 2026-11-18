@@ -42,6 +42,7 @@ MOTORS_LABEL = 'Motors (jogging)'
 SUBSYSTEM_MODULES = (
     ('PIXIS camera: live view, acquisitions, exposures', 'pixisspec.pixiscam'),
     ('Camera region of interest and binning', 'pixisspec.spectral_roi'),
+    ('Stage 1 edge (g1) calibration: run files and analysis', 'filter_calibration.__main__'),
 )
 
 

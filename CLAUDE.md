@@ -6,9 +6,11 @@
 - Calibration: `python calibration.py`, `python calibration_manual.py`, or `python calibration_auto.py`
 
 ## Testing
-All five suites must pass before a change is considered complete.
+All six suites must pass before a change is considered complete.
 - Unit (Arduino protocol): `python -m pytest test_controller_simulated.py -q`
 - Unit (wavelength axis calibration): `python -m pytest test_wavelength_calibration.py -q`
+- Unit (stage 1 edge / g1 calibration, sessions played on a simulated bench):
+  `python -m pytest test_filter_calibration.py -q`
 - Unit (PIXIS camera: acquire vs run, frame freshness, averaging, temperature gate):
   `python -m pytest test_pixis_camera.py -q` (RealHardware on `SimulatedPicamDevice`)
 - Full headless workflow: `python -m pytest test_headless_simulation.py -q`
@@ -17,7 +19,7 @@ All five suites must pass before a change is considered complete.
   (`tools/repo_guard.py`, the pre-commit hook in `.githooks/` and the CI
   `repo-guard` job: no personal emails/paths/share links, data files (bar small
   examples in `docs/demo_data/`) or personal commit identities in a public repo)
-- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q`
+- Everything: `python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q`
 
 The headless suite drives the whole application in simulate mode through
 the real command handler, with stdin replaced by an empty stream so any
@@ -53,6 +55,10 @@ interactive prompt fails fast instead of hanging. Never add a bare
   is the only one loaded at runtime
 - `/wavelength_calibration/` TRIAX + PIXIS wavelength axis model, line walk and fit
   (pure, simulator-tested) — see `docs/calibration.md`
+- `/filter_calibration/` the tunable filter's g1 calibration against the stage 1 cutoff edge:
+  run files, analysis, gates, report with provenance, apply (`python -m filter_calibration`;
+  pure, simulator-tested) — see `docs/stage1_edge_measurement.md`
+- `/explorations/` one-off analyses kept so lab-notebook findings can be re-run (data not in git)
 - `/tools/` standalone diagnostic and calibration scripts, not imported by
   the application — see `tools/README.md`
 - `/arduino_mega_develop/` controller firmware — the ground truth for the
