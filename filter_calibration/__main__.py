@@ -10,20 +10,22 @@ Command line for the stage 1 edge (g1) calibration, run from the repository root
         also writes the proposed g1 and g2 entries into the master calibration (backed up first),
         and refuses if a gate check fails
 
-`fit` expands wildcards itself (the Windows command prompt does not), and finds the frames under
---data-directory (default data/) by the names in the logs. Pass every run log of the session,
-and only that session's (older runs have the same frame names): the walk gives the calibration, the axis references correct it,
-and the single steps and the repeatability run are checked against it. Re-running the command
-in a report gives the same result from the same files; results.json records each file's SHA-256.
+`fit` saves its plots unless --no-plots is given (for headless runs). It expands wildcards
+itself (the Windows command prompt does not), and finds the frames under --data-directory
+(default data/) by the names in the logs. Pass every run log of the session, and only that
+session's (older runs have the same frame names): the walk gives the calibration, the axis
+references correct it, and the single steps and the repeatability run are checked against it.
+Re-running the command in a report gives the same result from the same files; results.json
+records each file's SHA-256.
 """
 
 import argparse
-import glob
 import json
 import os
 import sys
 
 from wavelength_calibration.calibration_checks import any_failed
+from wavelength_calibration.file_arguments import expand_file_arguments
 
 from .analysis import AnalysisSettings, analyse_session
 from .calibration_checks import run_edge_checks
@@ -67,7 +69,8 @@ def build_argument_parser():
     fit.add_argument('--master', default=DEFAULT_MASTER_PATH)
     fit.add_argument('--backup-directory', default=DEFAULT_BACKUP_DIRECTORY)
     fit.add_argument('--report-directory', default=DEFAULT_REPORT_DIRECTORY)
-    fit.add_argument('--no-plots', action='store_true')
+    fit.add_argument('--no-plots', action='store_true',
+                     help='skip the plots (they are made by default), for headless runs')
     fit.add_argument('--apply', action='store_true',
                      help='write the proposed g1/g2 entries into the master calibration')
     return parser
@@ -81,17 +84,8 @@ def run_plan(arguments):
     return 0
 
 
-def expand_run_log_arguments(arguments):
-    """Each argument as typed, or the files its wildcard matches, in order, without repeats."""
-    paths = []
-    for argument in arguments:
-        matches = sorted(glob.glob(argument)) if glob.has_magic(argument) else [argument]
-        paths += [path for path in matches if path not in paths]
-    return paths
-
-
 def run_fit(arguments):
-    run_logs = expand_run_log_arguments(arguments.run_logs)
+    run_logs = expand_file_arguments(arguments.run_logs)
     if not run_logs:
         print(f'No run logs match {arguments.run_logs}.')
         return 1

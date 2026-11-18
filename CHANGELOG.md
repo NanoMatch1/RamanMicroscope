@@ -12,6 +12,17 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Calibration plots by default; wildcards at the Windows prompt (2026-11-18)
+
+- **Every calibration fit saves its plot unless told not to.** `speccalfit`, `speccalapply` and
+  `python -m wavelength_calibration fit` now plot by default, like `filter_calibration fit`; the
+  output of a calibration is there to be inspected. `noplots` (in the application) and
+  `--no-plots` (command lines) skip it for headless runs. The `plot` option and `--plot` are gone.
+- **`python -m wavelength_calibration fit` expands wildcards itself**, so `linewalk_*.json` works
+  at the Windows command prompt. The expander is shared with `filter_calibration`
+  (`wavelength_calibration/file_arguments.py`).
+- `docs/how_to_calibrate.md`: every calibration in order with its commands.
+
 ## Stage 1 edge (g1) calibration package: run files, analysis, report, apply (2026-11-18)
 
 Branch `feature/calibration-repeat-and-docs`. Issue #29.

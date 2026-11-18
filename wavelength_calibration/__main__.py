@@ -2,14 +2,16 @@
 Command line for the wavelength axis calibration, run from the repository root.
 
     python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json
-    python -m wavelength_calibration fit <files> --curvature
-    python -m wavelength_calibration fit <files> --plot       # also saves a PNG of the fit
+    python -m wavelength_calibration fit <files> --curvature --triax-order 3
     python -m wavelength_calibration fit <files> --apply      # writes the master file (backed up first)
+    python -m wavelength_calibration fit <files> --no-plots   # no PNG, for headless runs
 
 `fit` re-identifies the lines from the walks' spectra, fits, runs the gate
-checks, prints the report and saves it to data/calibration_fit_reports/. It
-only changes the master file with --apply, and refuses to if a gate check
-fails. The dispersion is fitted as changing with the TRIAX position unless
+checks, prints the report and saves it to data/calibration_fit_reports/, with
+a plot of the fit and its residuals beside it (a PNG of the same name) unless
+--no-plots is given. Wildcards are expanded here, so they work at the Windows
+command prompt too. It only changes the master file with --apply, and refuses
+to if a gate check fails. The dispersion is fitted as changing with the TRIAX position unless
 --fixed-dispersion is given. See docs/calibration.md section 3.
 """
 
@@ -17,6 +19,7 @@ import argparse
 import os
 import sys
 
+from .file_arguments import expand_file_arguments
 from .fit_plots import plot_wavelength_axis_fit
 from .promotion import (FitOptions, current_model_from_master, fit_and_check_line_walk_files,
                         new_fit_report_path, write_fit_report, write_model_to_master)
@@ -45,17 +48,22 @@ def build_argument_parser():
     fit_parser.add_argument('--master', default=DEFAULT_MASTER_PATH)
     fit_parser.add_argument('--backup-directory', default=DEFAULT_BACKUP_DIRECTORY)
     fit_parser.add_argument('--report-directory', default=DEFAULT_REPORT_DIRECTORY)
-    fit_parser.add_argument('--plot', action='store_true',
-                            help='save a plot of the fit and its residuals next to the report')
+    fit_parser.add_argument('--no-plots', action='store_true',
+                            help='skip the plot of the fit and its residuals (made by default), '
+                                 'for headless runs')
     fit_parser.add_argument('--apply', action='store_true', help='write the fitted model into the master file')
     return parser
 
 
 def run_fit(arguments):
+    line_walk_files = expand_file_arguments(arguments.line_walk_files)
+    if not line_walk_files:
+        print(f"No line walk files match {arguments.line_walk_files}.")
+        return 1
     current_model = current_model_from_master(arguments.master)
     triax_order = arguments.triax_order or (2 if arguments.triax_quadratic else 1)
     outcome = fit_and_check_line_walk_files(
-        arguments.line_walk_files, current_model,
+        line_walk_files, current_model,
         FitOptions(curvature=arguments.curvature, triax_polynomial_order=triax_order,
                    dispersion_change=not arguments.fixed_dispersion),
         reference_pixel=arguments.reference_pixel)
@@ -65,14 +73,14 @@ def run_fit(arguments):
         outcome.fit.model.metadata['fit_report'] = os.path.basename(report_path)
         backup_path = write_model_to_master(outcome.fit.model, arguments.master,
                                             arguments.backup_directory)
-    print(write_fit_report(report_path, outcome, arguments.line_walk_files,
+    print(write_fit_report(report_path, outcome, line_walk_files,
                            master_path=arguments.master, backup_path=backup_path), end='')
     if arguments.apply and backup_path is None:
         print("Not applied: a gate check failed (see the report above).")
     elif not arguments.apply:
         print("Not applied (use --apply to write it to the master calibration).")
     print(f"Report saved to {report_path}")
-    if arguments.plot and plot_wavelength_axis_fit(
+    if not arguments.no_plots and plot_wavelength_axis_fit(
             outcome, os.path.splitext(report_path)[0] + '.png',
             title=os.path.basename(report_path)):
         print(f"Plot saved to {os.path.splitext(report_path)[0] + '.png'}")

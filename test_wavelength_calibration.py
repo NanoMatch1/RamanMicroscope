@@ -435,8 +435,9 @@ def test_command_line_fit_reports_without_writing_then_applies(tmp_path, capsys)
     assert main(common_arguments) == 0
     assert 'Not applied' in capsys.readouterr().out
     assert json.loads(master_path.read_text())['wavelength_axis'] == shipped_model().to_dict()
-    [report_only_path] = list(report_directory.iterdir())
+    [report_only_path] = list(report_directory.glob('*.txt'))
     assert 'status: NOT APPLIED' in report_only_path.read_text()
+    assert report_only_path.with_suffix('.png').exists(), "the fit is plotted by default"
 
     assert main(common_arguments + ['--apply']) == 0
     stored = json.loads(master_path.read_text())
@@ -451,6 +452,28 @@ def test_command_line_fit_reports_without_writing_then_applies(tmp_path, capsys)
     assert 'status: APPLIED' in applied_report and str(backup_directory) in applied_report
     assert 'residuals (measured - fitted wavelength)' in applied_report
     assert 'nm_per_pixel x (scaled steps)' in applied_report, "the dispersion term is fitted by default"
+
+
+def test_command_line_fit_expands_wildcards_and_skips_the_plot_on_request(tmp_path, capsys):
+    """The Windows command prompt passes linewalk_*.json through unexpanded; --no-plots is for
+    headless runs."""
+    from wavelength_calibration.__main__ import main
+
+    lines = mercury_lines_in_window(700, 900, diffraction_orders=(2,))
+    lamp = SimulatedLineLamp(default_true_model(), lines, random_seed=5)
+    triax = FakeTriax()
+    walk = LineWalk(triax.move_to, triax.read, lambda: lamp.spectrum(triax.read()), shipped_model(), lines)
+    save_line_walk(tmp_path / 'linewalk_test.json', walk.run(), shipped_model(), catalogue_lines=lines)
+    master_path = tmp_path / 'master.json'
+    _write_master_with_model(master_path, shipped_model())
+    report_directory = tmp_path / 'reports'
+
+    assert main(['fit', str(tmp_path / 'linewalk_*.json'), '--master', str(master_path),
+                 '--report-directory', str(report_directory), '--no-plots']) == 0
+    [report_path] = list(report_directory.iterdir())
+    assert report_path.suffix == '.txt' and 'linewalk_test.json' in report_path.read_text()
+    assert main(['fit', str(tmp_path / 'nothing_*.json'), '--master', str(master_path)]) == 1
+    assert 'No line walk files match' in capsys.readouterr().out
 
 
 def test_command_line_fit_explains_a_single_wavelength(tmp_path, capsys):

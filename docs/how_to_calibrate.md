@@ -36,8 +36,9 @@ will follow it too:
    re-run it, on any computer, and get the same answer.
 3. **Gates.** Every fit runs a list of checks and prints PASS, WARN (usable, but look) or FAIL.
    Each WARN or FAIL gives its evidence, the likely causes and what to try.
-4. **Report.** Each fit writes a report, a `results.json` and plots of the fit and its
-   residuals. The provenance is in both the report and the JSON: the software commit, the exact
+4. **Report.** Each fit writes a report and plots of the fit and its residuals (always, so
+   they get looked at; `--no-plots` or `noplots` only for headless runs). The filter
+   calibration also writes a `results.json`. The provenance is in both the report and the JSON: the software commit, the exact
    command line, and the SHA-256 of every input file. The command line re-runs the fit; the
    hashes say whether the inputs are still the same files.
 5. **Apply.** Nothing in the master calibration changes until you apply. Applying refuses if any
@@ -66,16 +67,15 @@ counts.
 acqtime <seconds>
 speccal                              line walk, ~696-935 nm
                                      (speccal arhg samples=12: twice as many positions)
-speccalfit curvature triaxorder=3 plot
+speccalfit curvature triaxorder=3
 speccalapply curvature triaxorder=3  only if no gate failed
 ```
 
-Reports go to `data/calibration_fit_reports/`. To fit saved walks outside the application, with
-the walk files from `data/calibration_line_walks/` named one by one (this command does not yet
-expand `linewalk_*.json` itself, and the Windows prompt does not either):
+Reports and their plots go to `data/calibration_fit_reports/`. To fit saved walks outside the
+application:
 
 ```
-python -m wavelength_calibration fit <walk files> --curvature --triax-order 3 --plot
+python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json --curvature --triax-order 3
 python -m wavelength_calibration fit <the same files> --curvature --triax-order 3 --apply
 ```
 

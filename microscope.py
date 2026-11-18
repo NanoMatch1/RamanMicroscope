@@ -1830,7 +1830,7 @@ class Microscope(Instrument):
                 'frame_shape': getattr(self, '_calibration_frame_shape', None)}
 
     WAVELENGTH_AXIS_FIT_OPTIONS = ('curvature', 'triaxquadratic', 'triaxorder=N', 'fixeddispersion',
-                                   'triaxsigma=S', 'plot')
+                                   'triaxsigma=S', 'noplots')
 
     @ui_callable
     def fit_wavelength_axis_line_walks(self, *fit_options):
@@ -1843,11 +1843,10 @@ class Microscope(Instrument):
         speccalfit fixeddispersion     one nm_per_pixel for every TRIAX position (short walks only)
         speccalfit triaxsigma=25       add a 1-sigma TRIAX error (steps) to every point; chi^2 then
                                        no longer tests the fit
-        speccalfit curvature triaxorder=3 plot   also save a plot of the fit and its residuals
-                                       (a PNG next to the report)
+        speccalfit curvature triaxorder=3 noplots   skip the plot (for headless runs)
         The walks are re-identified from their spectra. The report, with every gate's verdict and
-        advice, is saved
-        to data/calibration_fit_reports/.'''
+        advice, is saved to data/calibration_fit_reports/, with a plot of the fit and its
+        residuals beside it (a PNG of the same name) unless noplots is given.'''
         plot_requested, fit_options = self._split_plot_option(fit_options)
         outcome = self._fit_session_line_walks(fit_options)
         if outcome is None:
@@ -1862,8 +1861,8 @@ class Microscope(Instrument):
     @ui_callable
     def apply_wavelength_axis_line_walks(self, *fit_options):
         '''Fit this session's walks and, if no gate check fails, write the master calibration.
-        Takes the same options as speccalfit (including plot). The master file is backed up
-        first; the report is saved to data/calibration_fit_reports/ either way.'''
+        Takes the same options as speccalfit (including noplots). The master file is backed up
+        first; the report and plot are saved to data/calibration_fit_reports/ either way.'''
         plot_requested, fit_options = self._split_plot_option(fit_options)
         outcome = self._fit_session_line_walks(fit_options)
         if outcome is None:
@@ -1892,9 +1891,9 @@ class Microscope(Instrument):
         return outcome.fit
 
     def _split_plot_option(self, fit_options):
-        '''('plot' was given, the other speccalfit options).'''
+        '''(a plot is wanted: 'noplots' was not given, the other speccalfit options).'''
         options = [str(option).lower() for option in fit_options]
-        return 'plot' in options, [option for option in options if option != 'plot']
+        return 'noplots' not in options, [option for option in options if option != 'noplots']
 
     def _plot_wavelength_axis_fit(self, outcome, report_path):
         '''Save the fit and residual plot next to its report; a failed plot is logged only.'''

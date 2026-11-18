@@ -372,8 +372,8 @@ would capture it.
    `triaxorder=N` (the TRIAX-shape gate suggests N); `fixeddispersion`
    (only for a walk spanning a few tens of nm); `triaxsigma=S` (adds a TRIAX
    error to every point, after which chi-squared no longer tests the fit;
-   the fit-statistics gate says so); `plot` (also saves a picture of the
-   fit and its residuals, below).
+   the fit-statistics gate says so); `noplots` (skips the picture of the
+   fit and its residuals that is otherwise saved with the report, below).
 5. If no gate fails, run `speccalapply` with the same options. It backs up
    the master file to `calibration/backup/`, writes the new
    `wavelength_axis` group, and reloads it straight away. If a gate fails it
@@ -392,9 +392,9 @@ extrapolated, and the application logs a warning whenever the TRIAX is
 there: on 2026-11-11 an order-5 fit was off by up to 1.7 nm within 4000
 steps of its last fitted position.
 
-**The fit plot** (`speccalfit ... plot`, `speccalapply ... plot`, or
-`--plot` on the command line) is saved next to the report, with the same
-name and `.png`. Its four panels follow the same split as the gates:
+**The fit plot** is saved next to the report by every `speccalfit`,
+`speccalapply` and command-line fit (`noplots` or `--no-plots` skips it), with
+the same name and `.png`. Its four panels follow the same split as the gates:
 
 - *TRIAX map*: the wavelength each frame puts on the reference pixel, with
   the fitted TRIAX polynomial (each walk's zero removed, so all walks sit on
@@ -441,12 +441,13 @@ fitted later, outside the application:
 
 ```
 python -m wavelength_calibration fit data/calibration_line_walks/linewalk_*.json
+python -m wavelength_calibration fit <files> --curvature --triax-order 3
 python -m wavelength_calibration fit <files> --curvature --triax-order 3 --apply
-python -m wavelength_calibration fit <files> --curvature --triax-order 3 --plot
 ```
 
-These save their report in the same place (`--report-directory` to change
-it) and refuse `--apply` if a gate fails. `--fixed-dispersion` is the
+These save their report and plot in the same place (`--report-directory` to
+change it; `--no-plots` for headless runs), expand wildcards themselves (so
+they work at the Windows prompt), and refuse `--apply` if a gate fails. `--fixed-dispersion` is the
 equivalent of `fixeddispersion`.
 
 **After applying:** the live laser calibration and all spectra use the new
@@ -499,7 +500,7 @@ that each is caught and explained.
 | `wavelength_calibration/calibration_checks.py` | the gates: registry, residual decomposition, explanations |
 | `wavelength_calibration/promotion.py` | re-identify, fit and check saved walks; the fit report; the master file |
 | `wavelength_calibration/triax_zero.py` | the quick re-zero (`speccalzero`) |
-| `wavelength_calibration/fit_plots.py` | the fit and residual plot (`plot` option) |
+| `wavelength_calibration/fit_plots.py` | the fit and residual plot (saved by default; `noplots` skips it) |
 | `wavelength_calibration/provenance.py` | the software version recorded in each walk |
 | `wavelength_calibration/simulated_line_lamp.py` | lamp + spectrometer simulator |
 | `calibration.py` (`_load_wavelength_axis_model`) | loads the model at startup |

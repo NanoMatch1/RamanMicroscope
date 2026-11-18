@@ -364,12 +364,12 @@ def test_apply_is_refused_when_a_gate_fails(workspace):
 
 def test_fit_command_expands_wildcards_itself(workspace):
     """The Windows command prompt passes 'stage1_*.txt' through unexpanded."""
-    from filter_calibration.__main__ import expand_run_log_arguments
+    from wavelength_calibration.file_arguments import expand_file_arguments
     for name in ('stage1_edge_walk_20261201_1.txt', 'stage1_axis_references_20261201_2.txt',
                  'stage1_edge_walk_20261130_1.txt'):
         open(os.path.join(workspace['logs'], name), 'w').close()
     pattern = os.path.join(workspace['logs'], 'stage1_*_20261201_*.txt')
-    assert [os.path.basename(path) for path in expand_run_log_arguments([pattern])] == \
+    assert [os.path.basename(path) for path in expand_file_arguments([pattern])] == \
         ['stage1_axis_references_20261201_2.txt', 'stage1_edge_walk_20261201_1.txt']
 
 

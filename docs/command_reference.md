@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git 96970e2 on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git e0d3c95 on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 
@@ -520,11 +520,10 @@ speccalfit curvature triaxorder=3   recommended for the full Ar-Hg walk (2026-11
 speccalfit fixeddispersion     one nm_per_pixel for every TRIAX position (short walks only)
 speccalfit triaxsigma=25       add a 1-sigma TRIAX error (steps) to every point; chi^2 then
                                no longer tests the fit
-speccalfit curvature triaxorder=3 plot   also save a plot of the fit and its residuals
-                               (a PNG next to the report)
+speccalfit curvature triaxorder=3 noplots   skip the plot (for headless runs)
 The walks are re-identified from their spectra. The report, with every gate's verdict and
-advice, is saved
-to data/calibration_fit_reports/.
+advice, is saved to data/calibration_fit_reports/, with a plot of the fit and its
+residuals beside it (a PNG of the same name) unless noplots is given.
 ```
 
 ### `speccalexport`
@@ -541,8 +540,8 @@ line wavelength. Saved to data/calibration_fit_reports/ as spectral_calibration_
 
 ```text
 Fit this session's walks and, if no gate check fails, write the master calibration.
-Takes the same options as speccalfit (including plot). The master file is backed up
-first; the report is saved to data/calibration_fit_reports/ either way.
+Takes the same options as speccalfit (including noplots). The master file is backed up
+first; the report and plot are saved to data/calibration_fit_reports/ either way.
 ```
 
 ### `speccalreset`
@@ -1120,11 +1119,13 @@ Command line for the stage 1 edge (g1) calibration, run from the repository root
         also writes the proposed g1 and g2 entries into the master calibration (backed up first),
         and refuses if a gate check fails
 
-`fit` expands wildcards itself (the Windows command prompt does not), and finds the frames under
---data-directory (default data/) by the names in the logs. Pass every run log of the session,
-and only that session's (older runs have the same frame names): the walk gives the calibration, the axis references correct it,
-and the single steps and the repeatability run are checked against it. Re-running the command
-in a report gives the same result from the same files; results.json records each file's SHA-256.
+`fit` saves its plots unless --no-plots is given (for headless runs). It expands wildcards
+itself (the Windows command prompt does not), and finds the frames under --data-directory
+(default data/) by the names in the logs. Pass every run log of the session, and only that
+session's (older runs have the same frame names): the walk gives the calibration, the axis
+references correct it, and the single steps and the repeatability run are checked against it.
+Re-running the command in a report gives the same result from the same files; results.json
+records each file's SHA-256.
 
 ## Command names registered more than once
 

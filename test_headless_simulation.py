@@ -528,7 +528,8 @@ def test_wavelength_axis_line_walk_recovers_simulated_truth():
             starting_error_nm = _largest_difference_from_simulated_truth_nm(
                 WavelengthAxisModel.from_dict(original_model_dict), measured_triax_steps)
             assert starting_error_nm > 1.0
-            assert len(os.listdir(microscope.calibration_fit_report_directory)) == 1, "speccalfit saves a report"
+            report_names = sorted(os.listdir(microscope.calibration_fit_report_directory))
+            assert len(report_names) == 2, "speccalfit saves a report and, by default, its plot"
             assert run_command('speccalfit nonsense') is None, "an unknown option must refuse, not fit"
 
             run_command('speccalapply curvature')
@@ -623,8 +624,8 @@ def test_speccalzero_restores_the_axis_after_lost_steps():
 
 
 def test_speccal_samples_and_speccalfit_plot():
-    """'speccal arhg samples=N' sets the walk density; 'speccalfit ... plot' saves a PNG beside
-    the report; a bad samples value refuses instead of walking."""
+    """'speccal arhg samples=N' sets the walk density; 'speccalfit' saves a PNG beside the report
+    unless 'noplots' is given; a bad samples value refuses instead of walking."""
     microscope = get_interface().microscope
     with temporary_calibration_files(microscope):
         assert run_command('speccal arhg samples=1') is None
@@ -632,11 +633,15 @@ def test_speccal_samples_and_speccalfit_plot():
         line_walk_path = run_command('speccal arhg samples=4')
         with open(line_walk_path) as file:
             assert '4 samples per line' in json.load(file)['description']
-        assert run_command('speccalfit curvature triaxquadratic plot') is not None
+        assert run_command('speccalfit curvature triaxquadratic') is not None
         report_files = sorted(os.listdir(microscope.calibration_fit_report_directory))
         assert len(report_files) == 2, report_files
         report_name, plot_name = sorted(report_files, key=lambda name: name.endswith('.png'))
         assert plot_name == os.path.splitext(report_name)[0] + '.png'
+        assert run_command('speccalfit curvature triaxquadratic noplots') is not None
+        report_files_after = os.listdir(microscope.calibration_fit_report_directory)
+        assert sum(name.endswith('.png') for name in report_files_after) == 1, report_files_after
+        assert sum(name.endswith('.txt') for name in report_files_after) == 2, report_files_after
 
 
 def test_speccal_repeat_walks_the_same_positions_and_the_report_tabulates_each_walk():
@@ -659,7 +664,7 @@ def test_speccal_repeat_walks_the_same_positions_and_the_report_tabulates_each_w
         assert requested_steps_by_walk[0] == requested_steps_by_walk[1]
         assert 'walk 1 of 2' in descriptions[0] and 'walk 2 of 2' in descriptions[1]
         assert microscope.line_walk_session_files == line_walk_paths
-        assert run_command('speccalfit curvature triaxquadratic') is not None
+        assert run_command('speccalfit curvature triaxquadratic noplots') is not None
         report_name, = os.listdir(microscope.calibration_fit_report_directory)
         with open(os.path.join(microscope.calibration_fit_report_directory, report_name)) as file:
             report = file.read()
@@ -819,7 +824,7 @@ def test_speccalapply_refuses_when_a_gate_fails():
             master_before = file.read()
         microscope.simulate = False  # as if a real session had picked up a simulated walk
         try:
-            assert run_command('speccalapply curvature triaxquadratic') is None
+            assert run_command('speccalapply curvature triaxquadratic noplots') is None
         finally:
             microscope.simulate = True
         with open(microscope.master_calibration_path) as file:
