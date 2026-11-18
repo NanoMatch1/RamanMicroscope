@@ -98,7 +98,7 @@ the stage 1 light paths.
 | Lens into the TRIAX | f = 75-100 mm | estimate (2026-11-17) | | Exact focal length and diameter: to check. |
 | Spectrograph | HORIBA TRIAX 550 | datasheet | | Interface: RS-232. |
 | Grating in use | 300 grooves/mm, 600 nm blaze | to check | | Other gratings on the turret: to check. |
-| Entrance slit | opens symmetrically | measured | | Driven by a stepper; a pin drives up between two blocks. |
+| Entrance slit | one jaw may move, not both | to check | | Driven by a stepper; a pin drives up between two blocks. Recorded as "opens symmetrically" (measured) until 2026-11-18, when Ar-Hg lines moved 2.8 nm between 50 and 500 um, more than a symmetric opening allows (lab-notebook RAM-F6). If one jaw moves, the wavelength axis shifts by half any change in width. Check by eye: #36. |
 | Detector | Princeton Instruments PIXIS | to check | | Exact model (e.g. 1024BR), chip size. Interface: PICam SDK via `pylablib`. |
 | PIXIS pixel pitch | 13 um | to check | | The CCD's nm per pixel comes from the master calibration (`wavelength_axis`), not from this value. |
 | Previous detector | Tucsen | estimate | | Pixel size 6.5 x 6.5 um. Used for older data, e.g. `docs/demo_data/`. |

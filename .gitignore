@@ -30,3 +30,6 @@ transient/
 
 # ── Personal scratch space (bench screenshots, one-off analysis) ─────────
 scratch/
+
+# ── Exploration outputs (re-made by the scripts) ───────────────────────
+explorations/*/output/
