@@ -102,8 +102,10 @@ Other entry points:
 | `python interface_run_me.py` | main CLI + GUI |
 | `python data_viewer_run_me.py` | live spectrum viewer: run it in a second window during `run` |
 
-Calibration — what depends on what, and how to recalibrate the wavelength
-axis — is in the [calibration guide](docs/calibration.md).
+To calibrate the instrument, start at [how to calibrate](docs/how_to_calibrate.md): the
+calibrations in order, with the commands for each. The methods are explained in the
+[calibration guide](docs/calibration.md) (wavelength axis) and the
+[stage 1 edge guide](docs/stage1_edge_measurement.md) (g1).
 
 <!-- TODO: the older calibration scripts (calibration_auto.py,
      calibration_manual.py, calibration_scaling.py, calibration_shift_run_me.py)
@@ -242,7 +244,7 @@ set without risking the optics.
 | `arduino_mega_develop/` | controller firmware, authoritative for the protocol |
 | `calibration/`, `autocalibration/` | stored calibration data |
 | `tools/` | standalone diagnostics, not imported by the application |
-| `docs/` | operator guide, grating alignment quickstart, contributor guide, lab PC verification procedure |
+| `docs/` | operator guide, how to calibrate, calibration guides, grating alignment quickstart, contributor guide, lab PC verification procedure |
 | `docs/development_notes/` | historical design notes from earlier refactors |
 
 ### Motor addressing

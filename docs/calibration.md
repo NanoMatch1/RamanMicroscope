@@ -4,9 +4,9 @@ How the microscope knows what wavelength it is at, how to check it, and how to
 recalibrate it. Written for whoever runs the instrument next; read sections 1
 and 2 before changing any calibration.
 
-> Status (November 2026): section 3 (the TRIAX + CCD wavelength axis) is the
-> new procedure. The grating calibrations (section 5) are still the older
-> method and are being rebuilt next, using the same pattern.
+> To run a calibration, start at [how to calibrate](how_to_calibrate.md): every
+> calibration in order, with its commands. This guide explains the wavelength
+> axis method (section 3).
 
 ## 1. The chain of references
 
@@ -519,13 +519,16 @@ While that flag is false, the application logs a warning at startup.
 2. Live laser calibration then works on its own (it reads the axis).
 3. Gratings (section 5), after realignment or if section 3 moved the axis.
 
+The full list, with the commands, is in [how to calibrate](how_to_calibrate.md).
+
 ## 5. Grating calibrations (g1-g4)
 
-Being rebuilt next. Physical facts the new fits will use:
-
+- g1 (stage 1) is calibrated against stage 1's cutoff edge, and g2 follows it
+  at the pairing ratio of the calibration in use: `python -m filter_calibration`,
+  explained in the [stage 1 edge guide](stage1_edge_measurement.md).
+- g2's absolute pointing and stage 2 (g3/g4) are still to be built on the same
+  pattern ([how to calibrate](how_to_calibrate.md), sections 4 and 5).
 - g1/g2 are 1200 g/mm, g3/g4 are 300 g/mm. (g1/g2 used to be called g3/g4
   when the instrument had only one double monochromator section.)
-- Each pair is a matched double-subtractive arrangement, so the two gratings
-  of a pair share one calibration curve, mirrored in sign.
 - The calibration curve (diffraction plus alignment) is stable. What drifts
   is the offset, which `referenceall` and `calhome` reset.
