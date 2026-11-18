@@ -138,7 +138,15 @@ class Triax(Instrument):
     
     @ui_callable
     def move_enterance_slit(self, position):
-        '''Move the entrance slit to the specified position.'''
+        '''Open or close the entrance slit by a relative amount, in micrometres.
+
+        A positive number opens the slit, a negative one closes it. The move is relative to
+        where the slit is now, not a target width: read the width first with `ren`.
+
+        Examples:
+            men 450     open by 450 um (e.g. from 50 um to about 500 um)
+            men -450    close by 450 um
+        '''
         try:
             int(position)
         except ValueError:

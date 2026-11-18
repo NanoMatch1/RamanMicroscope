@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git 391d82d on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git b9ac946 on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 
@@ -957,7 +957,14 @@ Read the current position of the exit slit.
 ### `men`
 
 ```text
-Move the entrance slit to the specified position.
+Open or close the entrance slit by a relative amount, in micrometres.
+
+A positive number opens the slit, a negative one closes it. The move is relative to
+where the slit is now, not a target width: read the width first with `ren`.
+
+Examples:
+    men 450     open by 450 um (e.g. from 50 um to about 500 um)
+    men -450    close by 450 um
 ```
 
 ### `mex`
