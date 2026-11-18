@@ -127,9 +127,9 @@ The details of the procedure follow from the two quantities measured, edge posit
 | Detail | Why |
 |---|---|
 | Stage 2's intermediate slit removed | Only one edge in the light path, so the step on the CCD is unambiguously stage 1's. With the slit in, its edge hides stage 1's, and the edge on the CCD does not move with g1 (as on 2026-11-17). |
-| TRIAX slit wide, about 500 um | The filter stages never cancel the dispersion perfectly, so different wavelengths reach the TRIAX slit at slightly different places across it. (The periscope puts stage 1's leftover dispersion along the slit, so what lands across it is mostly stage 2's.) A narrow slit then passes only a window of wavelengths, and the window's sharp sides can look like stage 1's edge or hide it: the intermediate-slit problem again, one slit later. A wide slit passes the whole spectrum. It blurs the edge by about 3 nm (about 6 nm per mm of slit), which does not move the edge's midpoint, so the position is still found to a fraction of a g1 step. The width is not measured at this slit width: step 3 measures it. With a wide slit, a wavelength's reading depends a little on where it enters the slit, so the Ar-Hg frame is taken at the same width, and step 0's slit series measures the effect. |
+| TRIAX slit wide, about 500 um | The filter stages never cancel the dispersion perfectly, so different wavelengths could reach the TRIAX slit at slightly different places across it, and a narrow slit would then pass only a window of wavelengths whose sides look like an edge. In practice the filtered light reaches the slit as a spot narrower than 200 um. On 2026-11-18 the 200 and 500 um spectra agreed to 1 %, and the edge sat at 803.52, 803.45 and 803.47 nm, 0.76-0.84 nm wide, at 50, 200 and 500 um (lab-notebook RAM-F5). So a wide slit neither moves nor blurs the edge, and the width can be measured at it. A 50 um slit clips the spot: it passed 43 % of the light, a fraction that changed by about 20 % across the chip. |
 | Lamp light limited by two aperture cards | Light entering the filter at an angle (in stage 1's dispersion plane) lands on the edge like a different wavelength: about 0.7 nm of edge per mrad. The cards limit that angle. The periscope puts the same angle along the slit, so each CCD row sees one angle: fitted row by row, the edge slants across the rows and each row's width is close to the true width. Summed over the rows, the width is only an upper bound. Step 3 checks the width at operating conditions. |
-| Dark and Ar-Hg frames | The dark frame is subtracted. The Ar lines' width is the spectrograph's own line shape at that slit width, which is removed from the edge width. |
+| Dark and Ar-Hg frames | The dark frame is subtracted. The Ar lines' width is the spectrograph's own line shape, which is removed from the edge width. The Ar-Hg frame is taken at 50 um, not at the working width: the lamp lights a different part of the slit from the filtered spot, and at 500 um its lines read 2.8-3.0 nm high while staying narrow (RAM-F5). At about 6 nm per mm of slit, that is light entering about 0.5 mm from the filtered spot. At 50 um, where the light enters can change the reading by at most about 0.3 nm. |
 | g2 follows g1 | The edge is set by g1 alone, but turning g1 on its own also turns the beam leaving stage 1. On 2026-11-17, g1 moved alone dimmed the light many times over within 20 steps and lost it at 150. The run files move g2 with every g1 move, at the ratio the master calibration gives (about -1 step of g2 per step of g1). |
 | Edge-free frames each side | g1 (with g2 following) moved about 67 nm each way. One frame passes everything (open) and one blocks everything (closed). Dividing by the open frame removes the lamp spectrum and the camera response; the closed frame shows how much light leaks through the edge. |
 | Every position approached from the same side | The motors have backlash. Approaching from one side makes positions repeatable; the single-step run measures the backlash directly. |
@@ -161,7 +161,8 @@ Useful numbers:
    python tools/make_stage1_edge_runfiles.py --exposure 0.5
    ```
 
-   This writes `data/runfiles/stage1_edge_walk.txt` and `stage1_single_steps.txt`.
+   This writes `data/runfiles/stage1_edge_walk.txt`, `stage1_single_steps.txt` and
+   `stage1_repeatability.txt`.
    - Choose `--exposure` after step 6 below, and re-run the command if it changes.
    - `--centres 760 800 840 ...` sets the centre wavelengths, if the lamp or camera do not
      reach the full 720-960 nm.
@@ -202,9 +203,11 @@ All at the same exposure, and at 500 um except where a step says otherwise.
   - If 200 and 500 um give the same spectrum near the edge, 500 um is wide enough.
   - If 50 um differs from both, a narrow slit cuts off part of the spectrum.
 - **Dark:** block the lamp, then `filename s1ref_dark`, `acquire`.
-- **Ar-Hg:** with the Ar-Hg lamp in place of the halogen, at 500 um
-  (`filename s1ref_arhg_slit0500`, `acquire`) and at 50 um (`filename s1ref_arhg_slit0050`,
-  `acquire`). Set the slit back to 500 um.
+- **Ar-Hg:** with the Ar-Hg lamp in place of the halogen, close the slit to about 50 um
+  (`men -450`, then check with `ren`), then `filename s1ref_arhg_slit0050`, `acquire`. Open the
+  slit back to 500 um (`men 450`). Take no Ar-Hg frame at 500 um: there the lamp lights a
+  different part of the slit from the filtered light, and its lines read about 3 nm high
+  (section 3).
 - **Check:** with the halogen back and `sg 800`, take a frame (`filename s1ref_g1p000`,
   `acquire`). Then `g1 10`, `g2 -10` (g2 follows g1) and another frame
   (`filename s1ref_g1p010`, `acquire`).
@@ -239,6 +242,22 @@ g1 goes from -20 to +20 steps around 800 nm one step at a time, then back down f
 steps. This shows whether the steps are even, how precisely an edge can be located, and the
 backlash (how many reverse steps pass before the edge starts to move back).
 
+### Step 2b: repeatability (run file, 16 frames, about 10 minutes)
+
+```
+runfile data/runfiles/stage1_repeatability.txt
+```
+
+On 2026-11-18, three visits to 800 nm read the edge at 803.07, 803.47 and 803.76 nm, with the
+same logged grating and TRIAX steps (RAM-F5). This run finds which part does not return to the
+same place. It uses the same set-up as step 1 (halogen, slit at 500 um). At 800 nm, in each of
+three cycles, it takes a frame:
+1. with nothing moved, which shows drift of the lamp or temperature;
+2. after the TRIAX alone goes to 720 nm and back, and again from 920 nm. A change here is the
+   TRIAX: the frame's wavelength axis has moved;
+3. after the gratings alone (`sg`) go to 720 nm and back, and again from 920 nm. A change here
+   is the gratings: the edge itself has moved.
+
 ### Step 3: the edge at operating conditions (by hand, about 30 minutes)
 
 This measures the edge width with the real source: the laser spot.
@@ -271,7 +290,7 @@ This is the first test of the exit-grating method.
 ## 5. Afterwards
 
 Copy these off the lab PC for fitting: the folders `data/s1ref_*`, `data/s1edge_*`,
-`data/s1step_*` and `data/s1laser_*`, and the newest files in `data/runfile_logs/`.
+`data/s1step_*`, `data/s1rep_*` and `data/s1laser_*`, and the newest files in `data/runfile_logs/`.
 
 The analysis, written once the data exists:
 - dark subtraction and division by the open frame;

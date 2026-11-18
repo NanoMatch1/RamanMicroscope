@@ -12,12 +12,12 @@ steps and lost it entirely at 150. So each g1 move is paired with the g2 move th
 pair matched, at the ratio the master calibration gives at that centre (d g2 / d g1 at fixed
 wavelength, about -1). Stage 2's intermediate slit must be out, or its edge hides stage 1's.
 
-The TRIAX entrance slit is wide (about 500 um). The stages never cancel the dispersion exactly,
-so a narrow slit would pass only a window of wavelengths whose sides can mimic or hide the edge.
-The wide slit blurs the edge by about 3 nm without moving its midpoint, so these files measure
-the edge position; its width is measured in the laser-excited run.
+The TRIAX entrance slit is wide (about 500 um). The filtered light reaches the slit as a spot
+narrower than 200 um, so a wide slit passes all of it and neither moves nor blurs the edge,
+while a 50 um slit clips the spot by an amount that changes with wavelength (lab-notebook
+RAM-F5).
 
-Two run files, written to data/runfiles/ (per machine, not tracked):
+Three run files, written to data/runfiles/ (per machine, not tracked):
 - stage1_edge_walk.txt: at each centre wavelength, the TRIAX put so that wavelength lands mid-chip
   ('st' alone puts it on spectrometer_target_pixel, near the short-wavelength end, and the
   edge would leave the chip) and 'sg' to it, then frames at g1 offsets around it (default -20
@@ -27,6 +27,13 @@ Two run files, written to data/runfiles/ (per machine, not tracked):
 - stage1_single_steps.txt: at one centre, g1 in single steps over -20..+20 from below, then
   back down five single steps (step uniformity, sub-step precision, backlash), with g2
   following.
+- stage1_repeatability.txt: at one centre, frames after returning to it in different ways,
+  interleaved in cycles: nothing moved, the TRIAX alone away below and above and back, and the
+  gratings alone ('sg') away below and above and back. Only one thing moves before each frame,
+  so a change in the edge reading says which one does not return to the same place: the TRIAX
+  (the frame's wavelength axis) or the gratings (the edge). Interleaving puts any slow drift
+  of lamp or temperature into every kind of frame alike, and the still frames measure it. On
+  2026-11-18 three visits to 800 nm read the edge at 803.07, 803.47 and 803.76 nm (RAM-F5).
 Every frame's file name holds its position, e.g. s1edge_t800_g1m020 (centre 800 nm, g1 at
 -20 steps from 'sg 800'): saved spectra do not record grating steps, so the name is the record.
 'allmotors' before each frame also puts the positions into the run log.
@@ -36,6 +43,7 @@ laser-excited run): docs/stage1_edge_measurement.md.
 
 Run:  PYTHONPATH=. python tools/make_stage1_edge_runfiles.py
       [--centres 720 760 800 840 880 920 960] [--single-step-centre 800] [--exposure 0.5]
+      [--repeatability-centre 800] [--repeatability-cycles 3]
 """
 
 import argparse
@@ -57,6 +65,8 @@ MASTER_CALIBRATION_PATH = os.path.join(REPOSITORY_DIRECTORY, 'calibration',
 APPROACH_STEPS = 10                 # every frame position is reached by a positive move
 SINGLE_STEP_HALF_RANGE = 20
 SINGLE_STEP_REVERSE_STEPS = 5
+REPEATABILITY_AWAY_CENTRES_NM = (720, 920)    # the ends of the edge walk: one below, one above
+REPEATABILITY_CYCLES = 3
 
 
 def offset_label(offset_steps):
@@ -186,6 +196,32 @@ def single_step_lines(centre_nm, chip_placement, grating_pair,
     return lines
 
 
+def repeatability_lines(centre_nm, chip_placement, away_centres_nm=REPEATABILITY_AWAY_CENTRES_NM,
+                        cycles=REPEATABILITY_CYCLES, exposure_seconds=None):
+    """Run file lines for returning to one centre in different ways, one thing moved per frame.
+
+    A start frame, then in each cycle: a frame with nothing moved; for each away centre, the
+    TRIAX alone there and back, then a frame; for each away centre, the gratings alone ('sg')
+    there and back, then a frame. g1 and g2 stay where 'sg' puts them (no offsets), so 'sg'
+    alone sets them. 'rg' after each TRIAX return logs its steps."""
+    centre_st_nm = chip_placement.st_wavelength_for_chip_centre(centre_nm)
+    lines = header_lines(f'Stage 1 edge repeatability at {centre_nm} nm: one thing moved per '
+                         'frame', exposure_seconds)
+    lines += ['', '# Start'] + centre_lines(centre_nm, chip_placement)
+    lines += frame_lines(f's1rep_t{centre_nm}_c0_start')
+    for cycle in range(1, cycles + 1):
+        lines += ['', f'# Cycle {cycle}']
+        lines += frame_lines(f's1rep_t{centre_nm}_c{cycle}_still')
+        for away_nm in away_centres_nm:
+            lines += [f'st {chip_placement.st_wavelength_for_chip_centre(away_nm):.1f}',
+                      f'st {centre_st_nm:.1f}', 'rg']
+            lines += frame_lines(f's1rep_t{centre_nm}_c{cycle}_triax_from{away_nm}')
+        for away_nm in away_centres_nm:
+            lines += [f'sg {away_nm}', f'sg {centre_nm}']
+            lines += frame_lines(f's1rep_t{centre_nm}_c{cycle}_gratings_from{away_nm}')
+    return lines
+
+
 def write_run_file(lines, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as run_file:
@@ -200,6 +236,10 @@ def main(argv=None):
                         help='TRIAX centre wavelengths for the edge walk, nm')
     parser.add_argument('--single-step-centre', type=int, default=800,
                         help='TRIAX centre for the single-step run, nm')
+    parser.add_argument('--repeatability-centre', type=int, default=800,
+                        help='centre for the repeatability run, nm')
+    parser.add_argument('--repeatability-cycles', type=int, default=REPEATABILITY_CYCLES,
+                        help='cycles of the repeatability run (5 frames each, plus a start)')
     parser.add_argument('--exposure', type=float, default=None,
                         help="exposure in seconds, written as 'acqtime' at the top of each file")
     parser.add_argument('--output-directory', default=DEFAULT_OUTPUT_DIRECTORY)
@@ -213,6 +253,10 @@ def main(argv=None):
                                      grating_pair_from_calibration(arguments.single_step_centre),
                                      exposure_seconds=arguments.exposure),
                    os.path.join(arguments.output_directory, 'stage1_single_steps.txt'))
+    write_run_file(repeatability_lines(arguments.repeatability_centre, chip_placement,
+                                       cycles=arguments.repeatability_cycles,
+                                       exposure_seconds=arguments.exposure),
+                   os.path.join(arguments.output_directory, 'stage1_repeatability.txt'))
     return 0
 
 

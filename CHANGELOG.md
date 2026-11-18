@@ -12,6 +12,23 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Stage 1 repeatability run file; slit and Ar-Hg guidance corrected (2026-11-18)
+
+Branch `feature/calibration-repeat-and-docs`. From the stage 1 edge rerun (2026-11-18,
+lab-notebook RAM-F5).
+
+- **`tools/make_stage1_edge_runfiles.py` writes `stage1_repeatability.txt`.** Three visits to
+  800 nm read the edge 0.7 nm apart with the same logged steps. The new run file returns to one
+  centre in three cycles of interleaved frames, moving one thing per frame: nothing, the TRIAX
+  alone (from below and above), or the gratings alone. So a change in the edge says which part
+  does not return.
+- **`docs/stage1_edge_measurement.md`: a wide TRIAX slit does not blur the edge.** The guide said
+  500 um blurred it by about 3 nm. The filtered light is a spot narrower than 200 um, and the
+  edge's position and width were the same at 50, 200 and 500 um. A 50 um slit clips the spot.
+- **`docs/stage1_edge_measurement.md`: the Ar-Hg frame is taken at 50 um only.** At 500 um the
+  lamp lights a different part of the slit from the filtered light, and its lines read about
+  3 nm high. Step 2b runs the repeatability file.
+
 ## Early camera frames refused, fresh wavelength in saved frames, g2 follows g1 in the stage 1 run files (2026-11-17)
 
 Branch `feature/calibration-repeat-and-docs`. From the first stage 1 edge session (2026-11-17).

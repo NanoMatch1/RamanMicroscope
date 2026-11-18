@@ -1046,6 +1046,51 @@ def test_stage1_run_files_keep_g2_matched_to_g1_at_every_frame():
     assert -1.1 < ratio_at_800 < -0.8, "the master calibration turns g2 against g1, about 1:1"
 
 
+def test_stage1_repeatability_run_file_moves_one_thing_per_frame():
+    """Between frames only the TRIAX ('st') or only the gratings ('sg') move, or nothing, and
+    each move returns to the centre: a change in the edge then says which one did not return."""
+    chip_placement = make_stage1_edge_runfiles.ChipPlacement(target_pixel=100, nm_per_pixel=0.08)
+    lines = make_stage1_edge_runfiles.repeatability_lines(800, chip_placement, cycles=2)
+    centre_st_line = f'st {chip_placement.st_wavelength_for_chip_centre(800):.1f}'
+    moves_since_frame, kinds_moved = [], []
+    for line in lines:
+        if line.startswith(('st ', 'sg ', 'g1 ', 'g2 ')):
+            moves_since_frame.append(line)
+        elif line == 'acquire':
+            kinds = {move.split()[0] for move in moves_since_frame}
+            kinds_moved.append(kinds)
+            if 'st' in kinds and 'sg' not in kinds:
+                assert moves_since_frame[-1] == centre_st_line, moves_since_frame
+            elif kinds == {'sg'}:
+                assert moves_since_frame[-1] == 'sg 800', moves_since_frame
+            moves_since_frame = []
+    assert kinds_moved[0] == {'st', 'sg'}, "the start frame puts everything at the centre"
+    assert kinds_moved[1:] == 2 * [set(), {'st'}, {'st'}, {'sg'}, {'sg'}]
+
+
+def test_stage1_repeatability_run_file_runs_end_to_end():
+    """One cycle passes the checker and runs in simulate mode, saving every frame by name and
+    leaving the gratings where 'sg 800' puts them."""
+    _remove_run_logs_after_tests()
+    chip_placement = make_stage1_edge_runfiles.chip_placement_from_files()
+    lines = make_stage1_edge_runfiles.repeatability_lines(800, chip_placement, cycles=1,
+                                                          exposure_seconds=0.1)
+    run_file_path = _write_run_file(lines)
+    data_directory = get_interface().dataDir
+    expected_names = [line.split()[1] for line in lines if line.startswith('filename ')]
+    assert len(expected_names) == 6
+    for name in expected_names:
+        atexit.register(shutil.rmtree, os.path.join(data_directory, name), True)
+    run_command('sg 800')
+    g1_at_centre, g2_at_centre = _g1_steps(), _g2_steps()
+    run_command('sg 760')
+    result = run_command(f'runfile {run_file_path}')
+    assert 'Ran all' in result
+    for name in expected_names:
+        assert os.path.exists(os.path.join(data_directory, name, f'{name}_000000.npz')), name
+    assert (_g1_steps(), _g2_steps()) == (g1_at_centre, g2_at_centre)
+
+
 def test_saved_frame_records_the_wavelength_the_gratings_are_at():
     """The frame's monochromator wavelength comes from the motor positions when it is saved,
     not from a value only some commands refresh: after 'sg 720' it is 720, not stale (#32)."""
