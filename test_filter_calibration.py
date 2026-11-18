@@ -109,7 +109,7 @@ class RunFilePlayer:
         index = len(os.listdir(folder))
         axis = frame_axis_nm(self.st_wavelength_nm)
         image = self.bench.image(self.motor_counts['g1'], axis, self.triax_steps(),
-                                 image_height=IMAGE_HEIGHT)
+                                 image_height=IMAGE_HEIGHT, g2_count=self.motor_counts['g2'])
         metadata = {'_current_parameters': {'acquisition_time': 1.0, 'filename': name}}
         np.savez_compressed(os.path.join(folder, f'{name}_{index:06d}.npz'), image=image,
                             wavelength=axis, metadata=json.dumps(metadata))
@@ -373,7 +373,170 @@ def test_fit_command_expands_wildcards_itself(workspace):
         ['stage1_axis_references_20261201_2.txt', 'stage1_edge_walk_20261201_1.txt']
 
 
-def test_plan_command_writes_the_four_run_files(workspace):
+def test_plan_command_writes_every_run_file(workspace):
     assert filter_calibration_main(['plan', '--output-directory', workspace['logs'],
-                                    '--exposure', '15', '--axis-exposure', '15']) == 0
+                                    '--exposure', '15', '--axis-exposure', '15',
+                                    '--g2-centres', '800', '--g2-half-range', '10']) == 0
     assert sorted(os.listdir(workspace['logs'])) == sorted(run_files.RUN_FILE_NAMES.values())
+    with open(os.path.join(workspace['logs'], 'stage1_g2_pinhole_stage2.txt')) as run_file:
+        assert sum(line.strip() == 'acquire' for line in run_file) == 21
+
+
+# ---------------------------------------------------------------------------- g2 pinhole scans
+
+from filter_calibration.g2_analysis import analyse_g2_session
+from filter_calibration.g2_checks import run_g2_checks
+from filter_calibration.pinhole_scan import fit_window, window_model
+
+G2_TRUE_OFFSET_STEPS = 3.0
+G2_SCAN = dict(half_range_steps=15)
+
+
+def g2_bench(offset_steps=G2_TRUE_OFFSET_STEPS, master=None, **overrides):
+    """A bench whose g1 is exactly the master's and whose g2 centres the pinhole offset_steps
+    from the master's g2 at every wavelength."""
+    master = master or load_master()
+    wavelengths = np.linspace(700, 980, 40)
+    g1_counts = np.polyval(master['manual_g1']['wl_to_g1'], wavelengths)
+    edges = np.polyval(master['manual_g1']['g1_to_wl'], g1_counts)
+    g2_centres = np.polyval(master['manual_g2']['wl_to_g2'], edges) + offset_steps
+    settings = dict(SMALL_BENCH, band_row=100.0, band_rows_per_g2_step=1.5, pinhole_in=True,
+                    true_g1_to_edge_nm=tuple(master['manual_g1']['g1_to_wl']),
+                    true_g1_to_g2_centre=tuple(np.polyfit(g1_counts, g2_centres, 4)))
+    settings.update(overrides)
+    return SimulatedStage1Bench(**settings)
+
+
+def play_g2_scans(workspace, bench, centres=(760, 840, 920), pinhole='stage2', master=None,
+                  log_name='g2.txt'):
+    player = RunFilePlayer(bench, workspace['data'], workspace['logs'], master or load_master())
+    return player.play(run_files.g2_pinhole_scan_lines(pinhole, centres, CHIP_PLACEMENT,
+                                                       **G2_SCAN), log_name)
+
+
+def analyse_g2(workspace, logs, master=None):
+    return analyse_g2_session(read_session(logs, workspace['data']), master or load_master())
+
+
+def test_g2_scan_names_parse_back_and_the_edge_analysis_leaves_them_alone(workspace):
+    lines = run_files.g2_pinhole_scan_lines('stage1', [800], CHIP_PLACEMENT, half_range_steps=2)
+    names = [line.split()[1] for line in lines if line.startswith('filename ')]
+    parsed = [frame_names.parse_frame_name(name) for name in names]
+    assert [frame_name.g2_offset_steps for frame_name in parsed] == [-2, -1, 0, 1, 2]
+    assert {(frame_name.kind, frame_name.pinhole, frame_name.centre_nm) for frame_name in parsed} \
+        == {(frame_names.G2_PINHOLE_SCAN, 'stage1', 800)}
+    assert all(frame_name.g1_offset_steps is None for frame_name in parsed)
+    with pytest.raises(ValueError):
+        frame_names.g2_pinhole_scan_name('stage3', 800, 0)
+    assert lines.index('ren') < lines.index('acquire') and lines[-1] == 'sg 800'
+
+    log = play_g2_scans(workspace, g2_bench(), centres=(800,))
+    edge_analysis = analyse(workspace, [log])
+    assert all(frame.result is None for frame in edge_analysis.frames)
+
+
+@pytest.mark.parametrize('width, sigma', [(3.0, 1.0), (3.0, 5.0), (0.5, 4.0)])
+def test_window_fit_finds_the_centre_whatever_the_beam_and_pinhole_sizes(width, sigma):
+    """The centre is fixed by the symmetry of the two sides, so a beam wider or narrower than
+    the pinhole gives the same centre."""
+    counts = np.arange(-20, 21, dtype=float) + 1234.0
+    random = np.random.default_rng(3)
+    window = window_model(counts, 1.0, 1236.3, width, sigma, 0.0)
+    light = 1e5 * window / window.max() + 2000.0 + random.normal(0, 300, counts.size)
+    fit = fit_window(counts, light)
+    assert abs(fit.centre_count - 1236.3) < 0.1 and fit.peak_inside_scan
+    assert fit.centre_uncertainty < 0.1
+
+
+def test_g2_scans_recover_the_offset_the_target_row_and_the_rows_per_step(workspace):
+    bench = g2_bench()
+    analysis = analyse_g2(workspace, [play_g2_scans(workspace, bench)])
+    assert [scan.centre_nm for scan in analysis.scans] == [760, 840, 920]
+    for scan in analysis.scans:
+        assert abs(scan.offset_steps - G2_TRUE_OFFSET_STEPS) < 0.15, scan.offset_steps
+        assert abs(scan.rows_per_g2_step - bench.band_rows_per_g2_step) < 0.1
+        middle_column_nm = frame_axis_nm(
+            CHIP_PLACEMENT.st_wavelength_for_chip_centre(scan.centre_nm))[512]
+        expected_row = bench.band_row + bench.band_rows_per_nm * \
+            (middle_column_nm - bench.axis_error_nm(scan.triax_steps) - 800.0)
+        assert abs(scan.target_band_row - expected_row) < 1.0
+        assert abs(scan.mismatch_steps_per_nm) < 0.01
+    proposed = analysis.proposed
+    assert proposed.pinhole == 'stage2' and abs(proposed.offset_steps - G2_TRUE_OFFSET_STEPS) < 0.1
+    results = run_g2_checks(analysis)
+    assert not [result for result in results if result.verdict != 'PASS'], \
+        [(result.name, result.summary) for result in results if result.verdict != 'PASS']
+
+
+def test_g2_mismatch_across_the_chip_is_measured_and_does_not_move_the_offset(workspace):
+    analysis = analyse_g2(workspace, [play_g2_scans(workspace,
+                                                    g2_bench(pointing_steps_per_nm=0.06))])
+    for scan in analysis.scans:     # longer wavelengths point further: g2 centres them lower
+        assert abs(scan.mismatch_steps_per_nm + 0.06) < 0.01
+        assert abs(scan.offset_steps - G2_TRUE_OFFSET_STEPS) < 0.2
+    assert verdicts(run_g2_checks(analysis))['g1 and g2 matched across the chip'] == WARN
+
+
+def test_fit_g2_command_applies_the_offset_and_a_rescan_then_reads_zero(workspace):
+    master_copy = os.path.join(workspace['calibration'], 'master.json')
+    shutil.copy(MASTER_PATH, master_copy)
+    log = play_g2_scans(workspace, g2_bench())
+    common = ['--data-directory', workspace['data'], '--master', master_copy,
+              '--backup-directory', os.path.join(workspace['calibration'], 'backup'),
+              '--report-directory', workspace['reports']]
+    assert filter_calibration_main(['fit-g2', log] + common + ['--apply']) == 0
+    [report_directory] = os.listdir(workspace['reports'])
+    assert report_directory.startswith('stage1_g2_')
+    report_files = sorted(os.listdir(os.path.join(workspace['reports'], report_directory)))
+    assert report_files == ['g2_pinhole.png', 'report.txt', 'results.json']
+    with open(master_copy) as master_file:
+        applied = json.load(master_file)
+    original = load_master()
+    assert applied['manual_g1'] == original['manual_g1']
+    for wavelength in (760.0, 840.0, 920.0):
+        shift = np.polyval(applied['manual_g2']['wl_to_g2'], wavelength) - \
+            np.polyval(original['manual_g2']['wl_to_g2'], wavelength)
+        assert abs(shift - G2_TRUE_OFFSET_STEPS) < 0.1
+        count = np.polyval(applied['manual_g2']['wl_to_g2'], wavelength)
+        assert abs(np.polyval(applied['manual_g2']['g2_to_wl'], count) -
+                   np.polyval(original['manual_g2']['g2_to_wl'], count - shift)) < 1e-6
+    with open(os.path.join(workspace['calibration'],
+                           'stage1_edge_calibration_history.json')) as history_file:
+        [entry] = json.load(history_file)
+    assert entry['kind'] == 'g2 pinhole (stage2)' and 'manual_g1' not in entry['applied']
+
+    shutil.rmtree(workspace['data'])
+    os.makedirs(workspace['data'])
+    rescan = analyse_g2(workspace, [play_g2_scans(workspace, g2_bench(), master=applied,
+                                                  log_name='g2_again.txt')], master=applied)
+    assert abs(rescan.proposed.offset_steps) < 0.15
+
+
+def test_g2_gates_fail_on_another_g1_calibration_and_a_window_off_the_scan(workspace):
+    master = load_master()
+    log = play_g2_scans(workspace, g2_bench(offset_steps=25.0))
+    shifted_g1 = json.loads(json.dumps(master))
+    shifted_g1['manual_g1']['wl_to_g1'][-1] += 4.0
+    analysis = analyse_g2(workspace, [log], master=shifted_g1)
+    results = verdicts(run_g2_checks(analysis))
+    assert results['g1 where the calibration puts it'] == FAIL
+    assert results['window inside the scan'] == FAIL
+
+    master_copy = os.path.join(workspace['calibration'], 'master.json')
+    shutil.copy(MASTER_PATH, master_copy)
+    filter_calibration_main(['fit-g2', log, '--data-directory', workspace['data'],
+                             '--report-directory', workspace['reports'], '--no-plots', '--apply',
+                             '--master', master_copy,
+                             '--backup-directory', os.path.join(workspace['calibration'], 'b')])
+    with open(master_copy) as master_file:
+        assert json.load(master_file) == master, "a failed gate must leave the master alone"
+
+
+def test_g2_stage1_exit_cross_check_warns_when_the_relay_is_off(workspace):
+    stage2 = play_g2_scans(workspace, g2_bench(), centres=(800, 880))
+    stage1 = play_g2_scans(workspace, g2_bench(offset_steps=G2_TRUE_OFFSET_STEPS + 1.2),
+                           centres=(800, 880), pinhole='stage1', log_name='g2_stage1.txt')
+    analysis = analyse_g2(workspace, [stage2, stage1])
+    assert analysis.reference_pinhole == 'stage2'
+    assert abs(analysis.proposed.offset_steps - G2_TRUE_OFFSET_STEPS) < 0.15
+    assert verdicts(run_g2_checks(analysis))['stage 1 exit cross-check'] == WARN

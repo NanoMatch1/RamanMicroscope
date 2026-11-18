@@ -882,6 +882,8 @@ import command_file
 from filter_calibration import run_files as stage1_run_files
 from filter_calibration.analysis import analyse_session
 from filter_calibration.calibration_checks import run_edge_checks
+from filter_calibration.g2_analysis import analyse_g2_session
+from filter_calibration.g2_checks import run_g2_checks
 from filter_calibration.session import read_session
 from filter_calibration.simulated_bench import (ARGON_MERCURY, HALOGEN,
                                                 SimulatedStage1Bench)
@@ -1163,6 +1165,61 @@ def test_stage1_edge_calibration_workflow_recovers_the_simulated_bench():
     assert abs(session_analysis.single_steps.offset_from_walk_nm) < 0.05
     assert session_analysis.repeatability.spread_nm('triax') < 0.05
     results = {result.name: result.verdict for result in run_edge_checks(session_analysis)}
+    assert 'FAIL' not in results.values(), results
+
+
+def test_stage1_g2_pinhole_workflow_recovers_the_simulated_offset():
+    """The g2 pinhole scan as it is run on the bench: the package's run file, run by 'runfile' in
+    simulate mode against a bench whose g2 centres the pinhole 2 steps from the master's g2
+    (g1 exactly the master's), then analysed from the run log and the saved frames."""
+    _remove_run_logs_after_tests()
+    interface = get_interface()
+    microscope = interface.microscope
+    scene = microscope.camera.simulated_scene
+    data_directory = interface.dataDir
+    log_directory = os.path.join(data_directory, 'runfile_logs')
+    logs_before = set(os.listdir(log_directory)) if os.path.isdir(log_directory) else set()
+    with open(microscope.master_calibration_path) as master_file:
+        master = json.load(master_file)
+    true_offset_steps = 2.0
+    wavelengths = np.linspace(700, 980, 40)
+    g1_counts = np.polyval(master['manual_g1']['wl_to_g1'], wavelengths)
+    g2_centres = np.polyval(master['manual_g2']['wl_to_g2'],
+                            np.polyval(master['manual_g1']['g1_to_wl'], g1_counts)) + \
+        true_offset_steps
+    bench = SimulatedStage1Bench(band_row=500.0, pinhole_in=True, beam_sigma_steps=2.0,
+                                 true_g1_to_edge_nm=tuple(master['manual_g1']['g1_to_wl']),
+                                 true_g1_to_g2_centre=tuple(np.polyfit(g1_counts, g2_centres, 4)))
+    lines = stage1_run_files.g2_pinhole_scan_lines(
+        'stage2', [800], stage1_run_files.chip_placement_from_files(), half_range_steps=10,
+        exposure_seconds=0.1)
+    for name in [line.split()[1] for line in lines if line.startswith('filename ')]:
+        atexit.register(shutil.rmtree, os.path.join(data_directory, name), True)
+
+    def scene_now():
+        counts = microscope.get_all_motor_positions(report=False)
+        return bench.image(counts['g1'], microscope.wavelength_axis,
+                           interface.spectrometer.get_triax_steps(), image_height=scene.height,
+                           g2_count=counts['g2'])
+
+    scene.override_scene = scene_now
+    try:
+        slit_width = run_command('ren')
+        run_command(f'men {500 - slit_width}')
+        assert 'Ran all' in run_command(f'runfile {_write_run_file(lines)}')
+    finally:
+        scene.override_scene = None
+        run_command(f'men {slit_width - run_command("ren")}')
+
+    run_logs = [os.path.join(log_directory, name)
+                for name in sorted(set(os.listdir(log_directory)) - logs_before)]
+    assert len(run_logs) == 1
+    session_analysis = analyse_g2_session(read_session(run_logs, data_directory), master)
+    [scan] = session_analysis.scans
+    assert len(scan.records) == 21
+    assert abs(scan.offset_steps - true_offset_steps) < 0.2, scan.offset_steps
+    assert abs(scan.rows_per_g2_step - bench.band_rows_per_g2_step) < 0.2
+    results = {result.name: result.verdict for result in run_g2_checks(session_analysis)}
     assert 'FAIL' not in results.values(), results
 
 

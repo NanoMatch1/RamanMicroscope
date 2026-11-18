@@ -1,6 +1,7 @@
 # How to calibrate
 
-_Checked against git 17970d8 (feature/calibration-repeat-and-docs), 2026-11-18. Command syntax
+_Checked against git 7f14a26 plus the g2 pinhole scan (feature/calibration-repeat-and-docs),
+2026-11-18. Command syntax
 comes from the code: `docs/command_reference.md` (generated from the docstrings) and
 `python -m <package> --help`. If either disagrees with this page, the code is right and this
 page is out of date._
@@ -20,7 +21,7 @@ affects, then everything below it.
 | 1a | TRIAX re-zero | `wavelength_axis.triax_step_offset` | daily check; after a restart or lost TRIAX steps | ready |
 | 2 | Live laser wavelength | nothing stored: read off the axis at each `sl` | automatic (`livecal` toggles it) | ready |
 | 3 | Stage 1 edge: g1 (g2 follows) | `manual_g1`, `manual_g2` | after realigning stage 1, or when 1 moved the axis | ready; first full session pending |
-| 4 | g2 pointing at stage 1's exit | `manual_g2` offset | after 3 | planned |
+| 4 | g2 pointing through a pinhole | `manual_g2` offset | after 3 is applied | ready; not yet run on the bench |
 | 5 | Stage 2: g3/g4 | `manual_g3`, `manual_g4` | after realigning stage 2 | to follow (#29) |
 | 6 | Polarisation response | not yet defined | before choosing the periscope geometry | to follow |
 
@@ -37,10 +38,13 @@ will follow it too:
 3. **Gates.** Every fit runs a list of checks and prints PASS, WARN (usable, but look) or FAIL.
    Each WARN or FAIL gives its evidence, the likely causes and what to try.
 4. **Report.** Each fit writes a report and plots of the fit and its residuals (always, so
-   they get looked at; `--no-plots` or `noplots` only for headless runs). The filter
-   calibration also writes a `results.json`. The provenance is in both the report and the JSON: the software commit, the exact
-   command line, and the SHA-256 of every input file. The command line re-runs the fit; the
-   hashes say whether the inputs are still the same files.
+   they get looked at; `--no-plots` or `noplots` only for headless runs).
+   - The filter calibration also writes a `results.json`. Both record the provenance: the
+     software commit, the exact command line, and the SHA-256 of every input file. The
+     command line re-runs the fit; the hashes say whether the inputs are still the same files.
+   - The wavelength axis report lists the walk files it fitted, and each walk file records
+     the software version and conditions it was taken in. It does not yet record the command
+     line or the files' hashes.
 5. **Apply.** Nothing in the master calibration changes until you apply. Applying refuses if any
    gate FAILs, backs up the master file to `calibration/backup/` first, and records what it
    wrote.
@@ -111,7 +115,7 @@ guide, section 4 "Set-up".
 **Commands:**
 
 ```
-python -m filter_calibration plan --exposure <s> --axis-exposure 15     writes 4 run files
+python -m filter_calibration plan --exposure <s> --axis-exposure 15     writes the run files
 ```
 
 Then, in the application, with the reference frames of step 0 taken by hand first:
@@ -141,12 +145,35 @@ in section 5 of the stage 1 edge guide.
 **Not automated yet:** the laser's pointing offset from the edge (step 3 of the guide measures
 it by hand), the per-row edge fit, and correcting the edge width for the Ar line width.
 
-## 4. g2 pointing at stage 1's exit (planned)
+## 4. g2 pointing through a pinhole
 
-With the current periscope, a g2 pointing error moves the band up or down the CCD. The
-2026-11-18 walk shows that the pairing in use keeps g2's pointing consistent to within a step
-across 720-920 nm. What remains is one absolute offset. The planned method puts a ~1 mm pinhole
-at stage 1's exit, steps g2 across it, and uses the light reaching the CCD as the detector.
+**What it does.** It sets where g2 points the beam leaving stage 1: one offset added to
+`manual_g2`. How g2 follows g1 across wavelength is already right to under a step (RAM-F5).
+
+**Method.** A ~1 mm pinhole sits on stage 2's entrance port axis. g2 alone is stepped across it
+at three wavelengths, with the halogen through stage 1 and the CCD as the detector. The light
+against g2 is a window, and its centre is where g2 points the beam through the pinhole. The
+centre does not depend on the beam or pinhole size, or on how the CCD responds. The same scan
+measures the band's rows per g2 step and its target row, and how well g1 and g2 are matched
+across the chip. Full method and bench steps: stage 1 edge guide, section 4 step 4.
+
+**Before you start.** 3 applied (the scan is measured against it). g2 set by hand with the laser
+through a pinhole at stage 1's exit, then the relay aligned onto stage 2's axis, in that order
+(step 4 of the guide). Camera reading the whole sensor (`roi full`, `roi binning software`).
+
+**Commands:**
+
+```
+runfile data/runfiles/stage1_g2_pinhole_stage2.txt     pinhole on stage 2's entrance axis
+runfile data/runfiles/stage1_g2_pinhole_stage1.txt     once, pinhole at stage 1's exit
+python -m filter_calibration fit-g2 data/runfile_logs/stage1_g2_pinhole_*_<YYYYMMDD>_*.txt
+python -m filter_calibration fit-g2 <the same logs> --apply
+```
+
+**Reading the result.** The report folder is `data/filter_calibration_reports/stage1_g2_<time>/`.
+In `g2_pinhole.png`, each profile should be symmetric and the offsets should agree between
+centres; the stage 1 exit scans should match the stage 2 ones. **Applying** adds the offset
+to `manual_g2` (both directions) and records it in the same history file as 3.
 
 ## 5. Stage 2: g3/g4 (to follow)
 
@@ -155,4 +182,5 @@ To be built on the same pattern as 3: issue #29.
 ## 6. Polarisation response (to follow)
 
 The response of the instrument to each polarisation. It is needed before choosing the periscope
-geometry, and it decides whether 4 can keep using the band row.
+geometry. The pinhole scan in 4 works in any geometry, but reading g2's pointing from the band
+row (issues #37, #38) needs the current frame-flipping periscope.

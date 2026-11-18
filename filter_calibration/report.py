@@ -36,15 +36,16 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def new_report_directory(parent_directory, now=None):
+def new_report_directory(parent_directory, now=None, prefix='stage1_edge'):
     now = now or datetime.datetime.now()
-    directory = os.path.join(parent_directory, now.strftime('stage1_edge_%Y%m%d_%H%M%S'))
+    directory = os.path.join(parent_directory, now.strftime(f'{prefix}_%Y%m%d_%H%M%S'))
     os.makedirs(directory, exist_ok=True)
     return directory
 
 
 def provenance(session_analysis, command_line, master_path):
-    """Where the result came from: software, inputs (with hashes), time."""
+    """Where the result came from: software, inputs (with hashes), time. Reads the analysis's
+    frames_found and settings, which the edge and the g2 analyses both have."""
     import scipy
     records = session_analysis.frames_found.records
     return {

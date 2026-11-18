@@ -55,9 +55,10 @@ interactive prompt fails fast instead of hanging. Never add a bare
   is the only one loaded at runtime
 - `/wavelength_calibration/` TRIAX + PIXIS wavelength axis model, line walk and fit
   (pure, simulator-tested) — see `docs/calibration.md`
-- `/filter_calibration/` the tunable filter's g1 calibration against the stage 1 cutoff edge:
-  run files, analysis, gates, report with provenance, apply (`python -m filter_calibration`;
-  pure, simulator-tested) — see `docs/stage1_edge_measurement.md`
+- `/filter_calibration/` the tunable filter's stage 1 calibration: g1 against the cutoff edge,
+  then g2's pointing through a pinhole; run files, analysis, gates, report with provenance,
+  apply (`python -m filter_calibration plan | fit | fit-g2`; pure, simulator-tested) — see
+  `docs/how_to_calibrate.md`
 - `/explorations/` one-off analyses kept so lab-notebook findings can be re-run (data not in git)
 - `/tools/` standalone diagnostic and calibration scripts, not imported by
   the application — see `tools/README.md`

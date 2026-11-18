@@ -18,7 +18,7 @@ while a 50 um slit clips the spot by an amount that changes with wavelength (lab
 RAM-F5). The Ar-Hg axis references are the exception: they are taken at about 50 um, because
 at 500 um the lamp lights a different part of the slit from the filtered light (RAM-F6).
 
-Four run files, written to data/runfiles/ (per machine, not tracked):
+The edge session's four run files, written to data/runfiles/ (per machine, not tracked):
 - stage1_edge_walk.txt: at each centre wavelength, the TRIAX put so that wavelength lands mid-chip
   ('st' alone puts it on spectrometer_target_pixel, near the short-wavelength end, and the
   edge would leave the chip) and 'sg' to it, then frames at g1 offsets around it (default -20
@@ -41,6 +41,17 @@ Four run files, written to data/runfiles/ (per machine, not tracked):
   sessions (RAM-F1), so the analysis corrects each centre's edges with the argon lines in that
   centre's own frame. The TRIAX repeats a position to about 0.003 nm when it is reached the same
   way, which 'st' always does (from below).
+And, for a later step with a pinhole in the beam (two files, one per pinhole position):
+- stage1_g2_pinhole_stage2.txt (pinhole on stage 2's entrance port axis, the reference) and
+  stage1_g2_pinhole_stage1.txt (pinhole at stage 1's exit port, a one-off cross-check): at each
+  g2 centre, 'sg' there, then g2 alone in single steps across the pinhole (default -25..+25,
+  from below), one frame per step. g1 stays where 'sg' put it, so the edge sits at the centre
+  wavelength and the light passes on the long side of it. The CCD is the detector: the light
+  through the pinhole against the g2 count is a window whose centre is where g2 points the beam
+  through the pinhole's centre (pinhole_scan.py). g2 turns the beam about 0.6 mrad per step, so
+  the beam crosses a 1 mm pinhole half a metre away in a few steps; the halogen beam is wider
+  than that, and the scan traces its profile. The band also moves along the slit with g2 (about
+  3-5 rows per step on 2026-11-18), so the frames must read the whole sensor (no camera ROI).
 Frame names follow frame_names.py. 'allmotors' before each frame puts the grating positions into
 the run log, 'rg' the TRIAX steps and 'ren' the slit width.
 
@@ -55,8 +66,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .frame_names import (START_VISIT, STILL_VISIT, axis_reference_name, edge_walk_name,
-                          gratings_visit, repeatability_name, single_step_name, triax_visit)
+from .frame_names import (PINHOLE_POSITIONS, START_VISIT, STILL_VISIT, axis_reference_name,
+                          edge_walk_name, g2_pinhole_scan_name, gratings_visit,
+                          repeatability_name, single_step_name, triax_visit)
 
 REPOSITORY_DIRECTORY = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_OUTPUT_DIRECTORY = os.path.join(REPOSITORY_DIRECTORY, 'data', 'runfiles')
@@ -72,8 +84,14 @@ SINGLE_STEP_HALF_RANGE = 20
 SINGLE_STEP_REVERSE_STEPS = 5
 REPEATABILITY_AWAY_CENTRES_NM = (720, 920)    # the ends of the edge walk: one below, one above
 REPEATABILITY_CYCLES = 3
+DEFAULT_G2_CENTRES_NM = (760, 840, 920)
+G2_SCAN_HALF_RANGE_STEPS = 25
+G2_SCAN_STEP = 1
 WIDE_SLIT_SET_UP = 'Lamp at the sample, laser off, stage 2 intermediate slit removed, ' \
                    'TRIAX slit ~500 um.'
+PINHOLE_SET_UP = 'As the edge walk (halogen lamp, laser off, stage 2 intermediate slit out, ' \
+                 'TRIAX slit ~500 um), plus a ~1 mm pinhole {position}; camera reading the ' \
+                 'whole sensor (no ROI).'
 ARGON_SET_UP = 'Ar-Hg lamp in place of the halogen, laser off, TRIAX slit ~50 um (set by hand ' \
                'first: men moves it by a relative amount).'
 
@@ -82,6 +100,8 @@ RUN_FILE_NAMES = {
     'single_steps': 'stage1_single_steps.txt',
     'repeatability': 'stage1_repeatability.txt',
     'axis_references': 'stage1_axis_references.txt',
+    'g2_pinhole_stage2': 'stage1_g2_pinhole_stage2.txt',
+    'g2_pinhole_stage1': 'stage1_g2_pinhole_stage1.txt',
 }
 
 
@@ -90,13 +110,17 @@ def frame_lines(file_name):
     return ['allmotors', f'filename {file_name}', 'acquire']
 
 
-def header_lines(title, exposure_seconds, set_up=WIDE_SLIT_SET_UP):
+G2_FOLLOWS_G1 = 'g2 follows every g1 move (ratio from the master calibration).'
+G2_MOVES_ALONE = 'g1 stays where sg puts it; g2 alone moves.'
+
+
+def header_lines(title, exposure_seconds, set_up=WIDE_SLIT_SET_UP, motion=G2_FOLLOWS_G1):
     """Comment lines, the exposure if given, and 'ren' so the run log records the slit width."""
     lines = [f'# {title}',
              '# Written by python -m filter_calibration plan; procedure in '
              'docs/stage1_edge_measurement.md.',
              f'# {set_up}',
-             '# g2 follows every g1 move (ratio from the master calibration).']
+             f'# {motion}']
     if exposure_seconds is not None:
         lines += [f'acqtime {exposure_seconds}', 'nframe 1']
     return lines + ['ren']
@@ -249,6 +273,31 @@ def axis_reference_lines(triax_centres_nm, chip_placement, exposure_seconds=None
     return lines
 
 
+def g2_pinhole_scan_lines(pinhole, centres_nm, chip_placement,
+                          half_range_steps=G2_SCAN_HALF_RANGE_STEPS, step=G2_SCAN_STEP,
+                          exposure_seconds=None):
+    """Run file lines for the g2 pinhole scan: at each centre, 'sg' there, then g2 alone from
+    -half_range to +half_range in steps of `step`, each position reached from below, one frame
+    at each. Ends with 'sg' at the last centre, so g2 is left matched to g1."""
+    lines = header_lines(f'Stage 1 g2 pinhole scan, pinhole {PINHOLE_POSITIONS[pinhole]}',
+                         exposure_seconds,
+                         set_up=PINHOLE_SET_UP.format(position=PINHOLE_POSITIONS[pinhole]),
+                         motion=G2_MOVES_ALONE)
+    offsets = list(range(-half_range_steps, half_range_steps + 1, step))
+    for centre_nm in centres_nm:
+        lines += ['', f'# Centre {centre_nm} nm'] + centre_lines(centre_nm, chip_placement)
+        lines += [f'g2 {offsets[0] - APPROACH_STEPS}', f'g2 {APPROACH_STEPS}']
+        position = offsets[0]
+        for offset in offsets:
+            if offset != position:
+                lines.append(f'g2 {offset - position}')
+                position = offset
+            lines += frame_lines(g2_pinhole_scan_name(pinhole, centre_nm, offset))
+    if centres_nm:
+        lines += ['', '# Leave g2 matched to g1', f'sg {centres_nm[-1]}']
+    return lines
+
+
 def write_run_file(lines, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as run_file:
@@ -260,8 +309,11 @@ def write_run_file(lines, path):
 def write_all_run_files(output_directory, centres_nm, single_step_centre_nm,
                         repeatability_centre_nm, repeatability_cycles, exposure_seconds,
                         axis_exposure_seconds, chip_placement=None,
-                        grating_pair_at=grating_pair_from_calibration):
-    """Write the four run files; returns {kind: path}."""
+                        grating_pair_at=grating_pair_from_calibration,
+                        g2_centres_nm=DEFAULT_G2_CENTRES_NM,
+                        g2_half_range_steps=G2_SCAN_HALF_RANGE_STEPS, g2_step=G2_SCAN_STEP,
+                        g2_exposure_seconds=None):
+    """Write every run file (RUN_FILE_NAMES); returns {kind: path}."""
     chip_placement = chip_placement or chip_placement_from_files()
     run_file_lines = {
         'edge_walk': edge_walk_lines(centres_nm, chip_placement, grating_pair_at,
@@ -275,6 +327,10 @@ def write_all_run_files(output_directory, centres_nm, single_step_centre_nm,
         'axis_references': axis_reference_lines(centres_nm, chip_placement,
                                                 exposure_seconds=axis_exposure_seconds),
     }
+    for pinhole in PINHOLE_POSITIONS:
+        run_file_lines[f'g2_pinhole_{pinhole}'] = g2_pinhole_scan_lines(
+            pinhole, g2_centres_nm, chip_placement, g2_half_range_steps, g2_step,
+            exposure_seconds=g2_exposure_seconds)
     paths = {}
     for kind, lines in run_file_lines.items():
         paths[kind] = os.path.join(output_directory, RUN_FILE_NAMES[kind])

@@ -51,12 +51,13 @@ def edge_calibration_check(name):
     return register
 
 
-def run_edge_checks(session_analysis, limits=EdgeCheckLimits()):
-    """Every registered check; one that raises is reported as a WARN, not hidden."""
+def run_registered_checks(registry, analysis, limits):
+    """Every check in a registry ([(name, function)]); one that raises is reported as a WARN,
+    not hidden. Shared by the edge and the g2 pinhole checks (g2_checks.py)."""
     results = []
-    for name, function in EDGE_CHECK_REGISTRY:
+    for name, function in registry:
         try:
-            result = function(session_analysis, limits)
+            result = function(analysis, limits)
         except Exception as error:
             result = CheckResult(name=name, verdict=WARN,
                                  summary=f'the check itself failed ({type(error).__name__}: '
@@ -64,6 +65,11 @@ def run_edge_checks(session_analysis, limits=EdgeCheckLimits()):
         if result is not None:
             results.append(result)
     return results
+
+
+def run_edge_checks(session_analysis, limits=EdgeCheckLimits()):
+    """Every registered edge check."""
+    return run_registered_checks(EDGE_CHECK_REGISTRY, session_analysis, limits)
 
 
 @edge_calibration_check('frames on disk')

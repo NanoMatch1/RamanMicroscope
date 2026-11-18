@@ -295,15 +295,44 @@ Start with the shortest exposure and increase it gradually.
 The `allmotors` values give g1's laser-pointing setting at each wavelength. Comparing them with
 the step 1 edge calibration tests the retracing argument in section 2.
 
-### Step 4 (optional): g2 through an aperture
+### Step 4: g2 through a pinhole (after the g1 calibration is applied)
 
-Only if an iris fits at stage 1's exit port (towards stage 2):
-- Open the TRIAX slit to about 1 mm.
-- Step g2 through the iris one step at a time until the signal falls away on both sides, and
-  save each frame.
-- Set the slit back to about 500 um afterwards.
+g1 sets where the edge is; g2 sets where the beam leaving stage 1 points. With the current
+periscope, a g2 error moves the band along the slit, and the 2026-11-18 walk showed the pairing
+already holds g2's pointing to under a step across 720-920 nm (RAM-F5). What is left is one
+offset: where g2 points. A ~1 mm pinhole on stage 2's entrance axis is the reference, and the
+CCD is the detector. The order of the steps matters.
 
-This is the first test of the exit-grating method.
+1. **Apply the g1 calibration first** (section 5, `fit --apply`). The g2 scan is measured
+   against the g1 calibration in use, and the analysis fails a scan taken with another.
+2. **Set g2 with the laser, by hand.** Camera safety: block the laser before the TRIAX (as in
+   the grating alignment quickstart). With the laser through stage 1 at low power:
+   - check by eye that it lands on the centre of g2;
+   - put the pinhole at stage 1's exit port, on the port's axis;
+   - jog g2 until the laser passes the pinhole.
+   The beam always leaves g2 from the same spot, so "through the pinhole" fixes g2's angle.
+3. **Then align the relay, leaving g2 alone.** Put the pinhole on stage 2's entrance port axis
+   and a second target on stage 2's axis further in (an iris, or the centre of g3). Walk the
+   beam onto both with the last two relay mirrors: the pinhole fixes the position, the second
+   target the angle. Each relay mirror should then be lit near its centre; by eye that is only
+   a coarse check. Aligning the relay before step 2 would copy g2's error into the relay.
+4. **The scan.** Remove the laser block and the second target; laser off. Set up the halogen as
+   for step 1 (lamp, aperture cards, stage 2's intermediate slit out, TRIAX slit about
+   500 um), with the pinhole on stage 2's entrance axis.
+   - The band moves along the slit as g2 turns, so read the whole sensor: note the current
+     ROI (`roi`), then `roi full` and `roi binning software`.
+   - Set the exposure on a test frame at `sg 800` (the pinhole passes less light than step 1
+     gets), and write it into the run file with `plan --g2-exposure <s>`.
+   - `runfile data/runfiles/stage1_g2_pinhole_stage2.txt`: at 760, 840 and 920 nm, `sg` there,
+     then g2 alone from -25 to +25 steps, one frame per step (153 frames).
+   - The light should rise and fall within each scan. If it does not, widen the scan
+     (`plan --g2-half-range`).
+5. **Once, as a cross-check:** move the pinhole to stage 1's exit port and run
+   `stage1_g2_pinhole_stage1.txt`. Its offsets should match stage 2's to a fraction of a step;
+   if they do not, the relay moved or step 3 was not finished.
+6. Set the ROI back (`roi <first> <last>` as noted) and remove the pinhole.
+
+The analysis is `fit-g2` (section 5).
 
 ## 5. Afterwards
 
@@ -335,8 +364,24 @@ g2 (moved with g1 at the master's pairing), and records what it did in
 `calibration/stage1_edge_calibration_history.json`. Send the report folder before applying.
 
 Copy these off the lab PC as well: the folders `data/s1ref_*`, `data/s1edge_*`, `data/s1step_*`,
-`data/s1rep_*`, `data/s1axis_*` and `data/s1laser_*`, and the newest files in
+`data/s1rep_*`, `data/s1axis_*`, `data/s1laser_*` and `data/s1g2_*`, and the newest files in
 `data/runfile_logs/`.
+
+**The g2 pinhole scans (step 4)** are analysed separately, after the g1 calibration was applied:
+
+```
+python -m filter_calibration fit-g2 data/runfile_logs/stage1_g2_pinhole_*_20261202_*.txt
+python -m filter_calibration fit-g2 <the same logs> --apply
+```
+
+It writes `data/filter_calibration_reports/stage1_g2_<time>/` with `report.txt`, `results.json`
+and `g2_pinhole.png`: the light through the pinhole against g2 with the fitted window, the
+centre per block of wavelengths, the band's row against g2, and the offset at each centre. The
+report gives, for each scan, the g2 offset from the calibration in use, how well g1 and g2 are
+matched across the chip, the band rows per g2 step and the band's target row (the row when g2
+is centred), which later sessions can check against (issue #37). `--apply` adds the offset (the
+weighted mean over the stage 2 scans) to `manual_g2`, backs up the master file first, and
+records it in the same history file.
 
 Not yet automated: the per-row edge fit (the slant across the rows gives the edge shift per
 mrad), the edge width corrected for the Ar line width, and the width against the lens's

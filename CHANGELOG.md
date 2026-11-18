@@ -12,6 +12,24 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## g2 pinhole calibration in filter_calibration (2026-11-18)
+
+Branch `feature/calibration-repeat-and-docs`. Issue #29.
+
+- **`python -m filter_calibration fit-g2`** measures g2's pointing: g2 alone stepped across a
+  ~1 mm pinhole on stage 2's entrance axis (or, as a cross-check, at stage 1's exit), the CCD
+  as the detector. Each scan's light is summed along the band, which is tracked as it moves
+  along the slit with g2; a window model (top-hat through a Gaussian) gives the centre, per
+  block of wavelengths and overall. Reported per centre: the g2 offset from the calibration in
+  use, the g1:g2 mismatch across the chip, rows per g2 step and the band's target row (#37).
+  Gates (`g2_checks.py`, registry), report, `results.json` with provenance, `g2_pinhole.png`;
+  `--apply` adds the weighted-mean offset to `manual_g2` and records it in the history file.
+- `plan` also writes `stage1_g2_pinhole_stage2.txt` and `stage1_g2_pinhole_stage1.txt`
+  (`--g2-centres`, `--g2-half-range`, `--g2-step`, `--g2-exposure`).
+- The simulated bench has a g2 pointing model and a pinhole; unit tests and a headless
+  `runfile` workflow test recover a known offset.
+- History file entries now say which kind of session they came from.
+
 ## Calibration plots by default; wildcards at the Windows prompt (2026-11-18)
 
 - **Every calibration fit saves its plot unless told not to.** `speccalfit`, `speccalapply` and

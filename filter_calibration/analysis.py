@@ -25,7 +25,8 @@ import numpy as np
 
 from .axis_reference import AxisReferenceSettings, measure_axis_reference
 from .edge_fit import EdgeFitSettings, analyse_edge_frame
-from .frame_names import AXIS_REFERENCE, EDGE_WALK, REFERENCE, REPEATABILITY, SINGLE_STEP
+from .frame_names import (AXIS_REFERENCE, EDGE_WALK, G2_PINHOLE_SCAN, REFERENCE, REPEATABILITY,
+                          SINGLE_STEP)
 from .run_files import g2_steps_per_g1_step
 from .session import load_frame
 
@@ -220,7 +221,7 @@ def analyse_frames(found, settings, frame_loader):
         frame_name = record.frame_name
         analysis = FrameAnalysis(record=record)
         frames.append(analysis)
-        if record.frame_path is None or frame_name.kind == AXIS_REFERENCE:
+        if record.frame_path is None or frame_name.kind in (AXIS_REFERENCE, G2_PINHOLE_SCAN):
             continue
         if frame_name.kind == REFERENCE and ('dark' in frame_name.name or
                                              'arhg' in frame_name.name):
