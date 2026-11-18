@@ -30,7 +30,7 @@ otherwise. The periscope between the filter stages swaps them (see Tunable filte
 |---|---|---|---|---|
 | Pump laser | JenLas JOL-D2.10 (Jenoptik) | to check | | Model reported from the lab in 2026-10; confirm the name on the unit. Interface: RS-232. |
 | Pump wavelength, power | ? | to check | | |
-| Tunable laser | Ti:sapphire, grating-tuned ("Tiger-200") | to check | | Replaced a Spectra-Physics Tsunami. Interface: RS-232, piezomotor. |
+| Tunable laser | Ti:sapphire, grating-tuned ("Tiger-200") | to check | | Replaced a Spectra-Physics Tsunami. Interface: RS-232, piezomotor. How repeatably it reaches a wavelength is untested (#33). |
 | Tuning range | ? | to check | | Software hard limits are in `microscope_config.json` (`hard_limits`). |
 | Linewidth | ? | to check | | |
 | Output beam diameter, divergence | ? | to check | | |
@@ -48,7 +48,7 @@ the stage 1 light paths.
 | Item | Value | Source | Checked | Notes |
 |---|---|---|---|---|
 | Gratings g1, g2: groove density | 1200 grooves/mm | estimate | | Blaze, size and ruled/holographic: to check. |
-| Lenses (collimating and refocusing) | f = 50 mm singlets | estimate | | Temporary: chosen for the tight geometry. Glass, diameter and part number: to check. |
+| Lenses (collimating and refocusing) | f = 50 mm singlets | estimate | | Temporary: chosen for the tight geometry. Their chromatic focal shift can keep the edge sharp at one wavelength only; 250 mm mirrors as in stage 2 would remove it (#35). Glass, diameter and part number: to check. |
 | Lens tilt | near zero | estimate | | Kept as small as possible during the build. |
 | Beam diameter through the stage | about 1-2 mm | estimate (2026-11-17) | | Measure at g1, e.g. with an iris or a card. |
 | Injection mirror | 45 degree mirror with a cleaved edge, at the intermediate focus | estimate | | The edge is the stage 1 cutoff. Coating and size: to check. |
@@ -65,8 +65,8 @@ the stage 1 light paths.
 
 | Item | Value | Source | Checked | Notes |
 |---|---|---|---|---|
-| Gratings g3, g4: groove density | 300 grooves/mm | estimate | | Blaze and size: to check. |
-| Focusing optics | curved mirrors, f = 500 mm | estimate | | Built before stage 1. |
+| Gratings g3, g4: groove density | 300 grooves/mm | estimate | | Replaced the stage's original 1200 grooves/mm gratings, which made the passed window too narrow with the 250 mm mirrors. Blaze and size: to check. |
+| Focusing optics | curved mirrors, f = 250 mm | estimate (2026-11-18) | | Built before stage 1. Each grating sits 250 mm from its mirror, so the grating's image reforms at the conjugate plane. Shorter focal lengths were tried first, and astigmatism dominated. This page said 500 mm before 2026-11-18. |
 | Edge | removable | estimate | | Removed for the stage 1 edge measurement. |
 
 ### Grating motors
@@ -74,8 +74,9 @@ the stage 1 light paths.
 | Item | Value | Source | Checked | Notes |
 |---|---|---|---|---|
 | Rotation per step, g1-g4 | about 17.6-18 mdeg per step | measured (2026-11-16) | | Derived from the master calibration; all four gratings agree. |
-| Microstepping | 32 | estimate | | From the name of the calibration file, `calibration/master_calibration_microsteps_32.json`. |
-| Motor and driver models | ? | to check | | |
+| Drive | tensioned GT2 belt, closed-loop stepper with a magnetic encoder | estimate (2026-11-18) | | Belts replaced worm drives, whose run-out put a sinusoidal error into the calibration. The encoder is on the motor shaft, so it prevents lost steps but cannot see play after the shaft. Measured backlash on g1 is under half a step (lab-notebook RAM-F5). |
+| Microstepping | 32 | estimate | | From the name of the calibration file, `calibration/master_calibration_microsteps_32.json`. The trade-off between resolution and position accuracy: the belt drive is near the limit of its gearing and torque, and more microsteps lose accuracy. Both stages have the same gearing, so a stage 2 step (300 grooves/mm) moves the cutoff about four times as far as a stage 1 step (1200 grooves/mm) (#34). |
+| Motor and driver models | ? | to check | | Closed-loop steppers (see Drive); models: to check. |
 | Limit switches | ? | to check | | Position and repeatability of the home switches. |
 
 ## Microscope
