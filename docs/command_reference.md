@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git 7f14a26 on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git 25da88e on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 

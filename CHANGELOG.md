@@ -12,6 +12,15 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Provenance in the wavelength axis fit report (2026-11-23)
+
+- The wavelength axis fit report (`python -m wavelength_calibration fit`, `speccalfit`,
+  `speccalapply`) now records the software that ran the fit, the command, and the SHA-256 of
+  every line walk and of the master file the fit started from (the backup, when applied), as
+  the filter_calibration reports do.
+- `file_sha256`, `command_line_text` and `software_version_text` live in
+  `wavelength_calibration/provenance.py`, shared by both calibrations.
+
 ## g2 pinhole calibration in filter_calibration (2026-11-18)
 
 Branch `feature/calibration-repeat-and-docs`. Issue #29.

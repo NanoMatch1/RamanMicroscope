@@ -9,7 +9,7 @@ file is always backed up before it is overwritten.
 Every fit re-identifies the lines from the walks' saved spectra
 (line_walk.identify_saved_walk), so a walk is always judged with the current
 method and line table, and gives each walk its own TRIAX zero (the latest walk
-sets the stored one). The fit report holds the gate checks
+sets the stored one). The fit report holds its provenance (provenance.py), the gate checks
 (calibration_checks), each walk's frame-by-frame identification and every
 residual, so a failed calibration can be diagnosed from the report alone.
 An applied model names its report in its metadata ('fit_report'), carries
@@ -28,11 +28,13 @@ from .calibration_checks import (CalibrationEvidence, any_failed, decompose_fit_
                                  frame_offset_table_lines,
                                  format_check_report, run_checks)
 from .line_walk import identify_saved_walk, load_line_walk
+from .provenance import file_sha256, software_version, software_version_text
 from .triax_zero import POSITION_TABLE_KEY
 from .wavelength_axis_model import (CALIBRATED_RANGE_KEY, CalibrationFitError, WavelengthAxisModel,
                                     fit_wavelength_axis)
 
 MASTER_GROUP_NAME = 'wavelength_axis'
+REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @dataclass
@@ -148,16 +150,23 @@ def new_fit_report_path(report_directory, report_prefix='wavelength_axis_fit', n
     return new_timestamped_path(report_directory, report_prefix, '.txt', now=now)
 
 
-def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, backup_path=None):
+def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, backup_path=None,
+                     command_line=None):
     """
-    Write the fit report: status, gates, fit summary, each walk's identification, every residual,
-    the model.
+    Write the fit report: provenance, status, gates, fit summary, each walk's identification,
+    every residual, the model.
+
+    The provenance says how to get the result again: the software that fitted it (the walks
+    record the software that took them), the command, and the SHA-256 of every walk and of the
+    master file the fit started from. When the fit was applied that master is the backup, as
+    the master file itself now holds the new model.
 
     The calibration counts as APPLIED when `backup_path` is given (the master
     file was backed up and overwritten). Returns the report text; its summary
     part (status, gates, fit summary) ends at the line 'identification by walk:'.
     """
     fit = outcome.fit
+    fitted_against_path = backup_path or master_path
     if backup_path is not None:
         status = f"APPLIED to {master_path} (previous version: {backup_path})"
     elif outcome.gates_failed:
@@ -167,9 +176,13 @@ def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, ba
     report = [
         "Wavelength axis calibration fit (TRIAX + PIXIS); see docs/calibration.md section 3",
         f"written: {datetime.datetime.now().isoformat(timespec='seconds')}",
+        f"software: {software_version_text(software_version(REPOSITORY_ROOT))}",
+        *([f"command: {command_line}"] if command_line else []),
         f"status: {status}",
-        "line walks:",
-        *[f"  {path}" for path in line_walk_paths],
+        *([f"master calibration fitted against: {fitted_against_path} "
+           f"(SHA-256 {_sha256_text(fitted_against_path)})"] if fitted_against_path else []),
+        "line walks (SHA-256):",
+        *[f"  {path}  {_sha256_text(path)}" for path in line_walk_paths],
         "",
         *format_check_report(outcome.check_results),
         "",
@@ -198,6 +211,10 @@ def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, ba
     with open(report_path, 'w') as file:
         file.write(report_text)
     return report_text
+
+
+def _sha256_text(path):
+    return file_sha256(path) if os.path.isfile(path) else 'file missing'
 
 
 def load_master(master_path):

@@ -1847,12 +1847,15 @@ class Microscope(Instrument):
         The walks are re-identified from their spectra. The report, with every gate's verdict and
         advice, is saved to data/calibration_fit_reports/, with a plot of the fit and its
         residuals beside it (a PNG of the same name) unless noplots is given.'''
+        command_line = ' '.join(['speccalfit', *map(str, fit_options)])
         plot_requested, fit_options = self._split_plot_option(fit_options)
         outcome = self._fit_session_line_walks(fit_options)
         if outcome is None:
             return None
         report_path = new_fit_report_path(self.calibration_fit_report_directory)
-        report_text = write_fit_report(report_path, outcome, self.line_walk_session_files)
+        report_text = write_fit_report(report_path, outcome, self.line_walk_session_files,
+                                       master_path=self.master_calibration_path,
+                                       command_line=command_line)
         self._log_fit_report(report_text, report_path)
         if plot_requested:
             self._plot_wavelength_axis_fit(outcome, report_path)
@@ -1863,6 +1866,7 @@ class Microscope(Instrument):
         '''Fit this session's walks and, if no gate check fails, write the master calibration.
         Takes the same options as speccalfit (including noplots). The master file is backed up
         first; the report and plot are saved to data/calibration_fit_reports/ either way.'''
+        command_line = ' '.join(['speccalapply', *map(str, fit_options)])
         plot_requested, fit_options = self._split_plot_option(fit_options)
         outcome = self._fit_session_line_walks(fit_options)
         if outcome is None:
@@ -1871,7 +1875,9 @@ class Microscope(Instrument):
         if plot_requested:
             self._plot_wavelength_axis_fit(outcome, report_path)
         if outcome.fit is None or outcome.gates_failed:
-            report_text = write_fit_report(report_path, outcome, self.line_walk_session_files)
+            report_text = write_fit_report(report_path, outcome, self.line_walk_session_files,
+                                           master_path=self.master_calibration_path,
+                                           command_line=command_line)
             self._log_fit_report(report_text, report_path)
             failed = [result.name for result in outcome.check_results if result.verdict == 'FAIL']
             self.micro_log.error(f"Wavelength axis calibration NOT applied: gate check(s) failed: "
@@ -1883,7 +1889,8 @@ class Microscope(Instrument):
                                             self.calibration_backup_directory)
         self._log_fit_report(write_fit_report(report_path, outcome, self.line_walk_session_files,
                                               master_path=self.master_calibration_path,
-                                              backup_path=backup_path),
+                                              backup_path=backup_path,
+                                              command_line=command_line),
                              report_path)
         self._use_wavelength_axis_model(outcome.fit.model)
         self.micro_log.info(f"Wavelength axis calibration applied. Previous master file: "

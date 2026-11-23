@@ -501,7 +501,7 @@ that each is caught and explained.
 | `wavelength_calibration/promotion.py` | re-identify, fit and check saved walks; the fit report; the master file |
 | `wavelength_calibration/triax_zero.py` | the quick re-zero (`speccalzero`) |
 | `wavelength_calibration/fit_plots.py` | the fit and residual plot (saved by default; `noplots` skips it) |
-| `wavelength_calibration/provenance.py` | the software version recorded in each walk |
+| `wavelength_calibration/provenance.py` | the software version, file SHA-256 and command line recorded in each walk and report |
 | `wavelength_calibration/simulated_line_lamp.py` | lamp + spectrometer simulator |
 | `calibration.py` (`_load_wavelength_axis_model`) | loads the model at startup |
 | `microscope.py` (`speccal*` commands) | connects the procedure to the TRIAX and PIXIS |

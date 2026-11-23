@@ -39,12 +39,11 @@ will follow it too:
    Each WARN or FAIL gives its evidence, the likely causes and what to try.
 4. **Report.** Each fit writes a report and plots of the fit and its residuals (always, so
    they get looked at; `--no-plots` or `noplots` only for headless runs).
-   - The filter calibration also writes a `results.json`. Both record the provenance: the
-     software commit, the exact command line, and the SHA-256 of every input file. The
-     command line re-runs the fit; the hashes say whether the inputs are still the same files.
-   - The wavelength axis report lists the walk files it fitted, and each walk file records
-     the software version and conditions it was taken in. It does not yet record the command
-     line or the files' hashes.
+   - Every report records the provenance: the software commit that ran the fit, the exact
+     command line, and the SHA-256 of every input file and of the master calibration it
+     started from. The command line re-runs the fit; the hashes say whether the inputs are
+     still the same files. The filter calibration also writes a `results.json`.
+   - Each line walk also records the software version and conditions it was taken in.
 5. **Apply.** Nothing in the master calibration changes until you apply. Applying refuses if any
    gate FAILs, backs up the master file to `calibration/backup/` first, and records what it
    wrote.

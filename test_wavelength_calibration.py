@@ -432,11 +432,16 @@ def test_command_line_fit_reports_without_writing_then_applies(tmp_path, capsys)
     common_arguments = ['fit', str(walk_path), '--curvature', '--master', str(master_path),
                         '--backup-directory', str(backup_directory), '--report-directory', str(report_directory)]
 
+    master_sha256_before = file_sha256(master_path)
     assert main(common_arguments) == 0
     assert 'Not applied' in capsys.readouterr().out
     assert json.loads(master_path.read_text())['wavelength_axis'] == shipped_model().to_dict()
     [report_only_path] = list(report_directory.glob('*.txt'))
-    assert 'status: NOT APPLIED' in report_only_path.read_text()
+    report_only = report_only_path.read_text()
+    assert 'status: NOT APPLIED' in report_only
+    assert 'software: ' in report_only and 'command: ' in report_only
+    assert f"{walk_path}  {file_sha256(walk_path)}" in report_only
+    assert f"{master_path} (SHA-256 {master_sha256_before})" in report_only
     assert report_only_path.with_suffix('.png').exists(), "the fit is plotted by default"
 
     assert main(common_arguments + ['--apply']) == 0
@@ -450,6 +455,8 @@ def test_command_line_fit_reports_without_writing_then_applies(tmp_path, capsys)
     assert applied_report_path != report_only_path, "a second fit must not overwrite the first report"
     applied_report = applied_report_path.read_text()
     assert 'status: APPLIED' in applied_report and str(backup_directory) in applied_report
+    assert f"(SHA-256 {master_sha256_before})" in applied_report, \
+        "an applied report names the master it was fitted against (now the backup), not the new one"
     assert 'residuals (measured - fitted wavelength)' in applied_report
     assert 'nm_per_pixel x (scaled steps)' in applied_report, "the dispersion term is fitted by default"
 
@@ -513,7 +520,7 @@ from wavelength_calibration.line_walk import identify_saved_walk, load_line_walk
 from wavelength_calibration.fit_plots import plot_wavelength_axis_fit
 from wavelength_calibration.promotion import (FitOptions, WalkFitOutcome, new_fit_report_path,
                                               fit_and_check_line_walk_files)
-from wavelength_calibration.provenance import software_version
+from wavelength_calibration.provenance import file_sha256, software_version
 from wavelength_calibration.reference_lines import ReferenceLine
 from wavelength_calibration.simulated_line_lamp import periodic_triax_drive_error
 from wavelength_calibration.triax_zero import position_table, run_triax_zero, zero_evidence

@@ -668,6 +668,7 @@ def test_speccal_repeat_walks_the_same_positions_and_the_report_tabulates_each_w
         report_name, = os.listdir(microscope.calibration_fit_report_directory)
         with open(os.path.join(microscope.calibration_fit_report_directory, report_name)) as file:
             report = file.read()
+        assert 'command: speccalfit curvature triaxquadratic noplots' in report
         table = report.split('TRIAX frame offsets by walk and position')[1].split('\n\n')[0]
         assert 'walk 1' in table and 'walk 2' in table
         for line_walk_path in line_walk_paths:

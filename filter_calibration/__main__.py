@@ -32,6 +32,7 @@ import sys
 
 from wavelength_calibration.calibration_checks import any_failed
 from wavelength_calibration.file_arguments import expand_file_arguments
+from wavelength_calibration.provenance import command_line_text
 
 from .analysis import AnalysisSettings, analyse_session
 from .calibration_checks import run_edge_checks
@@ -41,8 +42,7 @@ from .g2_plots import save_g2_plots
 from .g2_report import write_g2_report
 from .plots import save_all_plots
 from .promotion import apply_g2_offset, apply_proposed_calibration
-from .report import (REPOSITORY_ROOT, command_line_text, new_report_directory, provenance,
-                     write_report)
+from .report import REPOSITORY_ROOT, new_report_directory, provenance, write_report
 from .run_files import (DEFAULT_G2_CENTRES_NM, DEFAULT_OUTPUT_DIRECTORY, DEFAULT_TRIAX_CENTRES_NM,
                         G2_SCAN_HALF_RANGE_STEPS, G2_SCAN_STEP, REPEATABILITY_CYCLES,
                         write_all_run_files)
@@ -129,7 +129,7 @@ def run_fit(arguments):
                                        AnalysisSettings(calibration_order=arguments.order))
     check_results = run_edge_checks(session_analysis)
     report_directory = new_report_directory(arguments.report_directory)
-    provenance_record = provenance(session_analysis, command_line_text(), arguments.master)
+    provenance_record = provenance(session_analysis, command_line_text('filter_calibration'), arguments.master)
     applied = None
     if arguments.apply:
         if any_failed(check_results) or session_analysis.proposed is None:
@@ -159,7 +159,7 @@ def run_fit_g2(arguments):
     session_analysis = analyse_g2_session(found, master)
     check_results = run_g2_checks(session_analysis)
     report_directory = new_report_directory(arguments.report_directory, prefix='stage1_g2')
-    provenance_record = provenance(session_analysis, command_line_text(), arguments.master)
+    provenance_record = provenance(session_analysis, command_line_text('filter_calibration'), arguments.master)
     applied = None
     if arguments.apply:
         if any_failed(check_results) or session_analysis.proposed is None:

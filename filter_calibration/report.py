@@ -13,27 +13,17 @@ whether the inputs are still the ones it used.
 """
 
 import datetime
-import hashlib
 import json
 import os
 import platform
-import sys
 from dataclasses import asdict, is_dataclass
 
 import numpy as np
 
 from wavelength_calibration.calibration_checks import format_check_report
-from wavelength_calibration.provenance import software_version
+from wavelength_calibration.provenance import file_sha256, software_version
 
 REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def file_sha256(path):
-    digest = hashlib.sha256()
-    with open(path, 'rb') as file:
-        for block in iter(lambda: file.read(1 << 20), b''):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def new_report_directory(parent_directory, now=None, prefix='stage1_edge'):
@@ -238,7 +228,3 @@ def write_report(directory, session_analysis, check_results, provenance_record, 
         json.dump(results_dictionary(session_analysis, check_results, provenance_record,
                                      applied), results_file, indent=1)
     return text
-
-
-def command_line_text():
-    return ' '.join([os.path.basename(sys.executable), '-m', 'filter_calibration'] + sys.argv[1:])

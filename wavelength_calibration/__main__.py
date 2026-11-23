@@ -23,6 +23,7 @@ from .file_arguments import expand_file_arguments
 from .fit_plots import plot_wavelength_axis_fit
 from .promotion import (FitOptions, current_model_from_master, fit_and_check_line_walk_files,
                         new_fit_report_path, write_fit_report, write_model_to_master)
+from .provenance import command_line_text
 
 REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_MASTER_PATH = os.path.join(REPOSITORY_ROOT, 'calibration', 'master_calibration_microsteps_32.json')
@@ -51,7 +52,8 @@ def build_argument_parser():
     fit_parser.add_argument('--no-plots', action='store_true',
                             help='skip the plot of the fit and its residuals (made by default), '
                                  'for headless runs')
-    fit_parser.add_argument('--apply', action='store_true', help='write the fitted model into the master file')
+    fit_parser.add_argument('--apply', action='store_true',
+                            help='write the fitted model into the master file')
     return parser
 
 
@@ -74,7 +76,8 @@ def run_fit(arguments):
         backup_path = write_model_to_master(outcome.fit.model, arguments.master,
                                             arguments.backup_directory)
     print(write_fit_report(report_path, outcome, line_walk_files,
-                           master_path=arguments.master, backup_path=backup_path), end='')
+                           master_path=arguments.master, backup_path=backup_path,
+                           command_line=command_line_text('wavelength_calibration')), end='')
     if arguments.apply and backup_path is None:
         print("Not applied: a gate check failed (see the report above).")
     elif not arguments.apply:
