@@ -28,7 +28,7 @@ from .calibration_checks import (CalibrationEvidence, any_failed, decompose_fit_
                                  frame_offset_table_lines,
                                  format_check_report, run_checks)
 from .line_walk import identify_saved_walk, load_line_walk
-from .provenance import file_sha256, software_version, software_version_text
+from .provenance import file_sha256_text, software_version, software_version_text
 from .triax_zero import POSITION_TABLE_KEY
 from .wavelength_axis_model import (CALIBRATED_RANGE_KEY, CalibrationFitError, WavelengthAxisModel,
                                     fit_wavelength_axis)
@@ -180,9 +180,9 @@ def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, ba
         *([f"command: {command_line}"] if command_line else []),
         f"status: {status}",
         *([f"master calibration fitted against: {fitted_against_path} "
-           f"(SHA-256 {_sha256_text(fitted_against_path)})"] if fitted_against_path else []),
+           f"(SHA-256 {file_sha256_text(fitted_against_path)})"] if fitted_against_path else []),
         "line walks (SHA-256):",
-        *[f"  {path}  {_sha256_text(path)}" for path in line_walk_paths],
+        *[f"  {path}  {file_sha256_text(path)}" for path in line_walk_paths],
         "",
         *format_check_report(outcome.check_results),
         "",
@@ -211,10 +211,6 @@ def write_fit_report(report_path, outcome, line_walk_paths, master_path=None, ba
     with open(report_path, 'w') as file:
         file.write(report_text)
     return report_text
-
-
-def _sha256_text(path):
-    return file_sha256(path) if os.path.isfile(path) else 'file missing'
 
 
 def load_master(master_path):

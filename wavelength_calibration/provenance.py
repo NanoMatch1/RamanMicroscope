@@ -1,9 +1,9 @@
 """
-Which software took or fitted a result, from what: recorded in every line walk and every
-calibration report, so a result traces to its code and its inputs.
+Which software took or fitted a result, from what: recorded in every saved spectrum, run log,
+line walk and calibration report, so a result traces to its code and its inputs.
 
 - software_version: the commit, branch and whether the clone had uncommitted changes.
-- file_sha256: an input file's hash. A report lists its inputs with their hashes, so it can
+- file_sha256, file_sha256_text: an input file's hash. A report lists its inputs with their hashes, so it can
   say whether a file is still the one it used, and find that file again after it is renamed
   or copied elsewhere.
 - command_line_text: the command that made a report, to re-run it.
@@ -49,6 +49,11 @@ def file_sha256(path):
         for block in iter(lambda: file.read(1 << 20), b''):
             digest.update(block)
     return digest.hexdigest()
+
+
+def file_sha256_text(path):
+    """The file's SHA-256, or 'file missing' (a record must not fail for want of a file)."""
+    return file_sha256(path) if path and os.path.isfile(path) else 'file missing'
 
 
 def command_line_text(module_name):

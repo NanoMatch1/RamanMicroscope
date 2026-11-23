@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git 25da88e on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git 2a12390 on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 
@@ -69,7 +69,8 @@ line is not a known command (or a motor label with a whole number of steps). The
 - the run stops at the first command that reports an error, and says which line;
 - Ctrl+C stops the run after the current command, leaving the application running;
 - every command, its time and its result go to a run log in data/runfile_logs/,
-  written as the run goes, so a stopped run still has its record.
+  written as the run goes, so a stopped run still has its record; its header names the
+  software and the calibration in use.
 Typed commands are lower-cased, so the file name is too; on the lab PC (Windows) the
 case of a path does not matter. `python -m filter_calibration plan` writes the run
 files for the stage 1 cutoff-edge calibration, and `python -m filter_calibration fit`

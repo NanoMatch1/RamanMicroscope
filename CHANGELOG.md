@@ -12,6 +12,15 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Software and calibration recorded with every spectrum and run log (2026-11-23)
+
+- Every saved spectrum's metadata holds `software` (commit, branch, uncommitted changes) and
+  `calibration` (master file path and SHA-256, the wavelength axis fit report in use), from
+  `Microscope.describe_provenance`.
+- Every run log's header names the same software and calibration.
+- The software version is read once at start (`Microscope.software`): the running code is the
+  code loaded then, even if files change later. Line walks use the same record.
+
 ## Provenance in the wavelength axis fit report (2026-11-23)
 
 - The wavelength axis fit report (`python -m wavelength_calibration fit`, `speccalfit`,

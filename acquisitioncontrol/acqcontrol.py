@@ -490,13 +490,18 @@ class AcquisitionControl(QObject):
         parameters in the acquisition control, as well as the current stage position and the
         current laser wavelength.
         'camera' holds the readout as the camera reports it: ROI rows and their binning, exposure,
-        readout time, gain, ADC speed, sensor temperature (PIXISCamera.describe_readout).'''
+        readout time, gain, ADC speed, sensor temperature (PIXISCamera.describe_readout).
+        'software' and 'calibration' say what took it (Microscope.describe_provenance).'''
 
         metadata = dict(self.get_all_parameters())
         try:
             metadata['camera'] = self.interface.camera.describe_readout()
         except Exception as error:  # a missing reading must not stop the save
             metadata['camera'] = {'error': f"readout not recorded: {error}"}
+        try:
+            metadata.update(self.interface.microscope.describe_provenance())
+        except Exception as error:  # a missing record must not stop the save
+            metadata['software'] = {'error': f"provenance not recorded: {error}"}
         return metadata
     
 

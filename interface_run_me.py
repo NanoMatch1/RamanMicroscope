@@ -20,6 +20,7 @@ from pixisspec.pixiscam import PIXISCamera
 
 from logging_utils import LoggerInterface
 import command_file
+from wavelength_calibration.provenance import software_version_text
 
 def thread_locked(method):
     """
@@ -167,7 +168,8 @@ class Interface:
         - the run stops at the first command that reports an error, and says which line;
         - Ctrl+C stops the run after the current command, leaving the application running;
         - every command, its time and its result go to a run log in data/runfile_logs/,
-          written as the run goes, so a stopped run still has its record.
+          written as the run goes, so a stopped run still has its record; its header names the
+          software and the calibration in use.
         Typed commands are lower-cased, so the file name is too; on the lab PC (Windows) the
         case of a path does not matter. `python -m filter_calibration plan` writes the run
         files for the stage 1 cutoff-edge calibration, and `python -m filter_calibration fit`
@@ -190,6 +192,8 @@ class Interface:
                          f"log: {log_path}")
         with open(log_path, 'w') as run_log:
             run_log.write(f"# run file: {os.path.abspath(file_path)}\n")
+            for header_line in self._run_log_provenance_lines():
+                run_log.write(f"# {header_line}\n")
             for position, command_line in enumerate(command_lines, start=1):
                 self.logger.info(f"[{position}/{len(command_lines)}] {command_line.command}")
                 try:
@@ -216,6 +220,15 @@ class Interface:
             self.microscope.motion_control.wait_for_motors([motor_id])
         self.save_state()
         return result
+
+    def _run_log_provenance_lines(self):
+        """The software and calibration a run used, for the run log's header."""
+        provenance = self.microscope.describe_provenance()
+        calibration = provenance['calibration']
+        return [f"software: {software_version_text(provenance['software'])}",
+                f"master calibration: {calibration['master_path']} "
+                f"(SHA-256 {calibration['master_sha256']})",
+                f"wavelength axis fit report: {calibration['wavelength_axis_fit_report']}"]
 
     def _run_log_path(self, file_path):
         log_directory = os.path.join(self.dataDir, 'runfile_logs')

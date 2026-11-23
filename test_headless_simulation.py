@@ -785,6 +785,9 @@ def test_camera_roi_automatic_manual_binning_stored_and_recorded():
             assert saved['image'].shape == (21, 1024)
         readout = metadata['camera']
         assert readout['spectral_roi']['first_row'] == 790
+        assert metadata['software'] == microscope.software and 'commit' in metadata['software']
+        assert metadata['calibration']['master_path'] == microscope.master_calibration_path
+        assert len(metadata['calibration']['master_sha256']) == 64
         assert readout['camera_roi_hstart_hend_vstart_vend_hbin_vbin'] == [0, 1024, 790, 811, 1, 1]
         assert readout['adc_analog_gain'] == 'Medium'
 
@@ -957,8 +960,12 @@ def test_runfile_runs_jogs_in_order_and_logs_every_command():
     newest_log = max((os.path.join(log_directory, name) for name in os.listdir(log_directory)),
                      key=os.path.getmtime)
     with open(newest_log) as run_log:
-        logged_commands = [line.split('\t')[1] for line in run_log if not line.startswith('#')]
+        log_lines = run_log.readlines()
+    logged_commands = [line.split('\t')[1] for line in log_lines if not line.startswith('#')]
     assert logged_commands == ['g1 -30', 'g1 10', 'allmotors', 'g1 5']
+    header = ''.join(line for line in log_lines if line.startswith('#'))
+    assert f"# software: {get_interface().microscope.software['commit']}" in header
+    assert '# master calibration: ' in header and 'SHA-256 ' in header
 
 
 def test_runfile_stops_at_the_first_command_that_fails():

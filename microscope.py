@@ -25,7 +25,7 @@ from wavelength_calibration.line_walk import DEFAULT_SAMPLES_PER_LINE, LineWalk,
 from wavelength_calibration.promotion import (FitOptions, fit_and_check_line_walk_files,
                                               new_fit_report_path, new_timestamped_path,
                                               write_fit_report, write_model_to_master)
-from wavelength_calibration.provenance import software_version
+from wavelength_calibration.provenance import file_sha256_text, software_version
 from wavelength_calibration.reference_lines import argon_mercury_lamp_lines, externally_measured_line
 from wavelength_calibration.scatter_export import export_scatter_csv, new_export_path
 from wavelength_calibration.simulated_line_lamp import (SimulatedLineLamp, default_true_model,
@@ -648,6 +648,8 @@ class Microscope(Instrument):
         self.line_walk_directory = os.path.join(self.dataDir, 'calibration_line_walks')
         self.calibration_fit_report_directory = os.path.join(self.dataDir, 'calibration_fit_reports')
         self.line_walk_session_files = []
+        # Read once: the code that runs is the code loaded now, even if files change later.
+        self.software = software_version(self.scriptDir)
 
         self.config_path = os.path.join(self.scriptDir, "microscope_config.json")
         self.config = self.load_config()
@@ -1790,6 +1792,23 @@ class Microscope(Instrument):
             self._apply_camera_roi(slit_image.roi())
         return {**asdict(slit_image), 'width_rows': slit_image.width_rows}
 
+    def describe_provenance(self):
+        '''What took a measurement: saved with every spectrum and at the head of every run log.
+        - software: commit, branch and uncommitted changes, read once at start, since the running
+          code does not change when files are edited or checked out later;
+        - calibration: the master calibration file and its SHA-256 now, and the report of the
+          wavelength axis fit in use (the saved wavelength axis itself is in the spectrum).'''
+        model = getattr(self.calibration_service, 'wavelength_axis_model', None)
+        return {
+            'software': self.software,
+            'calibration': {
+                'master_path': self.master_calibration_path,
+                'master_sha256': file_sha256_text(self.master_calibration_path),
+                'wavelength_axis_fit_report':
+                    model.metadata.get('fit_report') if model is not None else None,
+            },
+        }
+
     def _describe_instrument_for_calibration(self):
         '''What a calibration walk records about the set-up, so a bad walk can be traced.'''
         camera = self.interface.camera
@@ -1801,7 +1820,7 @@ class Microscope(Instrument):
                 return None
 
         return {
-            'software': software_version(self.scriptDir),
+            'software': self.software,
             'simulate': bool(self.simulate),
             'saturation_level': self.CCD_SATURATION_COUNTS,
             'camera': {
