@@ -2,7 +2,7 @@
 
 _Generated from the command docstrings by `tools/build_command_reference.py`; do not edit by hand. Change the docstring and re-run the script._
 
-_Built from git 2a12390 on feature/calibration-repeat-and-docs, with uncommitted changes._
+_Built from git 46baa96 on feature/calibration-repeat-and-docs, with uncommitted changes._
 
 Type a command and its arguments at the prompt, separated by spaces, e.g. `st 800`. `help` prints the same text; `exit` closes the camera and quits.
 
@@ -961,11 +961,18 @@ Read the current position of the exit slit.
 Open or close the entrance slit by a relative amount, in micrometres.
 
 A positive number opens the slit, a negative one closes it. The move is relative to
-where the slit is now, not a target width: read the width first with `ren`.
+where the slit is now, not a target width: read the width first with `ren`. The slit is
+read before moving, and a move that would leave it outside -50 to 1000 um is refused
+(nothing moves): a mistyped width can otherwise lose the slit's zero.
+
+To move past the limits on purpose (testing, or finding the slit's zero), add
+`override` to that one move. It applies to that move only, so the limits are never
+left switched off, and the move is logged as a warning.
 
 Examples:
-    men 450     open by 450 um (e.g. from 50 um to about 500 um)
-    men -450    close by 450 um
+    men 450             open by 450 um (e.g. from 50 um to about 500 um)
+    men -450            close by 450 um
+    men 1500 override   open past 1000 um, this once
 ```
 
 ### `mex`

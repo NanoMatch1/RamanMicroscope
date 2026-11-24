@@ -968,6 +968,30 @@ def test_runfile_runs_jogs_in_order_and_logs_every_command():
     assert '# master calibration: ' in header and 'SHA-256 ' in header
 
 
+def test_entrance_slit_soft_limits_and_their_override():
+    """'men' moves the slit by a relative amount, so a typo can drive it far past its range and
+    lose its zero: a move that would end outside -50 to 1000 um is refused and nothing moves,
+    unless that one move says 'override'."""
+    slit_width = run_command('ren')
+    try:
+        run_command(f'men {500 - slit_width}')
+        assert run_command('ren') == 500
+        for refused_move in (5000, 501, -551):
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = get_interface()._command_handler(f'men {refused_move}')
+            assert command_file.reports_failure(result) and 'not moved' in result, refused_move
+            assert run_command('ren') == 500
+        assert run_command('men 500') == 1000
+        assert run_command('men -1050') == -50
+        with contextlib.redirect_stdout(io.StringIO()):
+            misspelt = get_interface()._command_handler('men 2000 overide')
+        assert command_file.reports_failure(misspelt) and 'not moved' in misspelt
+        assert run_command('men 2000 override') == 1950
+        assert run_command('ren') == 1950
+    finally:
+        run_command(f'men {slit_width - run_command("ren")}')
+
+
 def test_runfile_stops_at_the_first_command_that_fails():
     """'filename' without a name raises; the jog after it must not run."""
     _remove_run_logs_after_tests()

@@ -12,6 +12,12 @@ class Triax(Instrument):
     # approach_steps=2000 below its first point), so go_to_steps also always arrives going up:
     # a move down first goes this many steps below the target.
     APPROACH_STEPS = 2000
+    # Soft limits on the entrance slit width (um), checked before every `men`. The slit moves by
+    # a relative amount, so a typo such as 'men 5000' would drive it thousands of um past its
+    # useful range, where the slit can lose its zero and the TRIAX then needs re-initialising.
+    # The lower limit is below zero because the zero is set by hand and need not be where the
+    # jaws touch.
+    ENTRANCE_SLIT_LIMITS_UM = (-50, 1000)
 
     def __init__(self, interface, simulate=False):
         super().__init__()
@@ -137,23 +143,49 @@ class Triax(Instrument):
         return response
     
     @ui_callable
-    def move_enterance_slit(self, position):
+    def move_enterance_slit(self, position, override=None):
         '''Open or close the entrance slit by a relative amount, in micrometres.
 
         A positive number opens the slit, a negative one closes it. The move is relative to
-        where the slit is now, not a target width: read the width first with `ren`.
+        where the slit is now, not a target width: read the width first with `ren`. The slit is
+        read before moving, and a move that would leave it outside -50 to 1000 um is refused
+        (nothing moves): a mistyped width can otherwise lose the slit's zero.
+
+        To move past the limits on purpose (testing, or finding the slit's zero), add
+        `override` to that one move. It applies to that move only, so the limits are never
+        left switched off, and the move is logged as a warning.
 
         Examples:
-            men 450     open by 450 um (e.g. from 50 um to about 500 um)
-            men -450    close by 450 um
+            men 450             open by 450 um (e.g. from 50 um to about 500 um)
+            men -450            close by 450 um
+            men 1500 override   open past 1000 um, this once
         '''
         try:
-            int(position)
+            position = int(position)
         except ValueError:
             self.logger.info('Invalid input for entrance slit position: {}'.format(position))
             return
+        if override not in (None, 'override'):
+            message = (f" > Error: 'men {position} {override}': the only word allowed after "
+                       f"the width is 'override'; the slit was not moved.")
+            self.logger.error(message.strip())
+            return message
+        current_width = self.read_enterance_slit()
+        target_width = current_width + position
+        lowest_width, highest_width = self.ENTRANCE_SLIT_LIMITS_UM
+        if not lowest_width <= target_width <= highest_width:
+            if override is None:
+                message = (f" > Error: 'men {position}' would take the entrance slit from "
+                           f"{current_width} to {target_width} um, outside {lowest_width} to "
+                           f"{highest_width} um; the slit was not moved. Add 'override' to "
+                           f"move there anyway.")
+                self.logger.error(message.strip())
+                return message
+            self.logger.warning(f"Entrance slit moved past its soft limits by override: "
+                                f"{current_width} to {target_width} um (limits "
+                                f"{lowest_width} to {highest_width} um).")
         response = self.send_command('men {}'.format(position))
-        self.enterance_slit_width += int(position)
+        self.enterance_slit_width = target_width
         return self.enterance_slit_width
     
     @ui_callable

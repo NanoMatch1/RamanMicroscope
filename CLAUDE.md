@@ -60,6 +60,8 @@ interactive prompt fails fast instead of hanging. Never add a bare
   apply (`python -m filter_calibration plan | fit | fit-g2`; pure, simulator-tested) — see
   `docs/how_to_calibrate.md`
 - `/explorations/` one-off analyses kept so lab-notebook findings can be re-run (data not in git)
+- Analyses of bench sessions (calibration, alignment, diagnostic data) live in the private
+  lab-notebook, `raman/bench_sessions/<date>_<what>/`, not here; they import this repo's code
 - `/tools/` standalone diagnostic and calibration scripts, not imported by
   the application — see `tools/README.md`
 - `/arduino_mega_develop/` controller firmware — the ground truth for the

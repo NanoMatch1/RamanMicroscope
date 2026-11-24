@@ -12,6 +12,14 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Entrance slit soft limits (2026-11-23)
+
+- `men` reads the TRIAX entrance slit first and refuses a move that would leave it outside
+  -50 to 1000 um (`Triax.ENTRANCE_SLIT_LIMITS_UM`): a mistyped relative move could drive the
+  slit thousands of um and lose its zero.
+- `men <um> override` moves past the limits for that one move only (logged as a warning),
+  for testing or for finding the slit's zero.
+
 ## Software and calibration recorded with every spectrum and run log (2026-11-23)
 
 - Every saved spectrum's metadata holds `software` (commit, branch, uncommitted changes) and
