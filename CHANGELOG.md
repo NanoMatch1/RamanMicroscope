@@ -12,6 +12,24 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Edge fit: first rise, robust to dips, free gradients (2026-11-25)
+
+Branch `feature/calibration-repeat-and-docs`.
+
+- `filter_calibration/edge_fit.py` finds the edge as the **first large rise** of the band signal
+  (medians `step_window_nm` either side of each column), not the steepest, so a thin trough's
+  recovery is no longer taken for the edge, and a thin dip or spike no longer hides it.
+- The fit is robust (soft-L1), keeps the edge near its first guess, and is repeated with narrow
+  dips and spikes left out (`clip_sigma`; `clipped_columns` is reported).
+- The gradient on each side of the edge is free: flat, red-slope and two-slope models are fitted
+  to the same columns and the lowest BIC wins (`edge_model` gained a `baseline_slope`).
+- When no edge is fitted the reason is kept (`edge_failure`): in `results.json`, in the
+  `edges found in the walk` check and on `edge_fits.png`. The `minimum_edge_signal` gate now
+  applies to the rise rather than to the 98th percentile, and `minimum_step_snr` was added.
+- On synthetic signals with troughs, spikes and different gradients the old fit missed the
+  edge by more than 0.3 nm in 15-30 % of the cases; the new one in none. Not yet checked on
+  real frames.
+
 ## Entrance slit soft limits (2026-11-23)
 
 - `men` reads the TRIAX entrance slit first and refuses a move that would leave it outside

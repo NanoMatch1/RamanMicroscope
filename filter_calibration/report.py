@@ -88,6 +88,9 @@ def frame_rows(session_analysis):
             'width_nm': edge.width_nm if edge else None,
             'plateau': edge.plateau if edge else None,
             'residual_fraction': edge.residual_fraction if edge else None,
+            'edge_model': edge.model if edge else None,
+            'clipped_columns': edge.clipped_columns if edge else None,
+            'edge_failure': frame.result.edge_failure if frame.result else None,
             'band_row': frame.result.band_row_at_centre if frame.result else None,
             'saturated_pixels_in_band': frame.result.saturated_pixels_in_band
             if frame.result else None,
@@ -162,10 +165,12 @@ def report_lines(session_analysis, check_results, provenance_record, applied=Non
                  f'({summary.count_for_edge_at_centre - summary.master_count:+.1f})'
                  if summary.count_for_edge_at_centre is not None else '')
         lines.append(
-            f'{summary.centre_nm:6d}  {summary.frames:6d}  {summary.slope_nm_per_step:+.4f} '
-            f'+/- {summary.slope_uncertainty:.4f}  {summary.residual_rms_nm:.3f}  '
+            f'{summary.centre_nm:6d}  {summary.frames:6d}  '
+            f'{_optional(summary.slope_nm_per_step, "+.4f"):>7s} '
+            f'+/- {_optional(summary.slope_uncertainty, ".4f"):>6s}  '
+            f'{_optional(summary.residual_rms_nm, ".3f"):>6s}  '
             f'{summary.width_mean_nm:.2f} +/- {summary.width_spread_nm:.2f}  '
-            f'{summary.band_rows_per_g1_step:+.3f}          '
+            f'{_optional(summary.band_rows_per_g1_step, "+.3f"):>6s}          '
             f'{_optional(summary.axis_correction_nm, "+.3f"):>9s}  '
             f'{_optional(summary.master_count, ".1f"):>9s}  '
             f'{_optional(summary.edge_at_master_count_nm, ".2f"):>10s}  {shift}')

@@ -103,7 +103,9 @@ def check_edges_found(session_analysis, limits):
     if not walk:
         return CheckResult('edges found in the walk', FAIL, 'no edge walk frames in these logs',
                            what_to_try=['include the stage1_edge_walk run log'])
-    missing = [frame.record.name for frame in walk if frame.edge is None]
+    missing = [f'{frame.record.name} ({frame.result.edge_failure})'
+               if frame.result is not None and frame.result.edge_failure
+               else frame.record.name for frame in walk if frame.edge is None]
     counts = {}
     for frame in walk:
         if frame.edge is not None:

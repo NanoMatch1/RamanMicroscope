@@ -18,13 +18,14 @@ import tempfile
 
 import numpy as np
 import pytest
+from scipy.special import ndtr
 
 from filter_calibration import frame_names, run_files
 from filter_calibration.__main__ import main as filter_calibration_main
 from filter_calibration.analysis import analyse_session
 from filter_calibration.axis_reference import measure_axis_reference
 from filter_calibration.calibration_checks import run_edge_checks
-from filter_calibration.edge_fit import analyse_edge_frame
+from filter_calibration.edge_fit import analyse_edge_frame, attempt_edge_fit, fit_edge
 from filter_calibration.session import read_session
 from filter_calibration.simulated_bench import ARGON_MERCURY, HALOGEN, SimulatedStage1Bench
 from wavelength_calibration.calibration_checks import FAIL, WARN
@@ -204,7 +205,69 @@ def test_edge_fit_finds_the_simulated_edge_on_the_frame_axis():
     assert result.band_row_at_centre == pytest.approx(bench.band_row, abs=3)
 
 
-def test_axis_reference_measures_the_axis_error():
+def synthetic_band_signal(axis, edge_nm, height=20000.0, red_gradient=0.0, blue_gradient=0.0,
+                          blue_level=0.0, noise=50.0, width_nm=0.8, seed=1):
+    """A band signal: the edge model in nm (gradients in counts per nm), plus noise."""
+    offset = axis - edge_nm
+    step = ndtr(offset / (width_nm / 2.3548))
+    signal = blue_level + blue_gradient * offset * (1 - step) + \
+        (height + red_gradient * offset) * step
+    return signal + np.random.default_rng(seed).normal(0, noise, len(axis))
+
+
+def with_dip(signal, axis, centre_nm, width_nm, depth):
+    """The signal with a narrow Gaussian dip (a thin, strong trough) multiplied in."""
+    dip = np.exp(-0.5 * ((axis - centre_nm) / (width_nm / 2.3548)) ** 2)
+    return signal * (1 - depth * dip)
+
+
+@pytest.mark.parametrize('dip_nm', [3.0, 6.0, 12.0])
+def test_edge_fit_ignores_thin_dips_past_the_edge(dip_nm):
+    """The steepest rise may be a dip's recovery; the edge is the first large rise."""
+    axis = frame_axis_nm(790.0)
+    signal = with_dip(synthetic_band_signal(axis, 790.0), axis, 790.0 + dip_nm, 0.5, 0.95)
+    fit = fit_edge(signal, axis)
+    assert fit is not None
+    assert fit.edge_nm == pytest.approx(790.0, abs=0.02)
+    assert fit.width_nm == pytest.approx(0.8, abs=0.1)
+    assert fit.clipped_columns > 0
+
+
+def test_edge_fit_ignores_thin_spikes_and_dips_before_the_edge():
+    axis = frame_axis_nm(790.0)
+    signal = with_dip(synthetic_band_signal(axis, 790.0), axis, 786.0, 0.5, 0.9)
+    signal[300] += 30000.0
+    signal[700] += 30000.0
+    fit = fit_edge(signal, axis)
+    assert fit.edge_nm == pytest.approx(790.0, abs=0.02)
+
+
+@pytest.mark.parametrize('settings', [
+    dict(red_gradient=-1200.0),
+    dict(red_gradient=-1200.0, blue_gradient=300.0, blue_level=1500.0),
+    dict(red_gradient=+900.0)])
+def test_edge_fit_follows_different_gradients_either_side_of_the_edge(settings):
+    axis = frame_axis_nm(790.0)
+    fit = fit_edge(synthetic_band_signal(axis, 790.0, **settings), axis)
+    assert fit.edge_nm == pytest.approx(790.0, abs=0.02)
+    assert fit.width_nm == pytest.approx(0.8, abs=0.1)
+
+
+def test_edge_fit_of_a_low_signal_edge_with_a_falling_plateau_is_attempted():
+    axis = frame_axis_nm(790.0)
+    signal = synthetic_band_signal(axis, 790.0, height=3500.0, red_gradient=-120.0, noise=300.0)
+    fit = fit_edge(signal, axis)
+    assert fit is not None
+    assert fit.edge_nm == pytest.approx(790.0, abs=0.15)
+
+
+def test_edge_fit_says_why_there_is_no_edge():
+    axis = frame_axis_nm(790.0)
+    fit, reason = attempt_edge_fit(synthetic_band_signal(axis, 790.0, height=500.0), axis)
+    assert fit is None and 'no rise' in reason
+
+
+
     bench = SimulatedStage1Bench(lamp=ARGON_MERCURY, **SMALL_BENCH)
     axis = frame_axis_nm(768.0)
     reference = measure_axis_reference(bench.image(0, axis, 98304, image_height=IMAGE_HEIGHT),
