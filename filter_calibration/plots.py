@@ -160,8 +160,7 @@ def plot_edge_fits(session_analysis, path):
                   edge_model(pixels, *frame.edge.parameters) / scale, color='black',
                   linewidth=0.8)
         axes.axvline(frame.edge.edge_nm, color='#d62728', linewidth=0.6)
-        axes.text(0.02, 0.92, f'{frame.edge.edge_nm:.2f} nm\nw {frame.edge.width_nm:.2f}\n'
-                  f'{frame.edge.model}, {frame.edge.clipped_columns} clipped',
+        axes.text(0.02, 0.92, f'{frame.edge.edge_nm:.2f} nm\nw {frame.edge.width_nm:.2f}',
                   transform=axes.transAxes, fontsize=6, va='top')
     figure.suptitle('Band signal / plateau (blue) and the fitted edge (black); red = edge',
                     fontsize=9)

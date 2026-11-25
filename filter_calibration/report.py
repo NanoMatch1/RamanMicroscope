@@ -88,8 +88,6 @@ def frame_rows(session_analysis):
             'width_nm': edge.width_nm if edge else None,
             'plateau': edge.plateau if edge else None,
             'residual_fraction': edge.residual_fraction if edge else None,
-            'edge_model': edge.model if edge else None,
-            'clipped_columns': edge.clipped_columns if edge else None,
             'edge_failure': frame.result.edge_failure if frame.result else None,
             'band_row': frame.result.band_row_at_centre if frame.result else None,
             'saturated_pixels_in_band': frame.result.saturated_pixels_in_band

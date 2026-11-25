@@ -14,23 +14,21 @@ The band slants (about +0.25 rows/nm) and can sit anywhere along the slit, so it
 frame: its brightest row, then a straight centre line through per-column centroids. The columns
 then sum the rows within band_half_height_rows of that line.
 
-Edge model, in pixels: a blue line (baseline + blue slope (x - x0)) turning into a red line
-(baseline + amplitude + red slope (x - x0)) through the normal CDF Phi((x - x0) / s). x0 is the
-edge midpoint (where a symmetric blur leaves it) and 2.355 s its width as a Gaussian-equivalent
-FWHM. The fit window runs fit_blue_nm below to fit_red_nm above the edge's first guess.
+Edge model, in pixels: (a + b (x - x0)) Phi((x - x0) / s) + c, with Phi the normal CDF. Light
+passes on the long-wavelength side. x0 is the edge midpoint (where a symmetric blur leaves it)
+and 2.355 s its width as a Gaussian-equivalent FWHM. The fit is ordinary least squares over a
+window from fit_blue_nm below to fit_red_nm above the edge's first guess. The model and fit are
+the ones the g1 calibration of 2026-11-18 was made with; keep them unless a session shows the
+edge itself is misplaced (RAM-F9 compares changes on three sessions' real frames).
 
-Finding the edge. The edge is the FIRST large rise in the band signal, not the steepest one:
-each column is scored by the median of step_window_nm of signal just red of it minus the median
-just blue of it. Medians ignore anything narrower than half the window, so a thin dip (or a
-thin spike) neither makes nor hides a step. The first rise reaching first_rise_fraction of the
-biggest one is the edge; the recovery from a dip further red is never taken for it.
+Finding the edge (the first guess). The edge is the FIRST large rise in the band signal, not the
+steepest one: each column is scored by the median of step_window_nm of signal just red of it
+minus the median just blue of it. Medians ignore anything narrower than half the window, so a
+thin dip or spike neither makes nor hides a step, and the first rise reaching
+first_rise_fraction of the biggest one is the edge. A narrow dip further red, such as the shadow
+fixed at CCD column 953 on 2026-11-25 (RAM-F9), has a steep recovery; starting from the steepest
+rise took the fit there.
 
-Fitting it. The fit is robust (soft-L1 loss), keeps the edge within one score window of its
-first guess, and is repeated with the narrow dips and spikes left out (clip_sigma robust sigmas
-from the fit, away from the edge itself; the left-out columns are reported). The plateau
-gradient on each side of the edge is a free parameter: the flat, red-slope and two-slope models
-are all fitted to the same columns and the one with the lowest BIC is kept, so a low S/N edge
-is not given gradients it cannot support, and an edge whose two sides differ is not forced flat.
 When no edge is fitted the reason is returned (FrameEdgeResult.edge_failure).
 
 Pure: arrays in, results out.
@@ -40,7 +38,7 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.ndimage import binary_dilation, median_filter, uniform_filter1d
+from scipy.ndimage import median_filter, uniform_filter1d
 from scipy.optimize import OptimizeWarning, curve_fit
 from scipy.special import ndtr
 
@@ -57,20 +55,13 @@ class EdgeFitSettings:
     smoothing_columns: int = 9
     fit_blue_nm: float = 10.0
     fit_red_nm: float = 15.0
-    minimum_edge_signal: float = 2000.0     # band counts per column rise needed to fit an edge
-    minimum_step_snr: float = 5.0           # the rise over the noise of the two medians it is
-                                            # the difference of
+    minimum_edge_signal: float = 2000.0     # band counts per column (98th percentile of the
+                                            # smoothed signal) needed to fit an edge
     step_window_nm: float = 3.0             # a rise is the median this wide red of a column minus
                                             # the median this wide blue of it: dips and spikes
                                             # narrower than half of it are ignored
     first_rise_fraction: float = 0.5        # the edge is the first rise this fraction of the
-                                            # biggest rise (a trough's recovery comes later)
-    clip_sigma: float = 4.0                 # columns this far (robust sigma) from the fit are left
-    clip_rounds: int = 3                    # out and the fit repeated, up to this many times
-    clip_dilation_columns: int = 4          # the columns beside a left-out one go too
-    max_clipped_fraction: float = 0.4       # of the window; more than this is not a dip
-    max_plateau_change: float = 1.0         # a plateau may change by this times the edge height
-                                            # across the fit window (bounds the gradients)
+                                            # biggest rise (a dip's recovery comes later)
     saturation_level: float = 65535.0
 
 
@@ -85,8 +76,6 @@ class EdgeFit:
     window_reaches_chip_end: bool
     fit_window: tuple               # (first, last) pixel of the fit
     parameters: tuple               # edge_model parameters, for plots
-    model: str = ''                 # 'flat', 'red slope' or 'two slopes' (lowest BIC)
-    clipped_columns: int = 0        # window columns left out as narrow dips or spikes
 
 
 @dataclass
@@ -104,24 +93,9 @@ class FrameEdgeResult:
     wavelength_nm: np.ndarray = field(default=None, repr=False)
 
 
-def edge_model(pixel, amplitude, slope, edge_pixel, width_pixels, baseline, baseline_slope=0.0):
-    """A blue line (baseline, baseline_slope) turning into a red line (baseline + amplitude, slope)
-    through the normal CDF. slope and baseline_slope are the gradients far from the edge."""
-    offset = pixel - edge_pixel
-    return baseline + baseline_slope * offset + \
-        (amplitude + (slope - baseline_slope) * offset) * ndtr(offset / width_pixels)
-
-
-# the edge_model parameters each model varies (the rest are 0): amplitude, slope, edge_pixel,
-# width_pixels, baseline, baseline_slope
-EDGE_MODELS = {'flat': (0, 2, 3, 4), 'red slope': (0, 1, 2, 3, 4),
-               'two slopes': (0, 1, 2, 3, 4, 5)}
-CLIP_MODEL = 'two slopes'        # the model whose residuals say which columns are dips
-
-
-def robust_sigma(values):
-    """Standard deviation from the median absolute deviation."""
-    return 1.4826 * float(np.median(np.abs(values - np.median(values))))
+def edge_model(pixel, amplitude, slope, edge_pixel, width_pixels, baseline):
+    return (amplitude + slope * (pixel - edge_pixel)) * ndtr((pixel - edge_pixel) / width_pixels) \
+        + baseline
 
 
 def brightest_band_row(image):
@@ -178,117 +152,68 @@ def rise_scores(signal, half_window):
     return score, medians
 
 
-def _fit_model(name, pixels, signal, keep, start, lower, upper, f_scale):
-    """(full parameters, edge variance) of one model on the kept columns, or None."""
-    free = list(EDGE_MODELS[name])
-
-    def restricted(pixel, *values):
-        full = np.zeros(6)
-        full[free] = values
-        return edge_model(pixel, *full)
-
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', OptimizeWarning)    # an infinite covariance is
-            values, covariance = curve_fit(                      # caught below
-                restricted, pixels[keep], signal[keep], p0=start[free],
-                bounds=(lower[free], upper[free]), method='trf', loss='soft_l1',
-                f_scale=f_scale, max_nfev=2000)
-    except (RuntimeError, ValueError):
+def first_rise_pixel(signal, wavelength_nm, settings):
+    """The column where the first large rise of the signal is steepest (by the median scores),
+    or None if the signal never rises."""
+    nm_per_pixel = float(np.median(np.abs(np.gradient(wavelength_nm))))
+    half_window = max(3, int(round(settings.step_window_nm / nm_per_pixel / 2)))
+    if len(signal) < 6 * half_window:
         return None
-    edge_variance = covariance[free.index(2), free.index(2)]
-    if not np.isfinite(edge_variance):
+    score, _ = rise_scores(signal, half_window)
+    biggest = float(score.max())
+    if biggest <= 0:
         return None
-    full = np.zeros(6)
-    full[free] = values
-    return full, float(edge_variance)
+    first_over = int(np.argmax(score >= settings.first_rise_fraction * biggest))
+    return first_over + int(np.argmax(score[first_over:first_over + 2 * half_window + 1]))
 
 
 def attempt_edge_fit(signal, wavelength_nm, settings=EdgeFitSettings()):
     """(EdgeFit or None, why not): the first large rise of the band signal, fitted."""
     signal = np.asarray(signal, dtype=float)
     pixels = np.arange(len(signal), dtype=float)
-    nm_per_pixel_axis = float(np.median(np.abs(np.gradient(wavelength_nm))))
-    half_window = max(3, int(round(settings.step_window_nm / nm_per_pixel_axis / 2)))
-    if len(signal) < 6 * half_window:
-        return None, 'the signal is too short for the step window'
-    score, medians = rise_scores(signal, half_window)
-    noise = robust_sigma(np.diff(signal)) / np.sqrt(2) * 1.2533 * \
-        np.sqrt(2 / (2 * half_window + 1))             # of one rise score
-    biggest = float(score.max())
-    if biggest < settings.minimum_edge_signal:
-        return None, (f'no rise: the biggest is {biggest:.0f} counts, below the '
-                      f'{settings.minimum_edge_signal:.0f} needed')
-    if biggest < settings.minimum_step_snr * noise:
-        return None, (f'no rise: the biggest, {biggest:.0f} counts, is only {biggest / noise:.1f} '
-                      f'times the noise (needs {settings.minimum_step_snr:.1f})')
-    first_over = int(np.argmax(score >= settings.first_rise_fraction * biggest))
-    guess_pixel = first_over + int(np.argmax(score[first_over:first_over + 2 * half_window + 1]))
-    blue_level = float(medians[guess_pixel - half_window])
-    height = float(medians[guess_pixel + half_window]) - blue_level
+    smoothed = uniform_filter1d(signal, settings.smoothing_columns)
+    brightest = float(np.percentile(smoothed, 98))
+    if brightest < settings.minimum_edge_signal:
+        return None, (f'too little light: the band reaches {brightest:.0f} counts per column, '
+                      f'below the {settings.minimum_edge_signal:.0f} needed')
+    guess_pixel = first_rise_pixel(signal, wavelength_nm, settings)
+    if guess_pixel is None:
+        return None, 'no rise in the band signal'
     nm_per_pixel = abs(np.gradient(wavelength_nm)[guess_pixel])
     first = max(0, int(guess_pixel - settings.fit_blue_nm / nm_per_pixel))
     last = min(len(signal), int(guess_pixel + settings.fit_red_nm / nm_per_pixel))
-    red_slope_limit = settings.max_plateau_change * height / max(last - guess_pixel, 1)
-    blue_slope_limit = settings.max_plateau_change * height / max(guess_pixel - first, 1)
-    width_limits = (0.5, max(2.0, settings.fit_blue_nm / nm_per_pixel / 3.0))
-    start = np.array([height, 0.0, guess_pixel,
-                      np.clip(0.8 / GAUSSIAN_FWHM_PER_SIGMA / nm_per_pixel, *width_limits),
-                      blue_level, 0.0])
-    lower = np.array([0.1 * height, -red_slope_limit, guess_pixel - half_window, width_limits[0],
-                      blue_level - height, -blue_slope_limit])
-    upper = np.array([3.0 * height, red_slope_limit, guess_pixel + half_window, width_limits[1],
-                      blue_level + height, blue_slope_limit])
-    start[3] = np.clip(start[3], lower[3] + 1e-3, upper[3] - 1e-3)
-    f_scale = max(3.0 * noise, 0.02 * height)
-    x, y = pixels[first:last], signal[first:last]
-    keep = np.ones(len(x), dtype=bool)
-    clip_fit = _fit_model(CLIP_MODEL, x, y, keep, start, lower, upper, f_scale)
-    for _ in range(settings.clip_rounds):       # leave out the narrow dips and spikes
-        if clip_fit is None:
-            break
-        parameters = clip_fit[0]
-        residual = y - edge_model(x, *parameters)
-        sigma = max(robust_sigma(residual[keep]), 1e-9 * height)
-        near_edge = np.abs(x - parameters[2]) <= 3.0 * parameters[3]
-        outlier = (np.abs(residual) > settings.clip_sigma * sigma) & ~near_edge
-        new_keep = ~binary_dilation(outlier, iterations=settings.clip_dilation_columns)
-        if np.array_equal(new_keep, keep) or \
-                (~new_keep).mean() > settings.max_clipped_fraction:
-            break
-        refit = _fit_model(CLIP_MODEL, x, y, new_keep, parameters, lower, upper, f_scale)
-        if refit is None:
-            break
-        keep, clip_fit = new_keep, refit
-    count = int(keep.sum())
-    floor = (1e-9 * height) ** 2
-    best = None
-    for name, free in EDGE_MODELS.items():     # the same columns, so the BICs compare
-        fitted = _fit_model(name, x, y, keep, clip_fit[0] if clip_fit is not None else start,
-                            lower, upper, f_scale)
-        if fitted is None:
-            continue
-        residual = y[keep] - edge_model(x[keep], *fitted[0])
-        bic = count * np.log(float(np.mean(residual ** 2)) + floor) + len(free) * np.log(count)
-        if best is None or bic < best[0]:
-            best = (bic, name, fitted, residual)
-    if best is None:
+    window = slice(first, last)
+    plateau_guess = float(np.median(signal[guess_pixel + 20:last])) if last > guess_pixel + 25 \
+        else float(signal[last - 1])
+    baseline_guess = float(np.median(signal[first:guess_pixel - 20])) \
+        if guess_pixel - first > 25 else 0.0
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', OptimizeWarning)    # an infinite covariance is
+            parameters, covariance = curve_fit(                  # caught below
+                edge_model, pixels[window], signal[window],
+                p0=[plateau_guess, 0.0, guess_pixel, 10.0, baseline_guess], maxfev=20000)
+    except (RuntimeError, ValueError):
         return None, 'the edge fit did not converge'
-    _, name, (parameters, edge_variance), residual = best
-    edge_pixel = parameters[2]
+    amplitude, _, edge_pixel, width_pixels, _ = parameters
+    edge_uncertainty_pixels = float(np.sqrt(covariance[2, 2]))
     if not first < edge_pixel < last:
         return None, 'the fitted edge is outside the fit window'
+    if amplitude <= 0:
+        return None, 'the fitted step is not a rise'
+    if not np.isfinite(edge_uncertainty_pixels):
+        return None, 'the edge position is not constrained by the fit'
+    residual = signal[window] - edge_model(pixels[window], *parameters)
     return EdgeFit(
         edge_nm=float(np.interp(edge_pixel, pixels, wavelength_nm)),
         edge_pixel=float(edge_pixel),
-        edge_uncertainty_nm=float(np.sqrt(edge_variance)) * nm_per_pixel,
-        width_nm=float(GAUSSIAN_FWHM_PER_SIGMA * abs(parameters[3]) * nm_per_pixel),
-        plateau=float(parameters[0]),
-        residual_fraction=float(np.std(residual) / parameters[0]),
+        edge_uncertainty_nm=edge_uncertainty_pixels * nm_per_pixel,
+        width_nm=float(GAUSSIAN_FWHM_PER_SIGMA * abs(width_pixels) * nm_per_pixel),
+        plateau=float(amplitude),
+        residual_fraction=float(np.std(residual) / amplitude),
         window_reaches_chip_end=first == 0 or last == len(signal),
         fit_window=(first, last),
-        parameters=tuple(float(value) for value in parameters),
-        model=name, clipped_columns=int((~keep).sum())), ''
+        parameters=tuple(float(value) for value in parameters)), ''
 
 
 def fit_edge(signal, wavelength_nm, settings=EdgeFitSettings()):

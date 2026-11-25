@@ -12,6 +12,26 @@ tracked config (#7), TRIAX drive not a low-order polynomial (#3), `triaxsigma` (
 mercury vs argon offset (#4). A dated section below says which issue a change
 fixes.
 
+## Edge fit: model and fit restored, first-rise search kept (2026-11-25, later)
+
+Branch `feature/calibration-repeat-and-docs`. Checked on the real edge walks of 2026-11-18,
+-23 and -25 (lab-notebook RAM-F9, `raman/bench_sessions/2026-11-25_stage1-edge-and-fit-audit/`).
+
+- The 2026-11-25 failures were a dip fixed at CCD column 953 (a shadow on the detector side):
+  its recovery is steeper than the edge, and the fit started there. The first-rise search
+  (below) fixes that; it is kept.
+- The robust loss, the clipping and the choice between flat, red-slope and two-slope models
+  are removed: on 2026-11-18 they moved every edge red by up to 0.094 nm (the clipping took the
+  rounded top of the edge for dips), and on 2026-11-23 they placed the 720-760 nm edges up to
+  0.86 nm red. The model and least-squares fit are again the ones the g1 calibration was made
+  with; 2026-11-18 edges now agree with them to 0.008 nm.
+- The signal gate is again the 98th percentile of the smoothed band (`minimum_step_snr`
+  removed): the rise-height gate refused 960 nm frames that fit well.
+- `edge_failure` reasons, the report's handling of a centre with too few edges, and the
+  first-rise search stay. `test_axis_reference_measures_the_axis_error` is a test of its own
+  again (its `def` line had been lost), and the dip test is now a dip like the real one:
+  20-40 nm red of a 1.6 nm edge on a rising plateau, which the fit before the rewrite misses.
+
 ## Edge fit: first rise, robust to dips, free gradients (2026-11-25)
 
 Branch `feature/calibration-repeat-and-docs`.

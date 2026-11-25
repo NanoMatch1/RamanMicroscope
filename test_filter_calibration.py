@@ -221,16 +221,19 @@ def with_dip(signal, axis, centre_nm, width_nm, depth):
     return signal * (1 - depth * dip)
 
 
-@pytest.mark.parametrize('dip_nm', [3.0, 6.0, 12.0])
-def test_edge_fit_ignores_thin_dips_past_the_edge(dip_nm):
-    """The steepest rise may be a dip's recovery; the edge is the first large rise."""
+@pytest.mark.parametrize('dip_nm', [20.0, 30.0, 40.0])
+def test_edge_fit_is_not_taken_by_a_steep_dip_red_of_the_edge(dip_nm):
+    """As on 2026-11-25 (RAM-F9): a shadow fixed on the CCD, about 35 % deep and 0.4 nm wide,
+    20-40 nm red of a 1.6 nm wide edge, on a plateau rising to the red. The dip's recovery is
+    steeper than the edge, so a fit started from the steepest rise lands on the dip; the first
+    large rise is the edge."""
     axis = frame_axis_nm(790.0)
-    signal = with_dip(synthetic_band_signal(axis, 790.0), axis, 790.0 + dip_nm, 0.5, 0.95)
+    clean = synthetic_band_signal(axis, 790.0, width_nm=1.6, red_gradient=300.0)
+    signal = with_dip(clean, axis, 790.0 + dip_nm, 0.4, 0.35)
     fit = fit_edge(signal, axis)
     assert fit is not None
+    assert fit.edge_nm == pytest.approx(fit_edge(clean, axis).edge_nm, abs=0.005)
     assert fit.edge_nm == pytest.approx(790.0, abs=0.02)
-    assert fit.width_nm == pytest.approx(0.8, abs=0.1)
-    assert fit.clipped_columns > 0
 
 
 def test_edge_fit_ignores_thin_spikes_and_dips_before_the_edge():
@@ -244,9 +247,12 @@ def test_edge_fit_ignores_thin_spikes_and_dips_before_the_edge():
 
 @pytest.mark.parametrize('settings', [
     dict(red_gradient=-1200.0),
-    dict(red_gradient=-1200.0, blue_gradient=300.0, blue_level=1500.0),
+    dict(red_gradient=-1200.0, blue_level=1500.0),
     dict(red_gradient=+900.0)])
-def test_edge_fit_follows_different_gradients_either_side_of_the_edge(settings):
+def test_edge_fit_follows_a_sloping_plateau(settings):
+    """The plateau may rise or fall red of the edge (the lamp and the filter's passband); the
+    model's red slope follows it. The blue side is flat in the model (the closed frame removes
+    the background), so a sloping blue side is not tested."""
     axis = frame_axis_nm(790.0)
     fit = fit_edge(synthetic_band_signal(axis, 790.0, **settings), axis)
     assert fit.edge_nm == pytest.approx(790.0, abs=0.02)
@@ -264,10 +270,10 @@ def test_edge_fit_of_a_low_signal_edge_with_a_falling_plateau_is_attempted():
 def test_edge_fit_says_why_there_is_no_edge():
     axis = frame_axis_nm(790.0)
     fit, reason = attempt_edge_fit(synthetic_band_signal(axis, 790.0, height=500.0), axis)
-    assert fit is None and 'no rise' in reason
+    assert fit is None and 'too little light' in reason
 
 
-
+def test_axis_reference_measures_the_axis_error():
     bench = SimulatedStage1Bench(lamp=ARGON_MERCURY, **SMALL_BENCH)
     axis = frame_axis_nm(768.0)
     reference = measure_axis_reference(bench.image(0, axis, 98304, image_height=IMAGE_HEIGHT),
