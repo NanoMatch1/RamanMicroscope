@@ -84,23 +84,38 @@ git switch -c fix/edge-fit-dip                 # your branch, off theirs
 
 ---
 
-## 4. Run the tests before you push
+## 4. Test what you changed locally; CI tests everything on push
+
+While you work, run the suite for the code you changed (and, while iterating,
+just the tests you are working on, with `-k`):
+
+| You changed | Run |
+|---|---|
+| `filter_calibration/` | `python -m pytest test_filter_calibration.py -q` |
+| `wavelength_calibration/` | `python -m pytest test_wavelength_calibration.py -q` |
+| `pixisspec/` | `python -m pytest test_pixis_camera.py -q` |
+| `controller.py`, `simulation.py` | `python -m pytest test_controller_simulated.py -q` |
+| commands, docstrings, acquisition, other | `python -m pytest test_headless_simulation.py -q` |
+
+Then push to your branch. CI runs all six suites on every push, on several
+Python versions, in about six minutes (`gh run watch`, or the Actions tab).
+**A change is complete when CI is green**, not when the local run passed: a red
+run on your branch is fixed before anything else, and develop only takes a PR
+whose CI passed. The pre-commit hook runs the repository safety checks
+(`test_repo_guard.py` covers the hook itself).
+
+Run all six locally only when CI cannot run, or when you change the test
+machinery itself (about fourteen minutes on a Raspberry Pi):
 
 ```bash
 python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
 ```
 
-Expect every test to pass (the count grows; `CLAUDE.md` lists the six suites).
-No hardware needed. On a slow machine (the Raspberry Pi) this takes about
-twenty minutes: run the suites your change touches, push to your branch, and
-read CI's result before opening the PR.
-
-> **Why:** these run the whole application against simulated instruments, so
-> they catch the "it won't even start" class of bug before you are in front
-> of the microscope.
-
-CI runs the same six suites on every push, on several Python versions, so you
-will find out either way. Better to find out before.
+> **Why:** the suites run the whole application against simulated instruments,
+> so they catch the "it won't even start" class of bug before you are in front
+> of the microscope. The full set is slow on a Pi and fast on CI, so the Pi
+> runs what the change touches and CI runs the rest; a failure on your own
+> branch costs a fix commit, nothing more.
 
 ---
 

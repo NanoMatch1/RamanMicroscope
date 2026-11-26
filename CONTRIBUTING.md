@@ -24,6 +24,8 @@ git config core.hooksPath .githooks     # safety checks before every commit
 git switch develop && git pull
 git switch -c fix/short-description
 
-# before you push: all six suites, no hardware (slow on a Pi; CI runs them too)
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
+# while you work: the suite for the code you changed (docs/git_workflow.md rule 4)
+python -m pytest test_filter_calibration.py -q
+# then push: CI runs all six suites; the change is complete when CI is green
+gh run watch
 ```

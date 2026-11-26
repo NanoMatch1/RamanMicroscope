@@ -259,8 +259,9 @@ is a configuration change rather than a code change.
 
 ## Testing
 
-Six suites, all hardware-free, all required to pass before a change is
-considered complete:
+Six suites, all hardware-free. CI runs all six on every push, and a change is
+complete when CI is green; locally, run the suite your change touches
+(`docs/git_workflow.md` rule 4). All six at once:
 
 ```bash
 python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
@@ -281,7 +282,7 @@ python -m pytest test_controller_simulated.py test_headless_simulation.py test_r
 - **`test_filter_calibration.py`** — the tunable filter's stage 1 calibration
   (edge fit, g1, g2 pointing), sessions played on a simulated bench.
 
-CI runs all six on every push and pull request.
+CI runs all six on every push and pull request, on several Python versions.
 
 **Scope, honestly:** these cover the motor protocol and orchestration well.
 They do not yet cover the laser and spectrometer device classes, the older

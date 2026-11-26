@@ -23,7 +23,13 @@
 - Calibration: `python calibration.py`, `python calibration_manual.py`, or `python calibration_auto.py`
 
 ## Testing
-All six suites must pass before a change is considered complete.
+Test what you changed locally; CI tests everything on push (`docs/git_workflow.md` rule 4):
+- While working, run only the suite for the code you changed (`-k` for single tests while
+  iterating). Do not run all six locally in a session unless CI cannot run or the test machinery
+  itself changed (about 14 minutes on the Pi).
+- Push to your branch; CI runs all six suites on Python 3.11 and 3.12 (about 6 minutes).
+  Follow it with `gh run watch` and report CI's counts (`gh run view <id> --log`, the
+  "passed" lines). **A change is complete when CI is green**; a red run is fixed first.
 - Unit (Arduino protocol): `python -m pytest test_controller_simulated.py -q`
 - Unit (wavelength axis calibration): `python -m pytest test_wavelength_calibration.py -q`
 - Unit (stage 1 edge / g1 calibration, sessions played on a simulated bench):
