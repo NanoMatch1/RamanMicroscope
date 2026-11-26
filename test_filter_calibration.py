@@ -333,6 +333,37 @@ def test_simulated_session_recovers_the_true_calibration(workspace):
     assert FAIL not in verdicts(run_edge_checks(session_analysis)).values()
 
 
+def test_grating_step_axis_converts_nm_at_the_fit_slope():
+    from matplotlib.figure import Figure
+    from filter_calibration.analysis import PolynomialFit
+    from filter_calibration.plots import _add_grating_step_axis, _nm_per_step_at
+    fit = PolynomialFit(coefficients=[-1e-4, -0.44, 800.0], x_values=[], y_values=[],
+                        residuals=[], labels=[])
+    assert _nm_per_step_at(fit, 0.0) == pytest.approx(0.44)
+    assert _nm_per_step_at(fit, 100.0) == pytest.approx(0.46)
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    figure = Figure()
+    axes = figure.subplots()
+    axes.set_ylim(-0.44, 0.88)
+    step_axis = _add_grating_step_axis(axes, 0.44, 'g1 steps')
+    FigureCanvasAgg(figure).draw()
+    assert step_axis.get_ylim() == pytest.approx((-1.0, 2.0))
+
+
+def test_repeatability_is_drawn_from_the_mean_when_the_start_frame_is_missing():
+    from filter_calibration.analysis import RepeatabilityStatistics
+    from filter_calibration.plots import repeatability_reference_edge
+    with_start = RepeatabilityStatistics(centre_nm=800, offset_from_walk_nm=0.0,
+                                         edges_by_visit_kind={'start': [('s', 800.1)],
+                                                              'still': [('a', 800.3)]})
+    assert repeatability_reference_edge(with_start) == (800.1, 'the start frame')
+    without_start = RepeatabilityStatistics(centre_nm=800, offset_from_walk_nm=0.0,
+                                            edges_by_visit_kind={'still': [('a', 800.2)],
+                                                                 'triax': [('b', 800.4)]})
+    edge, label = repeatability_reference_edge(without_start)
+    assert edge == pytest.approx(800.3) and 'no start frame' in label
+
+
 def test_without_axis_references_the_edges_are_off_by_the_axis_error_and_it_warns(workspace):
     bench = SimulatedStage1Bench(axis_error_nm=lambda steps: 0.4, **SMALL_BENCH)
     session_analysis = analyse(workspace, play_session(workspace, bench,

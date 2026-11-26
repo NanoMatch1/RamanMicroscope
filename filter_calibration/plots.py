@@ -11,6 +11,13 @@ Pictures of a stage 1 edge session, saved as PNGs next to its report.
 - widths_and_band.png: the edge width against wavelength, and the band's row against g1 (how
   well g2 follows).
 
+The residual and repeatability panels carry a second y axis on the right in grating steps: the
+nm difference divided by the size of one step of the calibrated grating (CALIBRATED_GRATING) where
+those frames were taken, from the session's fit (d edge / d count). It answers "how many steps is
+that off", which is what a correction would move. The edge's nm per step changes along the walk
+(0.40-0.47 nm per g1 step on 2026-11-18), so the residual panel uses the fit's slope at the middle
+of the walk and gives the range in its label.
+
 Uses matplotlib's Figure directly (no pyplot), so nothing is drawn on screen.
 """
 
@@ -25,6 +32,9 @@ RUN_COLOURS = {'edge walk': '#1f77b4', 'single steps': '#ff7f0e', 'repeatability
 MASTER_COLOUR = '#7f7f7f'
 VISIT_COLOURS = {'start': '#7f7f7f', 'still': '#1f77b4', 'triax': '#d62728', 'gratings': '#2ca02c'}
 GRID_STYLE = {'color': '#e5e5e5', 'linewidth': 0.6}
+CALIBRATED_GRATING = 'g1'   # the grating whose counts the edge is fitted against
+EDGE_FITS_DPI = 150         # each panel spans ~25 nm: at 70 dpi a pixel was ~0.15 nm and the
+                            # edge line vanished behind the curve; ~2 MB per file at 150
 
 
 def _centre_colours(centres):
@@ -37,6 +47,30 @@ def _centre_colours(centres):
 def _mark_empty(axes, text):
     axes.text(0.5, 0.5, text, ha='center', va='center', transform=axes.transAxes, fontsize=9,
               color='#666666')
+
+
+def _nm_per_step_at(fit, counts):
+    """|d edge / d count| of the calibration fit at these grating counts (nm per step)."""
+    return np.abs(np.polyval(np.polyder(fit.coefficients), np.asarray(counts, dtype=float)))
+
+
+def _add_grating_step_axis(axes, nm_per_step, label):
+    """A right-hand y axis showing the left axis's nm as grating steps (nm / nm_per_step)."""
+    step_axis = axes.secondary_yaxis('right', functions=(lambda nm: nm / nm_per_step,
+                                                         lambda steps: steps * nm_per_step))
+    step_axis.set_ylabel(label)
+    return step_axis
+
+
+def repeatability_reference_edge(repeatability):
+    """(edge nm, what it is) the repeatability frames are drawn against: the start frame, or,
+    when the session has none (not copied, or not saved), the mean of the frames there are."""
+    start_entries = repeatability.edges_by_visit_kind.get('start', [])
+    if start_entries:
+        return start_entries[0][1], 'the start frame'
+    edges = [edge for entries in repeatability.edges_by_visit_kind.values()
+             for _, edge in entries]
+    return float(np.mean(edges)), 'the mean (no start frame)'
 
 
 def _run_points(session_analysis):
@@ -80,6 +114,14 @@ def plot_g1_calibration(session_analysis, path):
     residual_axes.set_ylabel('edge minus fit (nm)')
     residual_axes.set_title('(b) residuals: every run against the walk fit', fontsize=10)
     residual_axes.legend(frameon=False, fontsize=8)
+    walk_counts = np.array(fit.x_values, dtype=float)
+    middle_nm_per_step = float(_nm_per_step_at(fit, 0.5 * (walk_counts.min()
+                                                           + walk_counts.max())))
+    walk_nm_per_step = _nm_per_step_at(fit, walk_counts)
+    _add_grating_step_axis(
+        residual_axes, middle_nm_per_step,
+        f'{CALIBRATED_GRATING} steps at {middle_nm_per_step:.3f} nm/step '
+        f'({walk_nm_per_step.min():.2f}-{walk_nm_per_step.max():.2f} over the walk)')
 
     centres = [summary for summary in session_analysis.centres
                if summary.count_for_edge_at_centre is not None]
@@ -159,13 +201,13 @@ def plot_edge_fits(session_analysis, path):
         axes.plot(result.wavelength_nm[first:last],
                   edge_model(pixels, *frame.edge.parameters) / scale, color='black',
                   linewidth=0.8)
-        axes.axvline(frame.edge.edge_nm, color='#d62728', linewidth=0.6)
+        axes.axvline(frame.edge.edge_nm, color='#d62728', linewidth=1.0, zorder=3)
         axes.text(0.02, 0.92, f'{frame.edge.edge_nm:.2f} nm\nw {frame.edge.width_nm:.2f}',
                   transform=axes.transAxes, fontsize=6, va='top')
     figure.suptitle('Band signal / plateau (blue) and the fitted edge (black); red = edge',
                     fontsize=9)
     figure.tight_layout()
-    figure.savefig(path, dpi=70)
+    figure.savefig(path, dpi=EDGE_FITS_DPI)
     return True
 
 
@@ -207,19 +249,29 @@ def plot_steps_and_repeatability(session_analysis, path):
     size_axes.set_ylabel('edge move (nm)')
     size_axes.set_title('(b) single step sizes', fontsize=10)
 
+    reference_label = 'the start frame'
     if repeatability is not None:
-        start = repeatability.edges_by_visit_kind.get('start', [(None, 0.0)])[0][1]
+        reference_edge, reference_label = repeatability_reference_edge(repeatability)
         for position, visit_kind in enumerate(('start', 'still', 'triax', 'gratings')):
-            values = [edge - start for _, edge in repeatability.edges_by_visit_kind.get(visit_kind,
-                                                                                          [])]
+            values = [edge - reference_edge
+                      for _, edge in repeatability.edges_by_visit_kind.get(visit_kind, [])]
             visit_axes.plot(np.full(len(values), position) + np.linspace(-0.15, 0.15, len(values)),
                             values, 'o', color=VISIT_COLOURS[visit_kind])
         visit_axes.set_xticks(range(4))
         visit_axes.set_xticklabels(['start', 'nothing moved', 'TRIAX alone', 'gratings alone'])
         visit_axes.axhline(0, color='black', linewidth=0.8)
+        repeat_counts = [frame.record.g1_count
+                         for frame in session_analysis.frames_of_kind('repeatability')
+                         if frame.record.g1_count is not None]
+        if session_analysis.calibration is not None and repeat_counts:
+            repeat_nm_per_step = float(_nm_per_step_at(session_analysis.calibration,
+                                                       np.median(repeat_counts)))
+            _add_grating_step_axis(visit_axes, repeat_nm_per_step,
+                                   f'{CALIBRATED_GRATING} steps at {repeat_nm_per_step:.3f} '
+                                   f'nm/step ({repeatability.centre_nm} nm)')
     else:
         _mark_empty(visit_axes, 'no repeatability run in this session')
-    visit_axes.set_ylabel('edge minus the start frame (nm)')
+    visit_axes.set_ylabel(f'edge minus {reference_label} (nm)')
     visit_axes.set_title('(c) repeatability: what moved before each frame', fontsize=10)
 
     colours = _centre_colours(references.keys())
