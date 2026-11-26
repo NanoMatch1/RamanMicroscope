@@ -69,22 +69,38 @@ git switch -c fix/grating-backlash      # or feature/...
 Name it for what it does: `fix/triax-timeout`, `feature/polarisation-scan`.
 Delete it once merged — the history stays, the clutter does not.
 
+**Never commit to a branch someone else is working on.** To change their work,
+branch off their branch and open a PR into it:
+
+```bash
+git switch feature/calibration-repeat-and-docs && git pull
+git switch -c fix/edge-fit-dip                 # your branch, off theirs
+# ... commit, push, then open a PR into feature/calibration-repeat-and-docs
+```
+
+> **Why:** two people committing to one branch means rebases nobody asked for,
+> and a change the branch's owner only finds out about afterwards. A PR into
+> their branch is reviewed before it lands, with CI's result attached.
+
 ---
 
 ## 4. Run the tests before you push
 
 ```bash
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
 ```
 
-Expect `64 passed`. No hardware needed — it takes about ten seconds.
+Expect every test to pass (the count grows; `CLAUDE.md` lists the six suites).
+No hardware needed. On a slow machine (the Raspberry Pi) this takes about
+twenty minutes: run the suites your change touches, push to your branch, and
+read CI's result before opening the PR.
 
 > **Why:** these run the whole application against simulated instruments, so
-> they catch the "it won't even start" class of bug in ten seconds instead of
-> in front of the microscope.
+> they catch the "it won't even start" class of bug before you are in front
+> of the microscope.
 
-CI runs the same suites on every push, so you will find out either way.
-Better to find out before.
+CI runs the same six suites on every push, on several Python versions, so you
+will find out either way. Better to find out before.
 
 ---
 

@@ -24,6 +24,6 @@ git config core.hooksPath .githooks     # safety checks before every commit
 git switch develop && git pull
 git switch -c fix/short-description
 
-# before you push: 64 tests, no hardware, ~15 seconds
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py -q
+# before you push: all six suites, no hardware (slow on a Pi; CI runs them too)
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
 ```

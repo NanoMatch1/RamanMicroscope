@@ -74,8 +74,8 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 
-# no hardware required, under a minute
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q
+# no hardware required (about twenty minutes on a Raspberry Pi)
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
 ```
 
 Run the command-line interface:
@@ -259,11 +259,11 @@ is a configuration change rather than a code change.
 
 ## Testing
 
-Five suites, all hardware-free, all required to pass before a change is
+Six suites, all hardware-free, all required to pass before a change is
 considered complete:
 
 ```bash
-python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py -q
+python -m pytest test_controller_simulated.py test_headless_simulation.py test_repo_guard.py test_wavelength_calibration.py test_pixis_camera.py test_filter_calibration.py -q
 ```
 
 - **`test_controller_simulated.py`** (9) — the Arduino command protocol at the
@@ -278,8 +278,10 @@ python -m pytest test_controller_simulated.py test_headless_simulation.py test_r
 - **`test_pixis_camera.py`** — the PIXIS camera driver (`RealHardware`) run on a
   simulated free-running CCD: acquired frames start after the request, the live
   view (`run`) streams, frame averaging, and the sensor temperature gate.
+- **`test_filter_calibration.py`** — the tunable filter's stage 1 calibration
+  (edge fit, g1, g2 pointing), sessions played on a simulated bench.
 
-CI runs all five on every push and pull request.
+CI runs all six on every push and pull request.
 
 **Scope, honestly:** these cover the motor protocol and orchestration well.
 They do not yet cover the laser and spectrometer device classes, the older

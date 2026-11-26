@@ -1,5 +1,22 @@
 # CLAUDE.md - Guidelines for the RamanMicroscope Project
 
+## Working rules (read first)
+- **Daily routine.** Start and end each working day with `DAILY.md` in the private
+  `raman-notebook` repository (cloned next to this one): pull both repositories, read the other
+  person's log in `logs/`, log bench changes as they happen, push at the end of the day.
+- **Diagnose before you model.** When an analysis or fit that has worked before fails on new
+  data, find out what changed in the data or on the bench first (the frames themselves, the
+  `bench:` lines in `raman-notebook/logs/`, the session's conditions). A failure on data where the
+  method used to work usually means the data changed: report that instead of changing the method
+  to absorb it.
+- **Changing a model, a fit or an analysis default** needs, in the same PR: a known-answer test
+  on simulated data; a comparison on earlier sessions' real frames showing their results do not
+  move (or by how much, and why that is right); and an entry in `DECISIONS.md`, citing the
+  finding behind it. Read `DECISIONS.md` before touching code it covers.
+- **Branches.** Follow `docs/git_workflow.md`. Work on your own branch and reach shared branches
+  by pull request; never commit to a branch someone else is working on (branch off it and open a
+  PR into it). Pull before branching and before pushing.
+
 ## Running Commands
 - Run the interface: `python interface_run_me.py`
 - Run the data viewer: `python data_viewer_run_me.py`
@@ -72,6 +89,7 @@ interactive prompt fails fast instead of hanging. Never add a bare
   motor command protocol
 - `MODERNIZATION.md` tracks known technical debt and standards work
 - `CHANGELOG.md` tracks functionally significant changes
+- `DECISIONS.md` records why non-obvious design choices were made, and what was rejected
 
 ## Arduino Communication Architecture
 - **Motor Label Translation**:
