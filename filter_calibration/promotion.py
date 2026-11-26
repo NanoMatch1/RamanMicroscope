@@ -15,7 +15,9 @@ The master file's loader reads every entry of a group as a calibration, so the r
 was applied, when and from which report cannot live there. It goes in a history file beside it
 (HISTORY_FILE_NAME, e.g. calibration/stage1_edge_calibration_history.json): a list, appended to
 on every apply, holding what kind of session it was, the report folder, the software commit,
-and the old and new entries.
+and the old and new entries. The report folder is stored relative to the repository root: the
+history is committed with the master file, the repository is public, and an absolute path names
+the home directory of whoever applied it (tools/repo_guard.py rejects it).
 """
 
 import datetime
@@ -47,7 +49,7 @@ def apply_proposed_calibration(proposed, master_path, backup_directory, report_d
 
     applied_at = _append_history(history_path, {
         'kind': 'stage1 edge (g1, g2 following)',
-        'report_directory': report_directory,
+        'report_directory': repository_relative_path(report_directory),
         'valid_wavelength_range_nm': list(proposed.wavelength_range_nm),
         'previous': previous,
         'applied': {'manual_g1': master['manual_g1'], 'manual_g2': master['manual_g2']},
@@ -70,7 +72,7 @@ def apply_g2_offset(proposed, master_path, backup_directory, report_directory):
         json.dump(master, master_file, indent=4)
     applied_at = _append_history(history_path, {
         'kind': f'g2 pinhole ({proposed.pinhole})',
-        'report_directory': report_directory,
+        'report_directory': repository_relative_path(report_directory),
         'g2_offset_steps': proposed.offset_steps,
         'centres_nm': list(proposed.centres_nm),
         'previous': previous,
@@ -78,6 +80,15 @@ def apply_g2_offset(proposed, master_path, backup_directory, report_directory):
     })
     return {'master_path': master_path, 'backup_path': backup_path,
             'history_path': history_path, 'applied_at': applied_at}
+
+
+def repository_relative_path(path):
+    """The path relative to the repository root, as committed files must hold it; unchanged if
+    it cannot be made relative (another drive on Windows)."""
+    try:
+        return os.path.relpath(os.path.abspath(path), REPOSITORY_ROOT)
+    except ValueError:
+        return path
 
 
 def _history_path(master_path):

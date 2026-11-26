@@ -446,7 +446,12 @@ def test_fit_command_writes_a_report_and_applies_only_when_asked(workspace):
     with open(os.path.join(workspace['calibration'],
                            'stage1_edge_calibration_history.json')) as history_file:
         history = json.load(history_file)
-    assert len(history) == 1 and history[0]['report_directory'] == report_directory
+    assert len(history) == 1
+    stored_directory = history[0]['report_directory']
+    assert not os.path.isabs(stored_directory)      # committed with the master: no home path
+    from filter_calibration.report import REPOSITORY_ROOT
+    assert os.path.normpath(os.path.join(REPOSITORY_ROOT, stored_directory)) == \
+        os.path.normpath(report_directory)
 
 
 def test_apply_is_refused_when_a_gate_fails(workspace):
