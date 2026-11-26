@@ -59,9 +59,13 @@ interactive prompt fails fast instead of hanging. Never add a bare
   then g2's pointing through a pinhole; run files, analysis, gates, report with provenance,
   apply (`python -m filter_calibration plan | fit | fit-g2`; pure, simulator-tested) — see
   `docs/how_to_calibrate.md`
-- `/explorations/` one-off analyses kept so lab-notebook findings can be re-run (data not in git)
-- Analyses of bench sessions (calibration, alignment, diagnostic data) live in the private
-  lab-notebook, `raman/bench_sessions/<date>_<what>/`, not here; they import this repo's code
+- `/explorations/` one-off analyses kept so notebook findings (RAM-F#) can be re-run (data not
+  in git)
+- Findings (RAM-F#) and analyses of bench sessions (calibration, alignment, diagnostic data) live
+  in the private `raman-notebook` repository, cloned next to this one
+  (`bench_sessions/<date>_<what>/`), not here; they import this repo's code. Read its `README.md`
+  rules before writing there. Nothing from it is copied here: cite finding IDs only. "lab-notebook
+  RAM-F#" in older text means the same finding, from before the notebook was split out
 - `/tools/` standalone diagnostic and calibration scripts, not imported by
   the application — see `tools/README.md`
 - `/arduino_mega_develop/` controller firmware — the ground truth for the
