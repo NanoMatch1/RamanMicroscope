@@ -112,8 +112,10 @@ class RunFilePlayer:
         image = self.bench.image(self.motor_counts['g1'], axis, self.triax_steps(),
                                  image_height=IMAGE_HEIGHT, g2_count=self.motor_counts['g2'])
         metadata = {'_current_parameters': {'acquisition_time': 1.0, 'filename': name}}
-        np.savez_compressed(os.path.join(folder, f'{name}_{index:06d}.npz'), image=image,
-                            wavelength=axis, metadata=json.dumps(metadata))
+        # uncompressed: np.load reads it the same, and compressing noise took a third of the
+        # time of a simulated session
+        np.savez(os.path.join(folder, f'{name}_{index:06d}.npz'), image=image,
+                 wavelength=axis, metadata=json.dumps(metadata))
 
 
 @pytest.fixture

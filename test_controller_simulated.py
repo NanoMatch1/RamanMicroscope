@@ -117,3 +117,18 @@ def test_raman_and_image_mode(sim):
 def test_unrecognized_command(sim):
     resp = sim.send_command('foobar')
     assert resp == 'Unrecognized command format' + CRLF
+
+
+def test_controller_waits_after_each_command_only_on_real_hardware():
+    """The 0.1 s wait after a write gives the Arduino time to read it; the simulated serial
+    answers at once, so simulate mode does not wait."""
+    import logging
+    from types import SimpleNamespace
+
+    from controller import ArduinoMEGA
+    interface = SimpleNamespace(logger=logging.getLogger('test'), simulate=True)
+    controller = ArduinoMEGA(interface, simulate=True)
+    assert controller.command_settle_s == pytest.approx(0.1)    # the hardware default
+    controller.connect()
+    assert isinstance(controller.serial, SimulatedArduinoSerial)
+    assert controller.command_settle_s == 0.0

@@ -34,7 +34,7 @@ VISIT_COLOURS = {'start': '#7f7f7f', 'still': '#1f77b4', 'triax': '#d62728', 'gr
 GRID_STYLE = {'color': '#e5e5e5', 'linewidth': 0.6}
 CALIBRATED_GRATING = 'g1'   # the grating whose counts the edge is fitted against
 EDGE_FITS_DPI = 150         # each panel spans ~25 nm: at 70 dpi a pixel was ~0.15 nm and the
-                            # edge line vanished behind the curve; ~2 MB per file at 150
+                            # edge line vanished behind the curve; 0.5-0.7 MB per file at 150
 
 
 def _centre_colours(centres):

@@ -10,6 +10,10 @@ class ArduinoMEGA:
         self.com_port = com_port
         self.baud = baud
         self.report = report
+        # Wait after writing each command, so the Arduino has read it before the next write.
+        # The simulated serial answers as soon as it is written to, so it needs none: in
+        # simulate mode this is 0 (it was 0.1 s per command, most of a simulated run's time).
+        self.command_settle_s = 0.1
 
         # if the firmware commands change, update this dictionary
         self.message_map = {
@@ -53,6 +57,7 @@ class ArduinoMEGA:
         if self.simulate or self.interface.simulate:
             from simulation import SimulatedArduinoSerial
             self.serial = SimulatedArduinoSerial()
+            self.command_settle_s = 0.0
             return
 
         self.serial = self._connect_to_UNO()
@@ -206,7 +211,7 @@ class ArduinoMEGA:
     
     def _send_command_to_UNO(self, command):
         self.serial.write('{}\n'.format(command).encode())
-        time.sleep(0.1)
+        time.sleep(self.command_settle_s)
 
     def _read_command_from_uno(self):
         response = ''
