@@ -93,5 +93,12 @@
       "mode": "2A"
     }
   },
-  "spectrometer_target_pixel": 100
+  "spectrometer_target_pixel": 100,
+  "camera_roi": {
+    "first_row": 0,
+    "last_row": 1024,
+    "rows_binned_on_chip": 1,
+    "source": "full sensor",
+    "set_on": "2026-11-26T16:42:23"
+  }
 }

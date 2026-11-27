@@ -90,15 +90,58 @@
     "wavelength_axis": {
         "reference_pixel": 50.0,
         "triax_to_wavelength_coefficients": [
-            0.009096028148595274,
-            -170.88512284432366
+            1.488640068523488e-21,
+            -7.703881585000293e-16,
+            1.5858413579803578e-10,
+            -1.6229928262225956e-05,
+            0.8347627334125886,
+            -16868.86106088296
         ],
-        "nm_per_pixel": 0.07755452095074758,
-        "nm_per_pixel_squared": 0.0,
+        "nm_per_pixel": 0.07750839812098664,
+        "nm_per_pixel_squared": -1.557374389449251e-07,
+        "nm_per_pixel_change_per_triax_step": -2.3935186229145033e-08,
+        "dispersion_reference_triax_steps": 102495.19540229885,
+        "triax_step_offset": 0.0,
         "metadata": {
-            "migrated_on": "2026-11-03",
-            "verified_against_external_reference": false,
-            "provenance": "Migrated from camera_calibrations (PIXIS slope, set via tools/Calibrationgenerator.py, which is circular) and triax_calibrations (2025-07-31). The slope matches the pixel pitch; the offset was never measured on the PIXIS. Replace with a line walk (docs/calibration.md section 3)."
+            "fitted_on": "2026-11-27",
+            "number_of_observations": 87,
+            "residual_rms_nm": 0.0640938474053128,
+            "reduced_chi_squared": 142.57106613088376,
+            "fit_method": "CCD terms with a free offset per frame, then the TRIAX polynomial through the frame offsets",
+            "source_line_walks": [
+                "linewalk_20261127_150351_arhg.json"
+            ],
+            "verified_against_external_reference": true,
+            "line_identification": "pattern match over the whole walk",
+            "triax_position_offsets_nm": {
+                "88002": -0.0165,
+                "89488": -0.0086,
+                "90978": 0.0192,
+                "92466": 0.0323,
+                "93951": 0.0014,
+                "95429": 0.0153,
+                "96901": -0.008,
+                "98366": -0.0366,
+                "99826": -0.0471,
+                "101282": -0.0738,
+                "102734": 0.0158,
+                "104186": 0.1162,
+                "105639": 0.0897,
+                "107095": 0.0342,
+                "108555": -0.0224,
+                "110021": -0.0908,
+                "111494": -0.1152,
+                "112974": -0.0025,
+                "114460": 0.0657,
+                "115950": 0.0761,
+                "117443": 0.0196,
+                "118933": -0.0443
+            },
+            "calibrated_triax_drive_steps": [
+                88002,
+                118933
+            ],
+            "fit_report": "wavelength_axis_fit_20261127_150830.txt"
         }
     }
 }
